@@ -2,6 +2,7 @@
 import { isObject } from "@/utils/isObject";
 import { parseProjectId } from "@/utils/parsetId";
 import { validateText } from "@/utils/validateText";
+
 export const PHASE_COLUMNS = `
   p.phase_id,
   p.project_id,
@@ -117,8 +118,6 @@ export function ValidatePhasesPayload(
   if (typeof phase_name == "string") {
     data_of_phase.phase_name = phase_name
   }
-
-  
 
 
 
