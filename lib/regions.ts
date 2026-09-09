@@ -1,3 +1,6 @@
+import { validateText } from "@/utils/validateText";
+import { validateCoordinate } from "@/utils/validateCoordinate";
+
 export const REGION_COLUMNS = `
   region_id,
   region_name,
@@ -40,6 +43,7 @@ type ValidationResult =
   | { ok: true; data: RegionWrite }
   | { ok: false; errors: string[] };
 
+
 type RegionRow = Record<string, unknown> & {
   latitude?: string | number | null;
   longitude?: string | number | null;
@@ -49,74 +53,11 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function validateText(
-  value: unknown,
-  field: string,
-  maxLength: number,
-  nullable: boolean,
-  errors: string[],
-): string | null | undefined {
-
-  if (value === undefined) return undefined;
-
-  if (value === null) {
-
-    if (nullable) return null;
-    errors.push(`${field} cannot be null`);
-    return undefined;
-
-  }
-
-  if (typeof value !== "string") {
-    errors.push(`${field} must be a string`);
-    return undefined;
-  }
-
-  const normalized = value.trim();
-
-  if (!normalized) {
-    if (nullable) return null;
-    errors.push(`${field} cannot be empty`);
-    return undefined;
-  }
-
-  if (normalized.length > maxLength) {
-    errors.push(`${field} must be at most ${maxLength} characters`);
-    return undefined;
-  }
-
-  return normalized;
-}
-
-function validateCoordinate(
-  value: unknown,
-  field: "latitude" | "longitude",
-  errors: string[],
-): number | null | undefined {
-
-  if (value === undefined) return undefined;
-
-  if (value === null) return null;
-
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    errors.push(`${field} must be a finite number or null`);
-    return undefined;
-  }
-
-  const limit = field === "latitude" ? 90 : 180;
-  if (value < -limit || value > limit) {
-    errors.push(`${field} must be between -${limit} and ${limit}`);
-    return undefined;
-  }
-
-  return value;
-}
-
 export function validateRegionPayload(
   body: unknown,
   options: { partial: boolean },
 ): ValidationResult {
-  
+
   if (!isObject(body)) {
     return { ok: false, errors: ["Request body must be a JSON object"] };
   }
@@ -126,7 +67,9 @@ export function validateRegionPayload(
   const unknownFields = Object.keys(body).filter(
     (field) => !allowedFields.has(field),
   );
+
   const errors = unknownFields.map((field) => `Unknown field: ${field}`);
+
   const data: RegionWrite = {};
 
   const regionName = validateText(
@@ -136,6 +79,7 @@ export function validateRegionPayload(
     false,
     errors,
   );
+
   if (typeof regionName === "string") data.region_name = regionName;
 
   const regionCode = validateText(
@@ -145,6 +89,7 @@ export function validateRegionPayload(
     false,
     errors,
   );
+
   if (typeof regionCode === "string") {
     data.region_code = regionCode.toUpperCase();
   }
@@ -156,6 +101,7 @@ export function validateRegionPayload(
     true,
     errors,
   );
+
   if (regionType !== undefined) data.region_type = regionType;
 
   const state = validateText(body.state, "state", 200, true, errors);
@@ -163,9 +109,11 @@ export function validateRegionPayload(
   if (state !== undefined) data.state = state;
 
   const latitude = validateCoordinate(body.latitude, "latitude", errors);
+
   if (latitude !== undefined) data.latitude = latitude;
 
   const longitude = validateCoordinate(body.longitude, "longitude", errors);
+
   if (longitude !== undefined) data.longitude = longitude;
 
   const timezone = validateText(
@@ -175,6 +123,7 @@ export function validateRegionPayload(
     true,
     errors,
   );
+
   if (timezone !== undefined) {
     if (timezone !== null) {
       try {
@@ -211,10 +160,12 @@ export function parseRegionId(value: string): number | null {
   if (!/^\d+$/.test(value)) return null;
 
   const id = Number(value);
+
   return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
 export function getDatabaseErrorCode(error: unknown): string | null {
+
   if (
     typeof error === "object" &&
     error !== null &&
@@ -225,6 +176,7 @@ export function getDatabaseErrorCode(error: unknown): string | null {
   }
 
   return null;
+
 }
 
 export function serializeRegion(row: RegionRow): RegionRow {
