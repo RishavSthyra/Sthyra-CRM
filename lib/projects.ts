@@ -110,14 +110,18 @@ export function validateProjectPayload(
   body: unknown,
   options: { partial: boolean },
 ): ValidationResult {
+
+
   if (!isObject(body)) {
     return { ok: false, errors: ["Request body must be a JSON object"] };
   }
 
   const allowedFields = new Set<string>(PROJECT_FIELDS);
+  
   const unknownFields = Object.keys(body).filter(
     (field) => !allowedFields.has(field),
   );
+
   const errors = unknownFields.map((field) => `Unknown field: ${field}`);
   const data: ProjectWrite = {};
 

@@ -167,8 +167,6 @@ export async function PATCH(request: NextRequest, context: ProjectContext) {
       }
     }
 
-    
-
     const values = updates.map((update) => update.value);
 
     const assignments = updates.map(
