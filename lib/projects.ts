@@ -132,6 +132,7 @@ export function validateProjectPayload(
     false,
     errors,
   );
+
   if (typeof companyCode === "string") {
     data.company_code = companyCode.toUpperCase();
   }
@@ -194,6 +195,7 @@ export function validateProjectPayload(
     "project_acres",
     errors,
   );
+  
   if (projectAcres !== undefined) data.project_acres = projectAcres;
 
   const startDate = validateDate(body.start_date, "start_date", errors);
@@ -217,6 +219,7 @@ export function validateProjectPayload(
   }
 
   const address = validateText(body.address, "address", 2000, true, errors);
+
   if (address !== undefined) data.address = address;
 
   const postalCode = validateText(

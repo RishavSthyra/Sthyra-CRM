@@ -1,5 +1,7 @@
 
 import { isObject } from "@/utils/isObject";
+import { parseProjectId } from "@/utils/parsetId";
+import { validateText } from "@/utils/validateText";
 export const PHASE_COLUMNS = `
   p.phase_id,
   p.project_id,
@@ -55,7 +57,7 @@ export type PhaseWrite = Partial<{
   expected_completion_date: string | null;
   actual_completion_date: string | null;
   description: string | null;
-  is_active: boolean;
+  is_active: boolean; 
 }>;
 
 type ValidationResult =
@@ -90,13 +92,40 @@ export function ValidatePhasesPayload(
        return { ok: false, errors: ["Request body must be a JSON object"] };
     }
 
-    const allowedFields = new Set(PHASE_FIELDS);
+    const allowedFields = new Set<string>(PHASE_FIELDS);
     // we need to check if the body is having the allowed fields only
 
     const unknownFields = Object.keys(body).filter(
      (field) => !allowedFields.has(field));
+   
+    // what we are doing above is finding out the unkownFields which are not there in the
+    // allowed fields but there in the body
 
-    
+  const errors = unknownFields.map((fields, index) => `unkown field = ${fields}`)
+
+  const data_of_phase: PhaseWrite = {} // creates a empty object for the new verified data to get stored
+  
+
+  // checking of each and every fields of phases now
+
+  const phase_code = validateText(body.phase_code, "phase_code", 50, false, errors)
+  if (typeof phase_code == "string") {
+    data_of_phase.phase_code = phase_code
+  }
+
+  const phase_name = validateText(body.phase_name, "phase_name", 200, false, errors)
+  if (typeof phase_name == "string") {
+    data_of_phase.phase_name = phase_name
+  }
+
+  
+
+
+
+   return {
+    ok: true,
+    data: body as PhaseWrite,
+  };
 
 
 }
