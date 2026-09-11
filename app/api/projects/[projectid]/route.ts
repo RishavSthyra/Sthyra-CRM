@@ -50,7 +50,9 @@ export async function GET(_request: NextRequest, context: ProjectContext) {
 }
 
 export async function PATCH(request: NextRequest, context: ProjectContext) {
+ 
   const { projectid } = await context.params;
+ 
   const projectId = parseProjectId(projectid);
 
   if (projectId === null) {
@@ -72,6 +74,7 @@ export async function PATCH(request: NextRequest, context: ProjectContext) {
   }
 
   const validation = validateProjectPayload(body, { partial: true });
+  
   if (!validation.ok) {
     return NextResponse.json(
       { error: "Validation failed", details: validation.errors },

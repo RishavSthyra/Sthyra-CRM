@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import {
-  parseProjectId,
   PROJECT_COLUMNS,
   serializeProject,
 } from "@/lib/projects";
+
+import { parseProjectId } from "@/utils/parsetId";
 
 type ProjectContext = {
   params: Promise<{ projectid: string }>;

@@ -1,6 +1,8 @@
 
 import { isObject } from "@/utils/isObject";
 import { parseProjectId } from "@/utils/parsetId";
+import { validateDate } from "@/utils/validateDate";
+import { validatePositiveNumber } from "@/utils/validatePositiveNumber";
 import { validateText } from "@/utils/validateText";
 
 export const PHASE_COLUMNS = `
@@ -119,12 +121,113 @@ export function ValidatePhasesPayload(
     data_of_phase.phase_name = phase_name
   }
 
+  const phase_number = validatePositiveNumber(body.phase_number,"phase_number",errors)
+  if (typeof phase_number === "number") {
+    data_of_phase.phase_number = phase_number
+  }
 
 
-   return {
-    ok: true,
-    data: body as PhaseWrite,
-  };
+  const phase_status = validateText(body.phase_status,"phase_status",30,false,errors)
+  if (typeof phase_status === "string") {
+      if (PHASE_STATUSES.includes(phase_status.toLowerCase() as PhaseStatus)) {
+        data_of_phase.phase_status = phase_status as PhaseStatus;
+    }
+    else { 
+        errors.push(
+      `phase_status must be one of: ${PHASE_STATUSES.join(", ")}`
+    );
+    }
+  }
+
+  const total_units = validatePositiveNumber(body.total_units,"total_units",errors)
+
+  const completed_units = validatePositiveNumber(body.completed_units,"completed_units",errors)
+
+  if (typeof total_units === "number" && typeof completed_units === "number") {
+
+    if (completed_units <= total_units) {
+    data_of_phase.total_units = total_units;
+    data_of_phase.completed_units = completed_units
+    }
+    else { 
+      errors.push(`completed units cant be more than total flats. Current completed units is ${completed_units}
+        and total units is ${total_units}. Fix it`)
+    }
+
+  }
+
+    const total_acres = validatePositiveNumber(
+    body.total_acres,
+    "total_acres",
+    errors,
+  );
+  
+  if (total_acres !== undefined) data_of_phase.total_acres = total_acres;
+
+    const startDate = validateDate(body.start_date, "start_date", errors);
+    if (startDate !== undefined) data_of_phase.start_date = startDate;
+  
+    const completionDate = validateDate(
+      body.expected_completion_date,
+      "expected_completion_date",
+      errors,
+    );
+    if (completionDate !== undefined) {
+      data_of_phase.expected_completion_date = completionDate;
+    }
+
+    const actual_completion_date = validateDate(body.actual_completion_date, "actual_completion_date", errors);
+
+    if (actual_completion_date !== undefined) data_of_phase.actual_completion_date = actual_completion_date;
+  
+    if (
+      typeof startDate === "string" &&
+      typeof completionDate === "string" &&
+      completionDate < startDate
+    ) {
+      errors.push("expected_completion_date cannot be earlier than start_date");
+    }
+
+    const description = validateText(body.description,"description",500,true,errors)
+    if( typeof description == "string"){
+        data_of_phase.description = description
+    }
+
+
+    if (body.is_active !== undefined) {
+      if (typeof body.is_active !== "boolean") {
+      errors.push("is_active must be a boolean");
+    } else {
+      data_of_phase.is_active = body.is_active;
+    }
+  }
+
+  if (!options.isPartial) {
+  if (body.phase_code === undefined) {
+    errors.push("phase_code is required");
+  }
+
+  if (body.phase_name === undefined) {
+    errors.push("phase_name is required");
+  }
+
+  if (body.phase_number === undefined) {
+    errors.push("phase_number is required");
+  }
+
+  if (body.phase_status === undefined) {
+    data_of_phase.phase_status = "planned";
+  }
+
+  if (body.is_active === undefined) {
+    data_of_phase.is_active = true;
+  }
+} else if (Object.keys(body).length === 0) {
+  errors.push("At least one field is required");
+}
+
+
+   return errors.length > 0 ? {ok :false, errors} : {ok : true, data : data_of_phase}
 
 
 }

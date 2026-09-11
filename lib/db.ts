@@ -12,5 +12,4 @@ const pool = new Pool({
     host : process.env.DATABASE_HOST,
 })
 
-
 export default pool;
