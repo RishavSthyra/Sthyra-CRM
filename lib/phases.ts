@@ -96,6 +96,7 @@ export function ValidatePhasesPayload(
     }
 
     const allowedFields = new Set<string>(PHASE_FIELDS);
+    
     // we need to check if the body is having the allowed fields only
 
     const unknownFields = Object.keys(body).filter(
