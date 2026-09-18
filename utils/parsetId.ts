@@ -1,4 +1,4 @@
-export function parseProjectId(value : string | null, fallback? : number) : number | null {
+export function parseId(value : string | null, fallback? : number) : number | null {
 
     if(value == null){
         if (fallback) {

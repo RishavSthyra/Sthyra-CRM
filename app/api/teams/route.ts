@@ -1,26 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
+import {parseId} from '@/utils/parsetId'
 import {
   getTeamDatabaseErrorCode,
   serializeTeam,
   TEAM_COLUMNS,
   validateTeamPayload,
 } from "@/lib/teams";
-
-function parsePositiveInteger(value: string | null, fallback: number): number | null {
-  if (value === null) return fallback;
-  if (!/^\d+$/.test(value)) return null;
-
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
-}
+import { parse } from "next/dist/build/swc";
 
 export async function GET(request: NextRequest) {
-  const page = parsePositiveInteger(request.nextUrl.searchParams.get("page"), 1);
-  const limit = parsePositiveInteger(
+
+  const page = parseId(request.nextUrl.searchParams.get("page"), 1);
+
+  const limit = parseId(
     request.nextUrl.searchParams.get("limit"),
     50,
   );
+
   const includeInactiveValue = request.nextUrl.searchParams.get("includeInactive");
 
   if (page === null || limit === null || limit > 100) {
@@ -43,9 +40,11 @@ export async function GET(request: NextRequest) {
 
   const filters: string[] = [];
   const values: unknown[] = [];
+
   if (includeInactiveValue !== "true") filters.push("is_active = TRUE");
 
   const search = request.nextUrl.searchParams.get("search")?.trim();
+
   if (search) {
     values.push(`%${search}%`);
     const parameter = `$${values.length}`;
@@ -53,8 +52,9 @@ export async function GET(request: NextRequest) {
   }
 
   const companyIdValue = request.nextUrl.searchParams.get("companyId");
+
   if (companyIdValue !== null) {
-    const companyId = parsePositiveInteger(companyIdValue, 0);
+    const companyId = parseId(companyIdValue, 0);
     if (companyId === null) {
       return NextResponse.json(
         { error: "companyId must be a positive integer" },
@@ -110,6 +110,7 @@ export async function POST(request: NextRequest) {
   }
 
   const validation = validateTeamPayload(body, { partial: false });
+
   if (!validation.ok) {
     return NextResponse.json(
       { error: "Validation failed", details: validation.errors },
@@ -118,6 +119,7 @@ export async function POST(request: NextRequest) {
   }
 
   const team = validation.data;
+  
   try {
     const result = await pool.query(
       `INSERT INTO teams (company_id, name, team_type, description)

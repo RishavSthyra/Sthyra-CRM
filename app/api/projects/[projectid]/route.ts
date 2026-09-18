@@ -7,7 +7,7 @@ import {
   validateProjectPayload,
 } from "@/lib/projects";
 
-import { parseProjectId } from "@/utils/parsetId";
+import { parseId } from "@/utils/parsetId";
 
 type ProjectContext = {
   params: Promise<{ projectid: string }>;
@@ -15,7 +15,7 @@ type ProjectContext = {
 
 export async function GET(_request: NextRequest, context: ProjectContext) {
   const { projectid } = await context.params;
-  const projectId = parseProjectId(projectid);
+  const projectId = parseId(projectid);
 
   if (projectId === null) {
     return NextResponse.json(
@@ -53,7 +53,7 @@ export async function PATCH(request: NextRequest, context: ProjectContext) {
  
   const { projectid } = await context.params;
  
-  const projectId = parseProjectId(projectid);
+  const projectId = parseId(projectid);
 
   if (projectId === null) {
     return NextResponse.json(

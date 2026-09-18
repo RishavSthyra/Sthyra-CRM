@@ -1,6 +1,6 @@
 
 import { isObject } from "@/utils/isObject";
-import { parseProjectId } from "@/utils/parsetId";
+import { parseId } from "@/utils/parsetId";
 import { validateDate } from "@/utils/validateDate";
 import { validatePositiveNumber } from "@/utils/validatePositiveNumber";
 import { validateText } from "@/utils/validateText";

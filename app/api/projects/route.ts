@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseProjectId } from "@/utils/parsetId";
+import { parseId } from "@/utils/parsetId";
 import pool from "@/lib/db";
 import {
   getProjectDatabaseErrorCode,
@@ -24,8 +24,8 @@ import {
 export async function GET(request: NextRequest) {
 
   const parameters = request.nextUrl.searchParams;
-  const page = parseProjectId(parameters.get("page"), 1);
-  const limit = parseProjectId(parameters.get("limit"), 50);
+  const page = parseId(parameters.get("page"), 1);
+  const limit = parseId(parameters.get("limit"), 50);
   const includeInactiveValue = parameters.get("includeInactive");
   const status = parameters.get("status")?.trim().toLowerCase() ?? "";
   const type = parameters.get("type")?.trim().toLowerCase() ?? "";

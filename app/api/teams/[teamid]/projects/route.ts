@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { parseProjectId } from "@/utils/parsetId";
+import { parseId } from "@/utils/parsetId";
 import { parseTeamId } from "@/lib/teams";
 
  type TeamProjectsContext = {
@@ -52,7 +52,7 @@ function validateProjectIds(body: unknown):
       typeof projectId !== "number" ||
       !Number.isSafeInteger(projectId) ||
       projectId <= 0 ||
-      parseProjectId(String(projectId)) === null
+      parseId(String(projectId)) === null
     ) {
       errors.push(`project_ids[${index}] must be a positive integer`);
       return;
