@@ -1,188 +1,193 @@
-import pool from '@/lib/db';
-import {NextRequest,NextResponse} from 'next/server'
+import { NextRequest, NextResponse } from "next/server";
+import pool from "@/lib/db";
+import { isUuid } from "@/lib/permissions";
+import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
+import {
+  getUserDatabaseErrorCode,
+  USER_COLUMNS,
+  validateUserPayload,
+} from "@/lib/users";
 
-export async function GET(request : NextRequest) {
+export async function GET(request: NextRequest) {
+  const parameters = request.nextUrl.searchParams;
+  const page = parsePositiveInteger(parameters.get("page"), 1);
+  const limit = parsePositiveInteger(parameters.get("limit"), 20);
+  const isActiveValue = parameters.get("is_active");
 
-    try {
+  if (page === null || limit === null || limit > 100) {
+    return NextResponse.json(
+      { error: "page and limit must be positive integers; limit cannot exceed 100" },
+      { status: 400 },
+    );
+  }
 
-        const {searchParams} = new URL(request.url);
+  if (
+    isActiveValue !== null &&
+    isActiveValue !== "true" &&
+    isActiveValue !== "false"
+  ) {
+    return NextResponse.json(
+      { error: "is_active must be true or false" },
+      { status: 400 },
+    );
+  }
 
-        const page = Math.max(Number(searchParams.get('page')) || 1 , 1)
+  const filters = ["deleted_at IS NULL"];
 
-        let limitParam = searchParams.get('limit');
+  const values: unknown[] = [];
 
-        let limit = 20;
+  const addFilter = (clause: string, value: unknown) => {
+    values.push(value);
+    filters.push(clause.replace("?", `$${values.length}`));
+  };
 
-        if(limitParam !== null){
+  const search = parameters.get("search")?.trim();
 
-            let limitFromUrl = Number(limitParam);
+  if (search) {
+    values.push(`%${search}%`);
+    const placeholder = `$${values.length}`;
+    filters.push(
+      `(username ILIKE ${placeholder} OR first_name ILIKE ${placeholder} OR last_name ILIKE ${placeholder} OR email ILIKE ${placeholder} OR phone ILIKE ${placeholder})`,
+    );
+  }
 
-            if (limitFromUrl < 1) {
-                limitFromUrl = 1;
-            }
-            else if(limitFromUrl > 100){
-                limitFromUrl = 100;
-            }
-            else {
-                limit = limitFromUrl;
-            }
-        }
-
-        const search = searchParams.get('search');
-
-        const teamId = searchParams.get('team_id');
-        const roleId = searchParams.get('role_id');
-        const isActive = searchParams.get('is_active');
-
-        const offset = (page - 1) * limit;
-
-        const conditions : string[] = [];
-        const values : unknown[] = [];
-
-        let paramIndex = 1;
-
-        if (search) {
-            
-            conditions.push(`
-                (
-                    username ILIKE $${paramIndex}
-                    OR first_name ILIKE $${paramIndex}
-                    OR last_name ILIKE $${paramIndex}
-                    OR email ILIKE $${paramIndex}
-                    OR phone ILIKE $${paramIndex}
-                )
-            `);
-
-            values.push(`%${search}`)
-
-            paramIndex++;
-
-        }
-
-        if (teamId) {
-            conditions.push(`team_id = $${paramIndex}`)
-            values.push(`${teamId}`)
-            paramIndex++;
-        }
-
-        if (roleId) {
-            conditions.push(`role_id = $${paramIndex}`)
-            values.push(`${roleId}`)
-            paramIndex++;
-        }
-
-        if (isActive !== null) {
-            conditions.push(`is_active = $${paramIndex}`)
-            values.push(isActive === 'true')
-            paramIndex++;
-        }
-
-        const whereClause = conditions.length > 0 ? conditions.join('AND') : '';
-
-        const usersQuery = `
-            SELECT
-                user_id,
-                team_id,
-                role_id,
-                username,
-                first_name,
-                last_name,
-                email,
-                phone,
-                is_active,
-                last_login,
-                created_at,
-                updated_at
-            FROM users
-
-            ${whereClause}
-
-            ORDER BY created_at DESC
-
-            LIMIT $${paramIndex}
-            OFFSET $${paramIndex + 1}
-        `;
-
-
-        const usersValues = [
-            ...values,
-            limit,
-            offset
-        ];
-
-        const result = await pool.query(usersQuery,usersValues)
-
-        const countQuery = `
-            SELECT COUNT(*)::INTEGER AS total
-            FROM users
-            ${whereClause}
-        `;
-
-
-        const countResult = await pool.query(
-            countQuery,
-            values
-        );
-
-
-        const total = countResult.rows[0].total;
-
-        const totalPages = Math.ceil(
-            total / limit
-        );
-
-        
-        if (result.rows.length === 0) {
-            return NextResponse.json({message : "No active users are present"},{status : 200})
-        }
-
-         return NextResponse.json(
-            {
-                message: 'Users found successfully',
-
-                users: result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    .rows,
-
-                pagination: {
-                    page,
-                    limit,
-                    total,
-                    totalPages,
-                    hasNextPage: page < totalPages,
-                    hasPreviousPage: page > 1
-                }
-            },
-            {
-                status: 200
-            }
-        );
-
-
-    } catch (error : unknown) {
-        return NextResponse.json({message : "The GET users API isnt functioning"},{status : 404})
+  const teamId = parameters.get("team_id");
+  if (teamId !== null) {
+    if (!isUuid(teamId)) {
+      return NextResponse.json(
+        { error: "team_id must be a valid UUID" },
+        { status: 400 },
+      );
     }
+    addFilter("team_id = ?", teamId);
+  }
+
+  const roleId = parameters.get("role_id");
+  if (roleId !== null) {
+    if (!isUuid(roleId)) {
+      return NextResponse.json(
+        { error: "role_id must be a valid UUID" },
+        { status: 400 },
+      );
+    }
+    addFilter("role_id = ?", roleId);
+  }
+
+  if (isActiveValue !== null) {
+    addFilter("is_active = ?", isActiveValue === "true");
+  }
+
+  const whereClause = `WHERE ${filters.join(" AND ")}`;
+  const offset = (page - 1) * limit;
+
+  try {
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::integer AS total FROM users ${whereClause}`,
+      values,
+    );
+    const listValues = [...values, limit, offset];
+    const result = await pool.query(
+      `SELECT ${USER_COLUMNS}
+       FROM users
+       ${whereClause}
+       ORDER BY created_at DESC, user_id ASC
+       LIMIT $${listValues.length - 1}
+       OFFSET $${listValues.length}`,
+      listValues,
+    );
+    const total = Number(countResult.rows[0]?.total ?? 0);
+
+    return NextResponse.json({
+      users: result.rows,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page * limit < total,
+        hasPreviousPage: page > 1,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to list users", error);
+    return NextResponse.json(
+      { error: "Unable to retrieve users" },
+      { status: 500 },
+    );
+  }
 }
 
+export async function POST(request: NextRequest) {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: "Request body must contain valid JSON" },
+      { status: 400 },
+    );
+  }
 
+  const validation = validateUserPayload(body, { partial: false });
+  if (!validation.ok) {
+    return NextResponse.json(
+      { error: "Validation failed", details: validation.errors },
+      { status: 422 },
+    );
+  }
 
-export async function POST(request : NextRequest) {
-    
-    let body : unknown;
+  const user = validation.data;
+  try {
+    const result = await pool.query(
+      `INSERT INTO users (
+        team_id,
+        role_id,
+        username,
+        first_name,
+        last_name,
+        email,
+        phone,
+        password_hash,
+        is_active
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING ${USER_COLUMNS}`,
+      [
+        user.team_id ?? null,
+        user.role_id,
+        user.username,
+        user.first_name,
+        user.last_name ?? null,
+        user.email,
+        user.phone ?? null,
+        user.password_hash ?? null,
+        user.is_active,
+      ],
+    );
 
-    try {
-        body = await request.json();
-
-    } catch (error : unknown) {
-        return NextResponse.json({message : "The body should be a proper JSON"},{status : 404})
+    return NextResponse.json(
+      { message: "User created", user: result.rows[0] },
+      { status: 201 },
+    );
+  } catch (error) {
+    const code = getUserDatabaseErrorCode(error);
+    if (code === "23505") {
+      return NextResponse.json(
+        { error: "A user with this username or email already exists" },
+        { status: 409 },
+      );
     }
-    
-    
-    
-    try {
-        
-
-
-
-    } catch (error : unknown) {
-        return NextResponse.json({message : "Couldnt add user. API error"},{status : 404})
+    if (code === "23503") {
+      return NextResponse.json(
+        { error: "The selected role or team does not exist" },
+        { status: 422 },
+      );
     }
+
+    console.error("Failed to create user", error);
+    return NextResponse.json(
+      { error: "Unable to create user" },
+      { status: 500 },
+    );
+  }
 }

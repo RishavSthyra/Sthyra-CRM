@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseId } from "@/utils/parsetId";
+import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 import pool from "@/lib/db";
 import {
   getProjectDatabaseErrorCode,
@@ -10,22 +10,11 @@ import {
   validateProjectPayload,
 } from "@/lib/projects";
 
-// function parsePositiveInteger(
-//   value: string | null,
-//   fallback: number,
-// ): number | null {
-//   if (value === null) return fallback;
-//   if (!/^\d+$/.test(value)) return null;
-
-//   const parsed = Number(value);
-//   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
-// }
-
 export async function GET(request: NextRequest) {
 
   const parameters = request.nextUrl.searchParams;
-  const page = parseId(parameters.get("page"), 1);
-  const limit = parseId(parameters.get("limit"), 50);
+  const page = parsePositiveInteger(parameters.get("page"), 1);
+  const limit = parsePositiveInteger(parameters.get("limit"), 50);
   const includeInactiveValue = parameters.get("includeInactive");
   const status = parameters.get("status")?.trim().toLowerCase() ?? "";
   const type = parameters.get("type")?.trim().toLowerCase() ?? "";

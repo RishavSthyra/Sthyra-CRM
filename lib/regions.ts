@@ -1,5 +1,6 @@
 import { validateText } from "@/utils/validateText";
 import { validateCoordinate } from "@/utils/validateCoordinate";
+import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 
 export const REGION_COLUMNS = `
   region_id,
@@ -157,11 +158,7 @@ export function validateRegionPayload(
 }
 
 export function parseRegionId(value: string): number | null {
-  if (!/^\d+$/.test(value)) return null;
-
-  const id = Number(value);
-
-  return Number.isSafeInteger(id) && id > 0 ? id : null;
+  return parsePositiveInteger(value);
 }
 
 export function getDatabaseErrorCode(error: unknown): string | null {

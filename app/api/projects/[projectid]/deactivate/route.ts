@@ -5,7 +5,7 @@ import {
   serializeProject,
 } from "@/lib/projects";
 
-import { parseId } from "@/utils/parsetId";
+import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 
 type ProjectContext = {
   params: Promise<{ projectid: string }>;
@@ -13,7 +13,7 @@ type ProjectContext = {
 
 export async function POST(_request: NextRequest, context: ProjectContext) {
   const { projectid } = await context.params;
-  const projectId = parseId(projectid);
+  const projectId = parsePositiveInteger(projectid);
 
   if (projectId === null) {
     return NextResponse.json(

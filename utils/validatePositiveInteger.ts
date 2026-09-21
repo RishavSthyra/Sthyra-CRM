@@ -1,4 +1,4 @@
-export function validatePositiveNumber(
+export function validatePositiveInteger(
   value: unknown,
   field: string,
   errors: string[],
@@ -10,12 +10,14 @@ export function validatePositiveNumber(
   if (value === null) return null;
 
   if (allowZero) {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-    errors.push(`${field} must be a finite number  or null`);
+  if (typeof value !== "number" || !Number.isFinite(value) ||
+        !Number.isInteger(value) || value < 0) {
+    errors.push(`${field} must be a finite number greater than zero or null`);
     return undefined;
   }
   }else {
-    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    if (typeof value !== "number" || !Number.isFinite(value) ||
+     !Number.isInteger(value) || value <= 0) {
     errors.push(`${field} must be a finite number greater than zero or null`);
     return undefined;
   }

@@ -6,17 +6,7 @@ import {
   serializeRegion,
   validateRegionPayload,
 } from "@/lib/regions";
-
-function parsePositiveInteger(
-  value: string | null,
-  fallback: number,
-): number | null {
-  if (value === null) return fallback;
-  if (!/^\d+$/.test(value)) return null;
-
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
-}
+import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 
 export async function GET(request: NextRequest) {
   const page = parsePositiveInteger(request.nextUrl.searchParams.get("page"), 1);

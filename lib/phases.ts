@@ -1,7 +1,7 @@
 
 import { isObject } from "@/utils/isObject";
-import { parseId } from "@/utils/parsetId";
 import { validateDate } from "@/utils/validateDate";
+import { validatePositiveInteger } from "@/utils/validatePositiveInteger";
 import { validatePositiveNumber } from "@/utils/validatePositiveNumber";
 import { validateText } from "@/utils/validateText";
 
@@ -122,7 +122,7 @@ export function ValidatePhasesPayload(
     data_of_phase.phase_name = phase_name
   }
 
-  const phase_number = validatePositiveNumber(body.phase_number,"phase_number",errors)
+  const phase_number = validatePositiveInteger(body.phase_number,"phase_number",errors)
   if (typeof phase_number === "number") {
     data_of_phase.phase_number = phase_number
   }
@@ -140,21 +140,24 @@ export function ValidatePhasesPayload(
     }
   }
 
-  const total_units = validatePositiveNumber(body.total_units,"total_units",errors)
+  const total_units = validatePositiveInteger(body.total_units,"total_units",errors)
 
-  const completed_units = validatePositiveNumber(body.completed_units,"completed_units",errors)
+  const completed_units = validatePositiveInteger(body.completed_units,"completed_units",errors,true)
 
-  if (typeof total_units === "number" && typeof completed_units === "number") {
-
-    if (completed_units <= total_units) {
+  if (typeof total_units === "number" ) {
     data_of_phase.total_units = total_units;
-    data_of_phase.completed_units = completed_units
-    }
-    else { 
-      errors.push(`completed units cant be more than total flats. Current completed units is ${completed_units}
-        and total units is ${total_units}. Fix it`)
-    }
+  }
 
+  if (typeof completed_units === "number") {
+    data_of_phase.completed_units = completed_units;
+  }
+
+  if (
+    typeof total_units === "number" &&
+    typeof completed_units === "number" &&
+    completed_units > total_units
+  ) {
+    errors.push("completed_units cannot exceed total_units");
   }
 
     const total_acres = validatePositiveNumber(

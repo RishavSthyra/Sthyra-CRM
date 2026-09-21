@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { parseId } from "@/utils/parsetId";
+import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 import { PHASE_COLUMNS, serializePhase, ValidatePhasesPayload } from "@/lib/phases";
 import { getProjectDatabaseErrorCode } from "@/lib/projects";
 import { Pool } from "pg";
@@ -17,7 +17,7 @@ export async function GET(
   try {
       const { projectid } = await context.params;
 
-  const projectId = parseId(projectid);
+  const projectId = parsePositiveInteger(projectid);
 
   const projectExists = await pool.query("SELECT * FROM projects WHERE project_id = $1",[projectId])
 

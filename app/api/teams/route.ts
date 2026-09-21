@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
-import {parseId} from '@/utils/parsetId'
+import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 import {
   getTeamDatabaseErrorCode,
   serializeTeam,
@@ -11,9 +11,9 @@ import { parse } from "next/dist/build/swc";
 
 export async function GET(request: NextRequest) {
 
-  const page = parseId(request.nextUrl.searchParams.get("page"), 1);
+  const page = parsePositiveInteger(request.nextUrl.searchParams.get("page"), 1);
 
-  const limit = parseId(
+  const limit = parsePositiveInteger(
     request.nextUrl.searchParams.get("limit"),
     50,
   );
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
   const companyIdValue = request.nextUrl.searchParams.get("companyId");
 
   if (companyIdValue !== null) {
-    const companyId = parseId(companyIdValue, 0);
+    const companyId = parsePositiveInteger(companyIdValue);
     if (companyId === null) {
       return NextResponse.json(
         { error: "companyId must be a positive integer" },

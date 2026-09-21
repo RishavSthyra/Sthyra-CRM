@@ -49,9 +49,18 @@ export async function GET(request : NextRequest,params : PhaseContext) {
 
 export async function PATCH(request: NextRequest, params: PhaseContext,
 ) {
-  const { phaseid } = await params.params;
+  const { projectid , phaseid } = await params.params;
 
   const phaseId = parseRegionId(phaseid);
+  const projectId = parseRegionId(projectid);
+
+  if (projectId === null) {
+    return NextResponse.json(
+      { error: "projectid must be a positive integer" },
+      { status: 400 },
+    );
+  }
+
 
   if (phaseId === null) {
     return NextResponse.json(
@@ -92,13 +101,28 @@ export async function PATCH(request: NextRequest, params: PhaseContext,
   try {
     await client.query("BEGIN");
 
-    const existingPhase = await client.query(
-      `SELECT phase_id
-       FROM phases
-       WHERE phase_id = $1
-       FOR UPDATE`,
-      [phaseId],
-    );
+    const existingProject = await client.query(
+      `SELECT project_id FROM projects WHERE project_id = $1
+      FOR UPDATE`,[projectId]
+    )
+
+    if (existingProject.rowCount === 0) {
+      await client.query("ROLLBACK");
+
+      return NextResponse.json(
+        { error: "Project not found" },
+        { status: 404 },
+      );
+    }
+
+const existingPhase = await client.query(
+  `SELECT *
+   FROM phases
+   WHERE phase_id = $1
+     AND project_id = $2
+   FOR UPDATE`,
+  [phaseId, projectId],
+);
 
     if (existingPhase.rowCount === 0) {
       await client.query("ROLLBACK");
@@ -107,6 +131,28 @@ export async function PATCH(request: NextRequest, params: PhaseContext,
         { error: "Phase not found" },
         { status: 404 },
       );
+    }
+
+    if (phase.completed_units !== undefined && phase.total_units!== undefined && phase.total_units!== null) {
+        if (phase.completed_units > phase.total_units) {
+           await client.query("ROLLBACK");
+         return NextResponse.json({message : `completed units cant be more than total flats. Current completed units is ${phase.completed_units}
+          and total units is ${phase.total_units}. Fix it`}, { status: 422 })
+     }
+    }
+    else if (phase.completed_units !== undefined) {
+      // const total_units = await client.query("SELECT total_units FROM phases WHERE phase_id=$1",[phaseId])
+      if (phase.completed_units > existingPhase.rows[0].total_units) {
+        await client.query("ROLLBACK");
+        return NextResponse.json({message : `completed units cant be more than total flats. Current completed units is ${phase.completed_units}
+          and total units is ${existingPhase.rows[0].total_units}. Fix it`}, { status: 422 })
+      }
+    }else if (phase.total_units !== undefined && phase.total_units !== null){
+      if (existingPhase.rows[0].completed_units > phase.total_units) {
+        await client.query("ROLLBACK");
+         return NextResponse.json({message : `completed units cant be more than total flats. Current completed units is ${existingPhase.rows[0].completed_units }
+          and total units is ${phase.total_units}. Fix it`}, { status: 422 })
+      }
     }
 
     const updates: { column: string; value: unknown }[] = [];
