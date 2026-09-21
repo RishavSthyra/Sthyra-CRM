@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { hashPassword } from "@/lib/auth";
 import { isUuid } from "@/lib/permissions";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 import {
@@ -16,7 +17,10 @@ export async function GET(request: NextRequest) {
 
   if (page === null || limit === null || limit > 100) {
     return NextResponse.json(
-      { error: "page and limit must be positive integers; limit cannot exceed 100" },
+      {
+        error:
+          "page and limit must be positive integers; limit cannot exceed 100",
+      },
       { status: 400 },
     );
   }
@@ -138,6 +142,7 @@ export async function POST(request: NextRequest) {
 
   const user = validation.data;
   try {
+    const passwordHash = await hashPassword(user.password!);
     const result = await pool.query(
       `INSERT INTO users (
         team_id,
@@ -160,7 +165,7 @@ export async function POST(request: NextRequest) {
         user.last_name ?? null,
         user.email,
         user.phone ?? null,
-        user.password_hash ?? null,
+        passwordHash,
         user.is_active,
       ],
     );

@@ -1,6 +1,8 @@
 import { isUuid } from "@/lib/permissions";
 import { isObject } from "@/utils/isObject";
+import { validatePassword } from "@/utils/validatePassword";
 import { validateText } from "@/utils/validateText";
+import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
 
 export const USER_COLUMNS = `
   user_id,
@@ -18,7 +20,7 @@ export const USER_COLUMNS = `
   created_by
 `;
 
-const USER_FIELDS = [
+const USER_INPUT_FIELDS = [
   "team_id",
   "role_id",
   "username",
@@ -26,11 +28,11 @@ const USER_FIELDS = [
   "last_name",
   "email",
   "phone",
-  "password_hash",
+  "password",
   "is_active",
 ] as const;
 
-export type UserField = (typeof USER_FIELDS)[number];
+export type UserField = Exclude<(typeof USER_INPUT_FIELDS)[number], "password">;
 
 export type UserWrite = Partial<{
   team_id: string | null;
@@ -40,7 +42,7 @@ export type UserWrite = Partial<{
   last_name: string | null;
   email: string;
   phone: string | null;
-  password_hash: string | null;
+  password: string;
   is_active: boolean;
 }>;
 
@@ -54,9 +56,13 @@ function validateUuid(
   nullable: boolean,
   errors: string[],
 ): string | null | undefined {
-  if (value === undefined) return undefined;
+  if (value === undefined) {
+    return undefined;
+  }
   if (value === null) {
-    if (nullable) return null;
+    if (nullable) {
+      return null;
+    }
     errors.push(`${field} cannot be null`);
     return undefined;
   }
@@ -75,26 +81,42 @@ export function validateUserPayload(
     return { ok: false, errors: ["Request body must be a JSON object"] };
   }
 
-  const allowedFields = new Set<string>(USER_FIELDS);
+  const allowedFields = new Set<string>(USER_INPUT_FIELDS);
   const errors = Object.keys(body)
     .filter((field) => !allowedFields.has(field))
     .map((field) => `Unknown field: ${field}`);
   const data: UserWrite = {};
 
   const teamId = validateUuid(body.team_id, "team_id", true, errors);
-  if (teamId !== undefined) data.team_id = teamId;
+  if (teamId !== undefined) {
+    data.team_id = teamId;
+  }
 
   const roleId = validateUuid(body.role_id, "role_id", false, errors);
-  if (typeof roleId === "string") data.role_id = roleId;
+  if (typeof roleId === "string") {
+    data.role_id = roleId;
+  }
 
   const username = validateText(body.username, "username", 200, false, errors);
-  if (typeof username === "string") data.username = username;
+  if (typeof username === "string") {
+    data.username = username;
+  }
 
-  const firstName = validateText(body.first_name, "first_name", 200, false, errors);
-  if (typeof firstName === "string") data.first_name = firstName;
+  const firstName = validateText(
+    body.first_name,
+    "first_name",
+    200,
+    false,
+    errors,
+  );
+  if (typeof firstName === "string") {
+    data.first_name = firstName;
+  }
 
   const lastName = validateText(body.last_name, "last_name", 200, true, errors);
-  if (lastName !== undefined) data.last_name = lastName;
+  if (lastName !== undefined) {
+    data.last_name = lastName;
+  }
 
   const email = validateText(body.email, "email", 255, false, errors);
   if (typeof email === "string") {
@@ -106,16 +128,21 @@ export function validateUserPayload(
   }
 
   const phone = validateText(body.phone, "phone", 20, true, errors);
-  if (phone !== undefined) data.phone = phone;
+  if (phone !== undefined) {
+    data.phone = phone;
+  }
 
-  const passwordHash = validateText(
-    body.password_hash,
-    "password_hash",
-    10000,
-    true,
-    errors,
-  );
-  if (passwordHash !== undefined) data.password_hash = passwordHash;
+  if (!options.partial && body.password !== undefined) {
+    const passwordErrors = validatePassword(body.password);
+    errors.push(...passwordErrors);
+    if (passwordErrors.length === 0 && typeof body.password === "string") {
+      data.password = body.password;
+    }
+  } else if (options.partial && body.password !== undefined) {
+    errors.push(
+      "password can only be changed through the auth password endpoints",
+    );
+  }
 
   if (body.is_active !== undefined) {
     if (typeof body.is_active !== "boolean") {
@@ -126,11 +153,24 @@ export function validateUserPayload(
   }
 
   if (!options.partial) {
-    if (body.role_id === undefined) errors.push("role_id is required");
-    if (body.username === undefined) errors.push("username is required");
-    if (body.first_name === undefined) errors.push("first_name is required");
-    if (body.email === undefined) errors.push("email is required");
-    if (body.is_active === undefined) data.is_active = true;
+    if (body.role_id === undefined) {
+      errors.push("role_id is required");
+    }
+    if (body.username === undefined) {
+      errors.push("username is required");
+    }
+    if (body.first_name === undefined) {
+      errors.push("first_name is required");
+    }
+    if (body.email === undefined) {
+      errors.push("email is required");
+    }
+    if (body.password === undefined) {
+      errors.push("password is required");
+    }
+    if (body.is_active === undefined) {
+      data.is_active = true;
+    }
   } else if (Object.keys(body).length === 0) {
     errors.push("At least one field is required");
   }
@@ -143,13 +183,5 @@ export function parseUserId(value: string): string | null {
 }
 
 export function getUserDatabaseErrorCode(error: unknown): string | null {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof error.code === "string"
-  ) {
-    return error.code;
-  }
-  return null;
+  return getDatabaseErrorCode(error);
 }

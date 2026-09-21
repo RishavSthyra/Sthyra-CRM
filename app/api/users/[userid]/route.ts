@@ -78,7 +78,6 @@ export async function PATCH(request: NextRequest, context: UserContext) {
     "last_name",
     "email",
     "phone",
-    "password_hash",
     "is_active",
   ];
   const updates = mutableFields
