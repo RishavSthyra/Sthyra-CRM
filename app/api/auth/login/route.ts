@@ -2,11 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import {
   AUTH_USER_COLUMNS,
-  createAccessToken,
-  createOpaqueToken,
-  getRequestIp,
-  hashToken,
-  REFRESH_TOKEN_DAYS,
+  createAuthenticatedSession,
   setAuthCookies,
   verifyPassword,
 } from "@/lib/auth";
@@ -55,31 +51,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const refreshToken = createOpaqueToken();
     const client = await pool.connect();
-    let accessToken: string;
+    let tokens: { accessToken: string; refreshToken: string };
     try {
       await client.query("BEGIN");
-      const sessionResult = await client.query(
-        `INSERT INTO auth_sessions (
-           user_id,
-           refresh_token_hash,
-           user_agent,
-           ip_address,
-           expires_at
-         )
-         VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP + ($5 * INTERVAL '1 day'))
-         RETURNING session_id`,
-        [
-          user.user_id,
-          hashToken(refreshToken),
-          request.headers.get("user-agent"),
-          getRequestIp(request),
-          REFRESH_TOKEN_DAYS,
-        ],
-      );
-      const sessionId = sessionResult.rows[0].session_id as string;
-      accessToken = createAccessToken(user.user_id, sessionId);
+      tokens = await createAuthenticatedSession(client, request, user.user_id);
       await client.query(
         "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = $1",
         [user.user_id],
@@ -95,7 +71,7 @@ export async function POST(request: NextRequest) {
     delete user.password_hash;
     const response = NextResponse.json({ message: "Login successful", user });
     response.headers.set("Cache-Control", "no-store");
-    setAuthCookies(response, accessToken, refreshToken);
+    setAuthCookies(response, tokens.accessToken, tokens.refreshToken);
     return response;
   } catch (error) {
     console.error("Failed to log in", error);

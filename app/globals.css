@@ -1,15 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #000000;
+  --foreground: #ffffff;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-bricolage);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -22,5 +23,60 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), Arial, Helvetica, sans-serif;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.auth-panel {
+  background:
+    radial-gradient(
+      circle at 16% 10%,
+      rgba(55, 151, 127, 0.42),
+      transparent 34%
+    ),
+    linear-gradient(
+      140deg,
+      #1b6151 2%,
+      #09231a 31%,
+      #175243 65%,
+      #124235 82%,
+      #1b6151 100%
+    );
+}
+
+@media (min-width: 64rem) {
+  .auth-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .auth-panel-content {
+    max-width: 669px;
+  }
+
+  .auth-panel-content--two-step {
+    max-width: min(100%, 420px);
+  }
+}
+
+.auth-submit {
+  background: linear-gradient(90deg, #1b6151 0%, #266756 25%, #0a261c 100%);
+  box-shadow:
+    inset 0 4px 50px rgba(0, 0, 0, 0.25),
+    0 4px 50px rgba(0, 0, 0, 0.25);
+}
+
+.auth-select {
+  background-image: url("/auth/chevron.svg");
+  background-position: right 14px center;
+  background-repeat: no-repeat;
+  background-size: 20px 20px;
+}
+
+input[type="date"] {
+  color-scheme: dark;
 }

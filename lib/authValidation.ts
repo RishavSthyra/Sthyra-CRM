@@ -70,6 +70,196 @@ export function validateLoginPayload(
     : { ok: true, data: { identifier, password } };
 }
 
+const SIGNUP_JOB_ROLES = [
+  "founder",
+  "sales_manager",
+  "sales_executive",
+  "operations",
+] as const;
+
+export type SignupPayload = {
+  first_name: string;
+  last_name: string | null;
+  email: string;
+  password: string;
+  company_name: string;
+  company_legal_name: string | null;
+  company_code: string;
+  company_phone_number: string;
+  company_contact_email: string;
+  established_on: string;
+  job_role: (typeof SIGNUP_JOB_ROLES)[number];
+};
+
+export function validateSignupPayload(
+  body: unknown,
+): ValidationResult<SignupPayload> {
+  const value = objectBody(body);
+  if (!value) {
+    return { ok: false, errors: ["Request body must be a JSON object"] };
+  }
+
+  const fields = [
+    "first_name",
+    "last_name",
+    "email",
+    "password",
+    "company_name",
+    "company_legal_name",
+    "company_code",
+    "company_phone_number",
+    "company_contact_email",
+    "established_on",
+    "job_role",
+  ] as const;
+  const errors = rejectUnknownFields(value, fields);
+  const firstName = validateText(
+    value.first_name,
+    "first_name",
+    200,
+    false,
+    errors,
+  );
+  const lastName = validateText(
+    value.last_name,
+    "last_name",
+    200,
+    true,
+    errors,
+  );
+  const email = validateText(value.email, "email", 255, false, errors);
+  const companyName = validateText(
+    value.company_name,
+    "company_name",
+    200,
+    false,
+    errors,
+  );
+  const companyLegalName = validateText(
+    value.company_legal_name,
+    "company_legal_name",
+    200,
+    true,
+    errors,
+  );
+  const companyCode = validateText(
+    value.company_code,
+    "company_code",
+    50,
+    false,
+    errors,
+  );
+  const companyPhone = validateText(
+    value.company_phone_number,
+    "company_phone_number",
+    20,
+    false,
+    errors,
+  );
+  const companyEmail = validateText(
+    value.company_contact_email,
+    "company_contact_email",
+    255,
+    false,
+    errors,
+  );
+  errors.push(...validatePassword(value.password));
+
+  if (typeof email === "string" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errors.push("email must be a valid email address");
+  }
+  if (
+    typeof companyEmail === "string" &&
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(companyEmail)
+  ) {
+    errors.push("company_contact_email must be a valid email address");
+  }
+  if (
+    typeof companyPhone === "string" &&
+    !/^\+?[0-9]{10,19}$/.test(companyPhone)
+  ) {
+    errors.push("company_phone_number must contain 10 to 19 digits");
+  }
+  if (
+    typeof companyCode === "string" &&
+    !/^[A-Za-z0-9][A-Za-z0-9_-]{1,49}$/.test(companyCode)
+  ) {
+    errors.push(
+      "company_code must contain 2 to 50 letters, numbers, underscores, or hyphens",
+    );
+  }
+
+  const establishedOn = value.established_on;
+  if (
+    typeof establishedOn !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(establishedOn) ||
+    Number.isNaN(Date.parse(`${establishedOn}T00:00:00Z`))
+  ) {
+    errors.push("established_on must be a valid date in YYYY-MM-DD format");
+  } else if (establishedOn > new Date().toISOString().slice(0, 10)) {
+    errors.push("established_on cannot be in the future");
+  }
+
+  const jobRole = value.job_role;
+  if (
+    typeof jobRole !== "string" ||
+    !SIGNUP_JOB_ROLES.includes(jobRole as SignupPayload["job_role"])
+  ) {
+    errors.push(
+      "job_role must be founder, sales_manager, sales_executive, or operations",
+    );
+  }
+
+  const required = [
+    "first_name",
+    "email",
+    "password",
+    "company_name",
+    "company_code",
+    "company_phone_number",
+    "company_contact_email",
+    "established_on",
+    "job_role",
+  ] as const;
+  for (const field of required) {
+    if (value[field] === undefined) {
+      errors.push(`${field} is required`);
+    }
+  }
+
+  if (
+    errors.length ||
+    typeof firstName !== "string" ||
+    typeof email !== "string" ||
+    typeof value.password !== "string" ||
+    typeof companyName !== "string" ||
+    typeof companyCode !== "string" ||
+    typeof companyPhone !== "string" ||
+    typeof companyEmail !== "string" ||
+    typeof establishedOn !== "string" ||
+    typeof jobRole !== "string"
+  ) {
+    return { ok: false, errors };
+  }
+
+  return {
+    ok: true,
+    data: {
+      first_name: firstName,
+      last_name: lastName ?? null,
+      email: email.toLowerCase(),
+      password: value.password,
+      company_name: companyName,
+      company_legal_name: companyLegalName ?? null,
+      company_code: companyCode.toUpperCase(),
+      company_phone_number: companyPhone,
+      company_contact_email: companyEmail.toLowerCase(),
+      established_on: establishedOn,
+      job_role: jobRole as SignupPayload["job_role"],
+    },
+  };
+}
+
 export function validateChangePasswordPayload(
   body: unknown,
 ): ValidationResult<{ currentPassword: string; newPassword: string }> {

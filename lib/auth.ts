@@ -7,6 +7,7 @@ import {
 } from "node:crypto";
 import { isIP } from "node:net";
 import type { ScryptOptions } from "node:crypto";
+import type { PoolClient } from "pg";
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 
@@ -216,6 +217,36 @@ export async function verifyPassword(
 
 export function createOpaqueToken(): string {
   return randomBytes(32).toString("base64url");
+}
+
+export async function createAuthenticatedSession(
+  client: PoolClient,
+  request: NextRequest,
+  userId: string,
+): Promise<{ accessToken: string; refreshToken: string }> {
+  const refreshToken = createOpaqueToken();
+  const sessionResult = await client.query(
+    `INSERT INTO auth_sessions (
+       user_id,
+       refresh_token_hash,
+       user_agent,
+       ip_address,
+       expires_at
+     )
+     VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP + ($5 * INTERVAL '1 day'))
+     RETURNING session_id`,
+    [
+      userId,
+      hashToken(refreshToken),
+      request.headers.get("user-agent"),
+      getRequestIp(request),
+      REFRESH_TOKEN_DAYS,
+    ],
+  );
+  return {
+    accessToken: createAccessToken(userId, sessionResult.rows[0].session_id),
+    refreshToken,
+  };
 }
 
 export function hashToken(token: string): string {
