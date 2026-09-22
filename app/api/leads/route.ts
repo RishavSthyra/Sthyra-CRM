@@ -47,6 +47,31 @@ export async function GET(request: NextRequest) {
     values.push(status);
     filters.push(`l.status=$${values.length}`);
   }
+  const temperature = request.nextUrl.searchParams.get("temperature");
+  if (temperature) {
+    if (!["cold", "warm", "hot"].includes(temperature)) {
+      return NextResponse.json(
+        { error: "Invalid lead temperature" },
+        { status: 400 },
+      );
+    }
+    values.push(temperature);
+    filters.push(`l.temperature=$${values.length}`);
+  }
+  const assignment = request.nextUrl.searchParams.get("assignment");
+  if (assignment) {
+    if (!["assigned", "unassigned"].includes(assignment)) {
+      return NextResponse.json(
+        { error: "assignment must be assigned or unassigned" },
+        { status: 400 },
+      );
+    }
+    filters.push(
+      assignment === "assigned"
+        ? "(l.current_owner_user_id IS NOT NULL OR l.current_team_id IS NOT NULL)"
+        : "(l.current_owner_user_id IS NULL AND l.current_team_id IS NULL)",
+    );
+  }
   for (const field of [
     "current_owner_user_id",
     "current_team_id",
@@ -71,11 +96,44 @@ export async function GET(request: NextRequest) {
       `(c.first_name ILIKE $${values.length} OR c.last_name ILIKE $${values.length} OR c.email ILIKE $${values.length} OR c.phone_number ILIKE $${values.length})`,
     );
   }
+  const sortOptions: Record<string, string> = {
+    newest: "l.created_at DESC, l.lead_id DESC",
+    oldest: "l.created_at ASC, l.lead_id ASC",
+    recently_updated: "l.updated_at DESC, l.lead_id DESC",
+    name_asc:
+      "LOWER(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')) ASC, l.lead_id ASC",
+    name_desc:
+      "LOWER(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')) DESC, l.lead_id DESC",
+    budget_high: "l.budget DESC NULLS LAST, l.lead_id DESC",
+    budget_low: "l.budget ASC NULLS LAST, l.lead_id ASC",
+  };
+  const sort = request.nextUrl.searchParams.get("sort") || "newest";
+  const orderBy = sortOptions[sort];
+  if (!orderBy) {
+    return NextResponse.json({ error: "Invalid lead sort" }, { status: 400 });
+  }
   const where = `WHERE ${filters.join(" AND ")}`;
   try {
     const count = await pool.query(
       `SELECT COUNT(*)::integer AS total FROM leads l
        JOIN contacts c ON c.contact_id=l.contact_id ${where}`,
+      values,
+    );
+    const summary = await pool.query(
+      `SELECT
+         COUNT(*)::integer AS total,
+         COUNT(*) FILTER (WHERE l.status = 'qualified')::integer AS qualified,
+         COUNT(*) FILTER (WHERE l.temperature = 'hot')::integer AS hot,
+         COUNT(*) FILTER (
+           WHERE na.status = 'pending' AND na.due_at <= CURRENT_TIMESTAMP
+         )::integer AS needs_follow_up,
+         COUNT(*) FILTER (
+           WHERE l.current_owner_user_id IS NULL AND l.current_team_id IS NULL
+         )::integer AS unassigned
+       FROM leads l
+       JOIN contacts c ON c.contact_id=l.contact_id
+       LEFT JOIN lead_next_actions na ON na.lead_id=l.lead_id
+       ${where}`,
       values,
     );
     const listValues = [...values, pagination.limit, pagination.offset];
@@ -84,13 +142,21 @@ export async function GET(request: NextRequest) {
               s.stage_key, s.stage_name
        FROM leads l JOIN contacts c ON c.contact_id=l.contact_id
        LEFT JOIN project_lead_stages s ON s.stage_id=l.stage_id
-       ${where} ORDER BY l.created_at DESC, l.lead_id DESC
+       ${where} ORDER BY ${orderBy}
        LIMIT $${listValues.length - 1} OFFSET $${listValues.length}`,
       listValues,
     );
     const total = Number(count.rows[0]?.total ?? 0);
+    const summaryRow = summary.rows[0] ?? {};
     return NextResponse.json({
       leads: result.rows,
+      summary: {
+        total: Number(summaryRow.total ?? 0),
+        qualified: Number(summaryRow.qualified ?? 0),
+        hot: Number(summaryRow.hot ?? 0),
+        needsFollowUp: Number(summaryRow.needs_follow_up ?? 0),
+        unassigned: Number(summaryRow.unassigned ?? 0),
+      },
       pagination: {
         page: pagination.page,
         limit: pagination.limit,
