@@ -20,11 +20,13 @@ export function AuthShell({
 
   return (
     <main className="min-h-dvh overflow-x-hidden bg-black text-white">
-      <div className="auth-layout grid min-h-dvh w-full">
-        <aside className="auth-panel relative flex min-h-[230px] overflow-hidden rounded-b-2xl px-5 py-6 sm:min-h-[260px] sm:px-8 sm:py-8 lg:sticky lg:top-0 lg:h-dvh lg:min-h-[640px] lg:rounded-none lg:px-[clamp(28px,3vw,56px)] lg:py-[clamp(28px,5vh,64px)]">
+      <div className="grid min-h-dvh w-full lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <aside className="relative flex min-h-[230px] overflow-hidden rounded-b-2xl bg-[radial-gradient(circle_at_16%_10%,rgba(55,151,127,0.42),transparent_34%),linear-gradient(140deg,#1b6151_2%,#09231a_31%,#175243_65%,#124235_82%,#1b6151_100%)] px-5 py-6 sm:min-h-[260px] sm:px-8 sm:py-8 lg:sticky lg:top-0 lg:h-dvh lg:min-h-[640px] lg:rounded-none lg:px-[clamp(28px,3vw,56px)] lg:py-[clamp(28px,5vh,64px)]">
           <div
-            className={`auth-panel-content mt-auto w-full ${
-              stepLabels.length === 2 ? "auth-panel-content--two-step" : ""
+            className={`mt-auto w-full ${
+              stepLabels.length === 2
+                ? "lg:max-w-[min(100%,420px)]"
+                : "lg:max-w-[669px]"
             }`}
           >
             <h2 className="mb-5 max-w-[280px] font-heading text-[30px] leading-[0.95] font-medium tracking-[-0.01em] sm:text-4xl lg:text-[40px]">
@@ -68,8 +70,7 @@ export function AuthShell({
                     {active && stepLabels.length === 3 && (
                       <span className="mt-2 h-[7px] overflow-hidden rounded-full bg-[#3f3a3a]">
                         <span
-                          className="block h-full rounded-full bg-[#2aa284]"
-                          style={{ width: `${Math.round((step / 3) * 100)}%` }}
+                          className={`block h-full rounded-full bg-[#2aa284] ${step === 1 ? "w-1/3" : step === 2 ? "w-2/3" : "w-full"}`}
                         />
                       </span>
                     )}
@@ -80,7 +81,7 @@ export function AuthShell({
           </div>
         </aside>
 
-        <section className="auth-content flex min-w-0 items-center justify-center px-5 py-8 sm:px-8 sm:py-10 lg:justify-start lg:px-[clamp(40px,5vw,80px)] lg:py-12">
+        <section className="flex min-w-0 items-center justify-center px-5 py-8 sm:px-8 sm:py-10 lg:justify-start lg:px-[clamp(40px,5vw,80px)] lg:py-12">
           <div className="flex w-full max-w-[620px] flex-col">
             <header>
               <h1 className="font-heading text-[32px] leading-tight font-medium tracking-[-0.01em] sm:text-4xl lg:text-[40px]">

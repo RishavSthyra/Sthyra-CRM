@@ -70,6 +70,8 @@ export async function POST(request: NextRequest, context: Context) {
         { status: 422 },
       );
     }
+    const outcome = reason.rows[0].outcome as string;
+    const defaultTerminalStageKey = outcome === "won" ? "won" : "lost";
     let stage;
     if (typeof body.stage_key === "string") {
       stage = await getProjectStage(
@@ -80,8 +82,12 @@ export async function POST(request: NextRequest, context: Context) {
     } else {
       stage = (
         await client.query(
-          "SELECT stage_id, stage_key, is_terminal FROM project_lead_stages WHERE project_id=$1 AND is_active=TRUE AND is_terminal=TRUE ORDER BY position LIMIT 1",
-          [lead.project_id],
+          `SELECT stage_id, stage_key, is_terminal
+           FROM project_lead_stages
+           WHERE project_id=$1 AND is_active=TRUE AND is_terminal=TRUE
+           ORDER BY (stage_key=$2) DESC, position
+           LIMIT 1`,
+          [lead.project_id, defaultTerminalStageKey],
         )
       ).rows[0];
     }
@@ -89,6 +95,18 @@ export async function POST(request: NextRequest, context: Context) {
       await client.query("ROLLBACK");
       return NextResponse.json(
         { error: "A terminal project stage is required" },
+        { status: 422 },
+      );
+    }
+    if (
+      ["won", "lost"].includes(stage.stage_key as string) &&
+      stage.stage_key !== defaultTerminalStageKey
+    ) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        {
+          error: `Select the ${defaultTerminalStageKey} stage for this closing reason`,
+        },
         { status: 422 },
       );
     }
@@ -105,7 +123,7 @@ export async function POST(request: NextRequest, context: Context) {
       },
       {
         closing_reason_id: body.closing_reason_id,
-        outcome: reason.rows[0].outcome,
+        outcome,
       },
     );
     await client.query("COMMIT");

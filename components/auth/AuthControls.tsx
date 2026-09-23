@@ -18,7 +18,7 @@ export function AuthField({ label, id, className = "", ...props }: FieldProps) {
         {label}
       </span>
       <input
-        className="h-12 w-full rounded-[10px] border border-[#342e2e] bg-[#222]/20 px-3 text-sm text-white outline-none transition placeholder:text-white/40 focus:border-[#2aa284] focus:ring-2 focus:ring-[#2aa284]/20"
+        className="h-12 w-full rounded-[10px] border border-[#342e2e] bg-[#222]/20 px-3 text-sm text-white outline-none transition [color-scheme:dark] placeholder:text-white/40 focus:border-[#2aa284] focus:ring-2 focus:ring-[#2aa284]/20"
         id={id}
         {...props}
       />
@@ -84,7 +84,7 @@ export function AuthSelect({
         {label}
       </span>
       <select
-        className="auth-select h-12 w-full appearance-none rounded-[10px] border border-[#342e2e] bg-[#070707] px-3 pr-11 text-sm text-white outline-none transition focus:border-[#2aa284] focus:ring-2 focus:ring-[#2aa284]/20"
+        className="h-12 w-full appearance-none rounded-[10px] border border-[#342e2e] bg-[#070707] bg-[url('/auth/chevron.svg')] bg-[length:20px_20px] bg-[position:right_14px_center] bg-no-repeat px-3 pr-11 text-sm text-white outline-none transition focus:border-[#2aa284] focus:ring-2 focus:ring-[#2aa284]/20"
         id={id}
         name={name}
         onChange={onChange}
@@ -106,7 +106,7 @@ export function SubmitButton({
 }) {
   return (
     <button
-      className="auth-submit flex h-[52px] w-full items-center gap-2 rounded-[10px] px-4 text-left text-[15px] font-medium shadow-[0_4px_35px_rgba(0,0,0,0.22)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+      className="flex h-[52px] w-full items-center gap-2 rounded-[10px] bg-[linear-gradient(90deg,#1b6151_0%,#266756_25%,#0a261c_100%)] px-4 text-left text-[15px] font-medium shadow-[inset_0_4px_50px_rgba(0,0,0,0.25),0_4px_50px_rgba(0,0,0,0.25)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
       disabled={pending}
       type="submit"
     >

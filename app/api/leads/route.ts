@@ -1,15 +1,43 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { authenticateRequest } from "@/lib/auth";
 import {
   createLead,
   LeadReferenceError,
   validateLeadPayload,
 } from "@/lib/leads";
 import { isUuid } from "@/lib/permissions";
+import {
+  canAccessProject,
+  getAccessibleProjectIds,
+  getUserProjectAccess,
+} from "@/lib/projectAccess";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 import { parsePagination } from "@/utils/parsePagination";
 
 export async function GET(request: NextRequest) {
+  const authentication = await authenticateRequest(request);
+  if (!authentication.ok) return authentication.response;
+
+  let projectAccess;
+  try {
+    projectAccess = await getUserProjectAccess(
+      authentication.auth.user.user_id,
+    );
+  } catch (error) {
+    console.error("Failed to resolve lead project access", error);
+    return NextResponse.json(
+      { error: "Unable to resolve project access" },
+      { status: 500 },
+    );
+  }
+  if (!projectAccess) {
+    return NextResponse.json(
+      { error: "Your account is not connected to an active company" },
+      { status: 403 },
+    );
+  }
+
   const pagination = parsePagination(request.nextUrl.searchParams);
   if (!pagination.ok) {
     return NextResponse.json({ error: pagination.error }, { status: 400 });
@@ -17,7 +45,7 @@ export async function GET(request: NextRequest) {
   const values: unknown[] = [];
   const filters = ["1=1"];
   const projectValue = request.nextUrl.searchParams.get("project_id");
-  if (projectValue !== null) {
+  if (projectValue !== null && projectValue !== "all") {
     const projectId = parsePositiveInteger(projectValue);
     if (!projectId) {
       return NextResponse.json(
@@ -25,8 +53,22 @@ export async function GET(request: NextRequest) {
         { status: 400 },
       );
     }
+    if (!canAccessProject(projectAccess, projectId)) {
+      return NextResponse.json(
+        { error: "You do not have access to this project" },
+        { status: 403 },
+      );
+    }
     values.push(projectId);
     filters.push(`l.project_id=$${values.length}`);
+  } else {
+    const projectIds = getAccessibleProjectIds(projectAccess);
+    if (projectIds.length === 0) {
+      filters.push("FALSE");
+    } else {
+      values.push(projectIds);
+      filters.push(`l.project_id=ANY($${values.length}::integer[])`);
+    }
   }
   const statuses = [
     "active",
@@ -46,6 +88,26 @@ export async function GET(request: NextRequest) {
     }
     values.push(status);
     filters.push(`l.status=$${values.length}`);
+  }
+  const stageKey = request.nextUrl.searchParams.get("stage_key");
+  if (stageKey) {
+    if (!/^[a-z0-9]+(?:_[a-z0-9]+)*$/.test(stageKey)) {
+      return NextResponse.json(
+        {
+          error:
+            "stage_key must use lowercase letters, numbers, and underscores",
+        },
+        { status: 400 },
+      );
+    }
+    values.push(stageKey);
+    filters.push(
+      `EXISTS (
+        SELECT 1 FROM project_lead_stages stage_filter
+        WHERE stage_filter.stage_id=l.stage_id
+          AND stage_filter.stage_key=$${values.length}
+      )`,
+    );
   }
   const temperature = request.nextUrl.searchParams.get("temperature");
   if (temperature) {
@@ -139,8 +201,10 @@ export async function GET(request: NextRequest) {
     const listValues = [...values, pagination.limit, pagination.offset];
     const result = await pool.query(
       `SELECT l.*, c.first_name, c.last_name, c.email, c.phone_number,
+              p.project_code, p.project_name,
               s.stage_key, s.stage_name
        FROM leads l JOIN contacts c ON c.contact_id=l.contact_id
+       JOIN projects p ON p.project_id=l.project_id
        LEFT JOIN project_lead_stages s ON s.stage_id=l.stage_id
        ${where} ORDER BY ${orderBy}
        LIMIT $${listValues.length - 1} OFFSET $${listValues.length}`,
@@ -174,6 +238,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const authentication = await authenticateRequest(request);
+  if (!authentication.ok) return authentication.response;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -188,6 +255,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { error: "Validation failed", details: validation.errors },
       { status: 422 },
+    );
+  }
+  let projectAccess;
+  try {
+    projectAccess = await getUserProjectAccess(
+      authentication.auth.user.user_id,
+    );
+  } catch (error) {
+    console.error("Failed to resolve lead project access", error);
+    return NextResponse.json(
+      { error: "Unable to resolve project access" },
+      { status: 500 },
+    );
+  }
+  if (
+    !projectAccess ||
+    !validation.data.project_id ||
+    !canAccessProject(projectAccess, validation.data.project_id)
+  ) {
+    return NextResponse.json(
+      { error: "You do not have access to this project" },
+      { status: 403 },
     );
   }
   const client = await pool.connect();

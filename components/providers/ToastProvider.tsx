@@ -8,12 +8,8 @@ export function ToastProvider() {
       position="top-right"
       toastOptions={{
         duration: 3500,
-        style: {
-          background: "#161616",
-          border: "1px solid #343434",
-          color: "#ffffff",
-          fontSize: "14px",
-        },
+        className:
+          "!rounded-xl !border !border-[#343434] !bg-[#161616] !text-sm !text-white !shadow-2xl",
         success: {
           iconTheme: { primary: "#2aa284", secondary: "#ffffff" },
         },

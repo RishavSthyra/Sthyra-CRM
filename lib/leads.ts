@@ -1,6 +1,8 @@
 import type { PoolClient } from "pg";
+import { startSlaInstancesForLead } from "@/lib/assignmentService";
 import { addOwnershipHistory } from "@/lib/leadHistory";
 import { isUuid } from "@/lib/permissions";
+import { applyRoutingForLead } from "@/lib/routingService";
 import { isObject } from "@/utils/isObject";
 import { validateText } from "@/utils/validateText";
 
@@ -83,8 +85,7 @@ export type LeadWrite = Partial<{
 }>;
 
 type ValidationResult =
-  | { ok: true; data: LeadWrite }
-  | { ok: false; errors: string[] };
+  { ok: true; data: LeadWrite } | { ok: false; errors: string[] };
 
 function validateUuidField(
   value: unknown,
@@ -438,5 +439,7 @@ export async function createLead(
       intake_event_id: intakeEventId,
     },
   );
+  await startSlaInstancesForLead(client, created);
+  await applyRoutingForLead(client, created);
   return created;
 }

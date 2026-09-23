@@ -29,7 +29,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${inter.variable} ${geistMono.variable} ${bricolage.variable} h-full antialiased`}
     >
-      <body className="flex min-h-full flex-col">
+      <body className="flex min-h-full flex-col bg-black font-[var(--font-inter),Arial,Helvetica,sans-serif] text-white">
         {children}
         <ToastProvider />
       </body>

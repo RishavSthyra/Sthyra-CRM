@@ -14,6 +14,23 @@ export async function getApiError(response: Response): Promise<string> {
   );
 }
 
+let refreshPromise: Promise<boolean> | null = null;
+
+async function refreshSession(): Promise<boolean> {
+  if (!refreshPromise) {
+    refreshPromise = fetch("/api/auth/refresh", {
+      method: "POST",
+      credentials: "include",
+    })
+      .then((response) => response.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
 export async function fetchWithSession(
   input: RequestInfo | URL,
   init?: RequestInit,
@@ -26,11 +43,8 @@ export async function fetchWithSession(
     return response;
   }
 
-  const refreshed = await fetch("/api/auth/refresh", {
-    method: "POST",
-    credentials: "include",
-  });
-  if (!refreshed.ok) {
+  const refreshed = await refreshSession();
+  if (!refreshed) {
     return response;
   }
   return fetch(input, { ...init, credentials: "include" });

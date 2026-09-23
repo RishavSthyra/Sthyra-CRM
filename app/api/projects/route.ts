@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 import pool from "@/lib/db";
+import { DEFAULT_PROJECT_LEAD_STAGES } from "@/lib/defaultLeadStages";
 import {
   getProjectDatabaseErrorCode,
   isProjectStatus,
@@ -9,9 +9,9 @@ import {
   serializeProject,
   validateProjectPayload,
 } from "@/lib/projects";
+import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 
 export async function GET(request: NextRequest) {
-
   const parameters = request.nextUrl.searchParams;
   const page = parsePositiveInteger(parameters.get("page"), 1);
   const limit = parsePositiveInteger(parameters.get("limit"), 50);
@@ -21,7 +21,10 @@ export async function GET(request: NextRequest) {
 
   if (page === null || limit === null || limit > 100) {
     return NextResponse.json(
-      { error: "page and limit must be positive integers; limit cannot exceed 100" },
+      {
+        error:
+          "page and limit must be positive integers; limit cannot exceed 100",
+      },
       { status: 400 },
     );
   }
@@ -53,7 +56,7 @@ export async function GET(request: NextRequest) {
 
   const filters: string[] = [];
   const values: unknown[] = [];
-  
+
   const addFilter = (clause: string, value: unknown) => {
     values.push(value);
     filters.push(clause.replace("?", `$${values.length}`));
@@ -79,7 +82,8 @@ export async function GET(request: NextRequest) {
   if (status) addFilter("p.project_status = ?", status);
   if (type) addFilter("p.project_type = ?", type);
 
-  const whereClause = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
+  const whereClause =
+    filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
   const offset = (page - 1) * limit;
 
   try {
@@ -219,13 +223,30 @@ export async function POST(request: NextRequest) {
       ],
     );
 
+    const projectId = insertResult.rows[0].project_id as number;
+    for (const [index, stage] of DEFAULT_PROJECT_LEAD_STAGES.entries()) {
+      await client.query(
+        `INSERT INTO project_lead_stages (
+          project_id, stage_key, stage_name, position, is_initial, is_terminal
+        ) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          projectId,
+          stage.stage_key,
+          stage.stage_name,
+          index + 1,
+          stage.is_initial,
+          stage.is_terminal,
+        ],
+      );
+    }
+
     const result = await client.query(
       `SELECT ${PROJECT_COLUMNS}
        FROM projects p
        JOIN companies c ON c.company_id = p.company_id
        JOIN regions r ON r.region_id = p.region_id
        WHERE p.project_id = $1`,
-      [insertResult.rows[0].project_id],
+      [projectId],
     );
 
     await client.query("COMMIT");
