@@ -29,7 +29,9 @@ import {
   ListTree,
   LoaderCircle,
   Mail,
+  MapPin,
   Megaphone,
+  Pencil,
   Plus,
   Route,
   Search,
@@ -70,12 +72,14 @@ type Section =
   | "security"
   | "company"
   | "projects"
+  | "regions"
   | "people"
   | "sources"
   | "campaigns"
   | "tags"
   | "lead-configuration"
   | "lead-stages"
+  | "opportunity-stages"
   | "qualification-fields"
   | "closing-reasons"
   | "queues"
@@ -122,6 +126,11 @@ const companySections: { id: Section; label: string; description: string }[] = [
     description: "Developments and project workspaces",
   },
   {
+    id: "regions",
+    label: "Regions",
+    description: "Markets and project locations",
+  },
+  {
     id: "people",
     label: "People & access",
     description: "Users, teams and roles",
@@ -143,7 +152,12 @@ const projectSections: { id: Section; label: string; description: string }[] = [
   {
     id: "lead-stages",
     label: "Lead stages",
-    description: "Lifecycle pipeline",
+    description: "Pre-conversion lifecycle",
+  },
+  {
+    id: "opportunity-stages",
+    label: "Opportunity stages",
+    description: "Post-qualification sales pipeline",
   },
   {
     id: "qualification-fields",
@@ -323,6 +337,7 @@ function ListTable({
               key={String(
                 row.id ??
                   row.user_id ??
+                  row.region_id ??
                   row.team_id ??
                   row.role_id ??
                   row.source_id ??
@@ -355,12 +370,14 @@ const settingsSectionIcons: Record<Section, LucideIcon> = {
   security: ShieldCheck,
   company: Building2,
   projects: FolderKanban,
+  regions: MapPin,
   people: UsersRound,
   sources: Funnel,
   campaigns: Megaphone,
   tags: Tag,
   "lead-configuration": SlidersHorizontal,
   "lead-stages": ListTree,
+  "opportunity-stages": FolderKanban,
   "qualification-fields": ClipboardList,
   "closing-reasons": CheckCircle2,
   queues: Inbox,
@@ -404,6 +421,7 @@ export function SettingsWorkspace() {
   const [tags, setTags] = useState<Row[]>([]);
   const [leadConfiguration, setLeadConfiguration] = useState<Row>({});
   const [stages, setStages] = useState<Row[]>([]);
+  const [opportunityStages, setOpportunityStages] = useState<Row[]>([]);
   const [qualificationFields, setQualificationFields] = useState<Row[]>([]);
   const [closingReasons, setClosingReasons] = useState<Row[]>([]);
   const [queues, setQueues] = useState<Row[]>([]);
@@ -431,6 +449,7 @@ export function SettingsWorkspace() {
       const [
         configurationData,
         stagesData,
+        opportunityStagesData,
         fieldsData,
         reasonsData,
         queueData,
@@ -439,6 +458,7 @@ export function SettingsWorkspace() {
       ] = await Promise.all([
         api(`/api/projects/${projectId}/lead-configuration`),
         api(`/api/projects/${projectId}/lead-stages`),
+        api(`/api/projects/${projectId}/opportunity-stages`),
         api(`/api/projects/${projectId}/qualification-fields`),
         api(`/api/projects/${projectId}/closing-reasons`),
         api(`/api/queues?project_id=${projectId}&limit=100`),
@@ -447,6 +467,7 @@ export function SettingsWorkspace() {
       ]);
       setLeadConfiguration((configurationData.configuration as Row) ?? {});
       setStages((stagesData.stages as Row[]) ?? []);
+      setOpportunityStages((opportunityStagesData.stages as Row[]) ?? []);
       setQualificationFields((fieldsData.fields as Row[]) ?? []);
       setClosingReasons((reasonsData.reasons as Row[]) ?? []);
       setQueues((queueData.queues as Row[]) ?? []);
@@ -500,12 +521,19 @@ export function SettingsWorkspace() {
         : (contextProjects[0]?.project_id ?? null);
       setSelectedProjectId(projectId);
       const companyId = nextContext.company.company_id;
-      const core = await Promise.all([
-        api(`/api/companies/${companyId}`),
-        api(`/api/users/${String(nextUser.user_id)}/availability`),
+      const [core, regionData] = await Promise.all([
+        Promise.all([
+          api(`/api/companies/${companyId}`),
+          api(`/api/users/${String(nextUser.user_id)}/availability`),
+        ]),
+        api("/api/regions?includeInactive=true&limit=100").catch((error) => {
+          console.error("Failed to load project regions", error);
+          return { regions: [] };
+        }),
       ]);
       setCompany((core[0].company as Row) ?? {});
       setAvailability((core[1].availability as Row) ?? {});
+      setRegions((regionData.regions as Row[]) ?? []);
       if (nextContext.can_view_all_projects) {
         const adminResults = await Promise.allSettled([
           api("/api/users?limit=100"),
@@ -519,7 +547,6 @@ export function SettingsWorkspace() {
           api(
             `/api/projects?companyCode=${encodeURIComponent(nextContext.company.company_code)}&includeInactive=true&limit=100`,
           ),
-          api("/api/regions?includeInactive=true&limit=100"),
           api("/api/invitations?status=pending"),
         ]);
         const payload = (index: number) =>
@@ -551,8 +578,7 @@ export function SettingsWorkspace() {
         setCampaigns((payload(4)?.campaigns as Row[]) ?? []);
         setTags((payload(5)?.tags as Row[]) ?? []);
         setProjects(projectsWithContext);
-        setRegions((payload(7)?.regions as Row[]) ?? []);
-        setInvitations((payload(8)?.invitations as Row[]) ?? []);
+        setInvitations((payload(7)?.invitations as Row[]) ?? []);
         const failedRequests = adminResults.filter(
           (result) => result.status === "rejected",
         );
@@ -775,7 +801,7 @@ export function SettingsWorkspace() {
                       : "w-full max-w-[1120px] p-6 sm:p-8"
                   }
                 >
-                  {section !== "people" && (
+                  {section !== "people" && section !== "profile" && (
                     <div className="mb-7">
                       <h1 className="font-[var(--font-bricolage)] text-[26px] font-medium tracking-[-0.02em] text-[#f1f4f3]">
                         {currentDefinition?.label}
@@ -795,6 +821,7 @@ export function SettingsWorkspace() {
                     company={company}
                     context={context}
                     leadConfiguration={leadConfiguration}
+                    opportunityStages={opportunityStages}
                     invitations={invitations}
                     loadAll={loadAll}
                     loadProject={loadProject}
@@ -812,6 +839,7 @@ export function SettingsWorkspace() {
                     setAvailability={setAvailability}
                     setClosingReasons={setClosingReasons}
                     setLeadConfiguration={setLeadConfiguration}
+                    setOpportunityStages={setOpportunityStages}
                     setPreferences={setPreferences}
                     setQualificationFields={setQualificationFields}
                     setSessions={setSessions}
@@ -845,6 +873,7 @@ type PanelProps = {
   company: Row;
   context: ContextData | null;
   leadConfiguration: Row;
+  opportunityStages: Row[];
   invitations: Row[];
   loadAll: () => Promise<void>;
   loadProject: (projectId: number) => Promise<void>;
@@ -868,6 +897,7 @@ type PanelProps = {
   setAvailability: (row: Row) => void;
   setClosingReasons: (rows: Row[]) => void;
   setLeadConfiguration: (row: Row) => void;
+  setOpportunityStages: (rows: Row[]) => void;
   setPreferences: (row: Row) => void;
   setQualificationFields: (rows: Row[]) => void;
   setSessions: (rows: Row[]) => void;
@@ -885,13 +915,15 @@ type PanelProps = {
 function SettingsPanel(props: PanelProps) {
   const projectId = props.selectedProject?.project_id;
   if (props.section === "profile") return <ProfilePanel {...props} />;
-  if (props.section === "email-accounts") return <EmailAccountsPanel {...props} />;
+  if (props.section === "email-accounts")
+    return <EmailAccountsPanel {...props} />;
   if (props.section === "notifications")
     return <NotificationPanel {...props} />;
   if (props.section === "availability") return <AvailabilityPanel {...props} />;
   if (props.section === "security") return <SecurityPanel {...props} />;
   if (props.section === "company") return <CompanyPanel {...props} />;
   if (props.section === "projects") return <ProjectsPanel {...props} />;
+  if (props.section === "regions") return <RegionsPanel {...props} />;
   if (props.section === "people") return <PeoplePanel {...props} />;
   if (props.section === "sources")
     return <CatalogPanel {...props} kind="sources" rows={props.sources} />;
@@ -905,6 +937,8 @@ function SettingsPanel(props: PanelProps) {
     return <LeadConfigurationPanel {...props} projectId={projectId} />;
   if (props.section === "lead-stages")
     return <StagesPanel {...props} projectId={projectId} />;
+  if (props.section === "opportunity-stages")
+    return <OpportunityStagesPanel {...props} projectId={projectId} />;
   if (props.section === "qualification-fields")
     return <QualificationPanel {...props} projectId={projectId} />;
   if (props.section === "closing-reasons")
@@ -961,7 +995,11 @@ function EmailAccountsPanel(props: PanelProps) {
       const payload = await api("/api/email-connections");
       setConnections((payload.connections as EmailConnectionRow[]) ?? []);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to load email accounts");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Unable to load email accounts",
+      );
     } finally {
       setLoadingConnections(false);
     }
@@ -970,8 +1008,10 @@ function EmailAccountsPanel(props: PanelProps) {
   useEffect(() => {
     const timeout = window.setTimeout(() => void loadConnections(), 0);
     const params = new URLSearchParams(window.location.search);
-    if (params.get("mailbox_connected")) toast.success("Email account connected");
-    if (params.get("mailbox_error")) toast.error("Email account connection failed");
+    if (params.get("mailbox_connected"))
+      toast.success("Email account connected");
+    if (params.get("mailbox_error"))
+      toast.error("Email account connection failed");
     return () => window.clearTimeout(timeout);
   }, [loadConnections]);
 
@@ -993,7 +1033,11 @@ function EmailAccountsPanel(props: PanelProps) {
       toast.success(String(result.message || "Email account updated"));
       await loadConnections();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to update email account");
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Unable to update email account",
+      );
     } finally {
       setConnectionBusy(null);
     }
@@ -1037,10 +1081,18 @@ function EmailAccountsPanel(props: PanelProps) {
                   <span className="relative flex size-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.05]">
                     {connection.provider === "google" ? (
                       <span className="relative size-4 overflow-hidden">
-                        <Image alt="" fill sizes="16px" src="/auth/google.png" />
+                        <Image
+                          alt=""
+                          fill
+                          sizes="16px"
+                          src="/auth/google.png"
+                        />
                       </span>
                     ) : (
-                      <span aria-hidden className="grid size-4 grid-cols-2 gap-[1.5px]">
+                      <span
+                        aria-hidden
+                        className="grid size-4 grid-cols-2 gap-[1.5px]"
+                      >
                         <i className="bg-[#f35325]" />
                         <i className="bg-[#81bc06]" />
                         <i className="bg-[#05a6f0]" />
@@ -1056,8 +1108,12 @@ function EmailAccountsPanel(props: PanelProps) {
                       <i className="size-1.5 shrink-0 rounded-full bg-[#45b892]" />
                     </span>
                     <small className="mt-1 block truncate text-[9px] text-[#69716e]">
-                      {connection.provider === "google" ? "Google Workspace" : "Microsoft 365"}
-                      {connection.display_name ? ` · ${connection.display_name}` : ""}
+                      {connection.provider === "google"
+                        ? "Google Workspace"
+                        : "Microsoft 365"}
+                      {connection.display_name
+                        ? ` · ${connection.display_name}`
+                        : ""}
                     </small>
                   </span>
                   {connection.is_default ? (
@@ -1067,8 +1123,15 @@ function EmailAccountsPanel(props: PanelProps) {
                   ) : (
                     <button
                       className="px-2 py-1 text-[9px] font-medium text-[#9aa19e] transition hover:text-white disabled:opacity-50"
-                      disabled={connectionBusy === connection.email_connection_id}
-                      onClick={() => void updateConnection(connection.email_connection_id, "PATCH")}
+                      disabled={
+                        connectionBusy === connection.email_connection_id
+                      }
+                      onClick={() =>
+                        void updateConnection(
+                          connection.email_connection_id,
+                          "PATCH",
+                        )
+                      }
                       type="button"
                     >
                       Make default
@@ -1078,7 +1141,12 @@ function EmailAccountsPanel(props: PanelProps) {
                     aria-label={`Disconnect ${connection.email_address}`}
                     className="flex size-8 items-center justify-center rounded-lg text-[#777f7c] transition hover:bg-red-400/[0.08] hover:text-red-300 disabled:opacity-50"
                     disabled={connectionBusy === connection.email_connection_id}
-                    onClick={() => void updateConnection(connection.email_connection_id, "DELETE")}
+                    onClick={() =>
+                      void updateConnection(
+                        connection.email_connection_id,
+                        "DELETE",
+                      )
+                    }
                     title="Disconnect account"
                     type="button"
                   >
@@ -1103,7 +1171,6 @@ function EmailAccountsPanel(props: PanelProps) {
             </div>
           )}
         </div>
-
       </section>
 
       {connectOpen && (
@@ -1118,8 +1185,12 @@ function EmailAccountsPanel(props: PanelProps) {
           <div className="w-full max-w-[430px] overflow-hidden rounded-2xl border border-white/[0.11] bg-[#121513] shadow-[0_30px_100px_rgba(0,0,0,0.68)]">
             <div className="flex items-start justify-between gap-4 border-b border-white/[0.08] px-5 py-4">
               <div>
-                <h3 className="text-sm font-semibold text-[#f2f4f3]">Connect your work email</h3>
-                <p className="mt-1 text-[10px] text-[#777f7c]">Select the provider that hosts your mailbox.</p>
+                <h3 className="text-sm font-semibold text-[#f2f4f3]">
+                  Connect your work email
+                </h3>
+                <p className="mt-1 text-[10px] text-[#777f7c]">
+                  Select the provider that hosts your mailbox.
+                </p>
               </div>
               <button
                 aria-label="Close"
@@ -1133,7 +1204,9 @@ function EmailAccountsPanel(props: PanelProps) {
             <div className="space-y-2 p-5">
               <button
                 className="relative flex h-12 w-full items-center justify-center rounded-lg border border-[#d9dcda] bg-white px-12 text-[11px] font-semibold text-[#252725] transition hover:bg-[#f3f4f3]"
-                onClick={() => router.push("/api/email-connections/google/start")}
+                onClick={() =>
+                  router.push("/api/email-connections/google/start")
+                }
                 type="button"
               >
                 <span className="absolute left-4 size-[18px] overflow-hidden">
@@ -1143,10 +1216,15 @@ function EmailAccountsPanel(props: PanelProps) {
               </button>
               <button
                 className="relative flex h-12 w-full items-center justify-center rounded-lg border border-white/[0.13] bg-[#1b1e1c] px-12 text-[11px] font-semibold text-[#eef1ef] transition hover:border-white/20 hover:bg-[#222624]"
-                onClick={() => router.push("/api/email-connections/microsoft/start")}
+                onClick={() =>
+                  router.push("/api/email-connections/microsoft/start")
+                }
                 type="button"
               >
-                <span aria-hidden className="absolute left-4 grid size-[17px] grid-cols-2 gap-[1.5px]">
+                <span
+                  aria-hidden
+                  className="absolute left-4 grid size-[17px] grid-cols-2 gap-[1.5px]"
+                >
                   <i className="bg-[#f35325]" />
                   <i className="bg-[#81bc06]" />
                   <i className="bg-[#05a6f0]" />
@@ -1164,6 +1242,27 @@ function EmailAccountsPanel(props: PanelProps) {
 
 function ProfilePanel(props: PanelProps) {
   const [form, setForm] = useState<Row>(props.user);
+  const [editing, setEditing] = useState(false);
+  const fullName = [
+    value(props.user, "first_name"),
+    value(props.user, "last_name"),
+  ]
+    .filter((part) => part !== "—")
+    .join(" ");
+  const initials =
+    [props.user.first_name, props.user.last_name]
+      .filter(Boolean)
+      .map((part) => String(part).slice(0, 1).toUpperCase())
+      .join("") || "U";
+  const role =
+    props.context?.role_key.replaceAll("_", " ") ?? "Workspace member";
+  const shortId = String(props.user.user_id ?? "").slice(0, 8);
+
+  const cancelEditing = () => {
+    setForm(props.user);
+    setEditing(false);
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const result = await props.save(
@@ -1178,17 +1277,60 @@ function ProfilePanel(props: PanelProps) {
       },
       "Profile updated",
     );
-    if (result?.user) props.setUser(result.user as Row);
+    if (result?.user) {
+      props.setUser(result.user as Row);
+      setForm(result.user as Row);
+      setEditing(false);
+    }
   };
+
   return (
-    <Card
-      title="Personal details"
-      description="This information identifies you throughout the workspace."
-    >
-      <form className={settingsUi.form} onSubmit={submit}>
-        <div className={settingsUi.grid}>
+    <div className="pb-6">
+      <section className="flex items-center gap-5 border-b border-white/[0.08] pb-7 max-[640px]:items-start max-[640px]:flex-wrap">
+        <div className="grid size-[76px] shrink-0 place-items-center rounded-full border border-white/[0.1] bg-[linear-gradient(145deg,#286f59,#163d32)] text-xl font-semibold text-white shadow-[0_12px_30px_rgba(0,0,0,.3)]">
+          {initials}
+        </div>
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate font-[var(--font-bricolage)] text-[28px] font-semibold tracking-[-0.025em] text-[#f3f5f4]">
+            {fullName || value(props.user, "username")}
+          </h1>
+          <p className="mt-1 text-[12px] text-[#c1c6c3] capitalize">
+            {role}
+            {shortId ? ` · ID: ${shortId}` : ""}
+          </p>
+          <p className="mt-1.5 text-[11px] text-[#747c78]">
+            {props.context?.company.company_name ?? "Workspace"}
+            {props.availability.timezone
+              ? ` · ${String(props.availability.timezone)}`
+              : ""}
+          </p>
+        </div>
+        {!editing && (
+          <button
+            className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-[#287b63] px-4 text-xs font-semibold text-white transition hover:bg-[#319174]"
+            onClick={() => setEditing(true)}
+            type="button"
+          >
+            <Pencil className="size-3.5" aria-hidden />
+            Edit details
+          </button>
+        )}
+      </section>
+
+      <form className="pt-7" onSubmit={submit}>
+        <div className="mb-6 border-b border-white/[0.08] pb-5">
+          <h2 className="font-[var(--font-bricolage)] text-lg font-semibold text-[#eef1ef]">
+            Personal information
+          </h2>
+          <p className="mt-1 text-[12px] text-[#7b837f]">
+            Keep your identity and contact details up to date.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-x-5 gap-y-5 max-[720px]:grid-cols-1">
           <Field label="First name">
             <input
+              disabled={!editing}
               onChange={(e) => setForm({ ...form, first_name: e.target.value })}
               required
               value={value(form, "first_name").replace("—", "")}
@@ -1196,37 +1338,54 @@ function ProfilePanel(props: PanelProps) {
           </Field>
           <Field label="Last name">
             <input
+              disabled={!editing}
               onChange={(e) => setForm({ ...form, last_name: e.target.value })}
               value={value(form, "last_name").replace("—", "")}
             />
           </Field>
           <Field label="Username">
             <input
+              disabled={!editing}
               onChange={(e) => setForm({ ...form, username: e.target.value })}
               required
               value={value(form, "username").replace("—", "")}
             />
           </Field>
-          <Field label="Email">
+          <Field label="Work email">
             <input
+              disabled={!editing}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
               required
               type="email"
               value={value(form, "email").replace("—", "")}
             />
           </Field>
-          <Field label="Phone">
+          <Field label="Phone number">
             <input
+              disabled={!editing}
               onChange={(e) => setForm({ ...form, phone: e.target.value })}
               value={value(form, "phone").replace("—", "")}
             />
           </Field>
+          <Field label="Company">
+            <input disabled value={props.context?.company.company_name ?? ""} />
+          </Field>
         </div>
-        <div className={settingsUi.actions}>
-          <SaveButton busy={props.busy} />
-        </div>
+        {editing && (
+          <div className="mt-7 flex justify-end gap-3 border-t border-white/[0.08] pt-5">
+            <button
+              className={settingsUi.secondaryButton}
+              disabled={props.busy}
+              onClick={cancelEditing}
+              type="button"
+            >
+              Cancel
+            </button>
+            <SaveButton busy={props.busy} />
+          </div>
+        )}
       </form>
-    </Card>
+    </div>
   );
 }
 
@@ -1594,11 +1753,204 @@ function CompanyPanel(props: PanelProps) {
   );
 }
 
+function RegionsPanel(props: PanelProps) {
+  const [form, setForm] = useState<Row>({
+    region_type: "city",
+    timezone: "Asia/Kolkata",
+  });
+
+  const create = async (event: FormEvent) => {
+    event.preventDefault();
+    const result = await props.save(
+      "/api/regions",
+      "POST",
+      {
+        region_name: form.region_name,
+        region_code: form.region_code,
+        region_type: form.region_type || null,
+        state: form.state || null,
+        latitude:
+          form.latitude === "" || form.latitude === undefined
+            ? null
+            : Number(form.latitude),
+        longitude:
+          form.longitude === "" || form.longitude === undefined
+            ? null
+            : Number(form.longitude),
+        timezone: form.timezone || null,
+        is_active: true,
+      },
+      "Region created",
+      props.loadAll,
+    );
+    if (result) setForm({ region_type: "city", timezone: "Asia/Kolkata" });
+  };
+
+  const toggleRegion = (row: Row) =>
+    void props.save(
+      `/api/regions/${String(row.region_id)}/${row.is_active ? "deactivate" : "activate"}`,
+      "POST",
+      {},
+      `Region ${row.is_active ? "deactivated" : "activated"}`,
+      props.loadAll,
+    );
+
+  return (
+    <div className={settingsUi.stack}>
+      <Card
+        description="Regions define the markets and locations available when creating projects."
+        title="Regions"
+      >
+        <ListTable
+          columns={[
+            { key: "region_name", label: "Region" },
+            { key: "region_code", label: "Code" },
+            { key: "state", label: "State" },
+            { key: "region_type", label: "Type" },
+            { key: "timezone", label: "Timezone" },
+            {
+              key: "is_active",
+              label: "Status",
+              render: (row) => (
+                <span
+                  className={`${settingsUi.status} ${row.is_active ? settingsUi.statusOn : ""}`}
+                >
+                  {row.is_active ? "Active" : "Inactive"}
+                </span>
+              ),
+            },
+            {
+              key: "action",
+              label: "",
+              render: (row) => (
+                <button
+                  className={settingsUi.tableAction}
+                  disabled={props.busy}
+                  onClick={() => toggleRegion(row)}
+                  type="button"
+                >
+                  {row.is_active ? "Deactivate" : "Activate"}
+                </button>
+              ),
+            },
+          ]}
+          rows={props.regions}
+        />
+      </Card>
+
+      <Card
+        description="Add a city, district, state, or sales territory before assigning projects to it."
+        title="Add region"
+      >
+        <form className={settingsUi.form} onSubmit={create}>
+          <div className={settingsUi.grid}>
+            <Field label="Region name">
+              <input
+                onChange={(event) =>
+                  setForm({ ...form, region_name: event.target.value })
+                }
+                placeholder="Kolkata"
+                required
+                value={String(form.region_name ?? "")}
+              />
+            </Field>
+            <Field label="Region code">
+              <input
+                maxLength={20}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    region_code: event.target.value
+                      .toUpperCase()
+                      .replace(/[^A-Z0-9_-]/g, ""),
+                  })
+                }
+                placeholder="KOL"
+                required
+                value={String(form.region_code ?? "")}
+              />
+            </Field>
+            <Field label="Region type">
+              <select
+                onChange={(event) =>
+                  setForm({ ...form, region_type: event.target.value })
+                }
+                value={String(form.region_type ?? "city")}
+              >
+                <option value="city">City</option>
+                <option value="district">District</option>
+                <option value="state">State</option>
+                <option value="territory">Sales territory</option>
+                <option value="other">Other</option>
+              </select>
+            </Field>
+            <Field label="State">
+              <input
+                onChange={(event) =>
+                  setForm({ ...form, state: event.target.value })
+                }
+                placeholder="West Bengal"
+                value={String(form.state ?? "")}
+              />
+            </Field>
+            <Field label="Timezone">
+              <input
+                onChange={(event) =>
+                  setForm({ ...form, timezone: event.target.value })
+                }
+                placeholder="Asia/Kolkata"
+                value={String(form.timezone ?? "")}
+              />
+            </Field>
+            <div />
+            <Field label="Latitude">
+              <input
+                max="90"
+                min="-90"
+                onChange={(event) =>
+                  setForm({ ...form, latitude: event.target.value })
+                }
+                placeholder="22.5726"
+                step="any"
+                type="number"
+                value={String(form.latitude ?? "")}
+              />
+            </Field>
+            <Field label="Longitude">
+              <input
+                max="180"
+                min="-180"
+                onChange={(event) =>
+                  setForm({ ...form, longitude: event.target.value })
+                }
+                placeholder="88.3639"
+                step="any"
+                type="number"
+                value={String(form.longitude ?? "")}
+              />
+            </Field>
+          </div>
+          <div className={settingsUi.actions}>
+            <SaveButton busy={props.busy}>Add region</SaveButton>
+          </div>
+        </form>
+      </Card>
+    </div>
+  );
+}
+
 function ProjectsPanel(props: PanelProps) {
   const [form, setForm] = useState<Row>({
     project_status: "planning",
     project_type: "residential",
   });
+  const activeRegions = props.regions.filter(
+    (region) => region.is_active !== false,
+  );
+  const selectedRegionCode = String(
+    form.region_code ??
+      (activeRegions.length === 1 ? activeRegions[0].region_code : ""),
+  );
   const create = async (event: FormEvent) => {
     event.preventDefault();
     const result = await props.save(
@@ -1606,7 +1958,7 @@ function ProjectsPanel(props: PanelProps) {
       "POST",
       {
         company_code: props.context?.company.company_code,
-        region_code: form.region_code,
+        region_code: selectedRegionCode,
         project_code: form.project_code,
         project_name: form.project_name,
         project_status: form.project_status,
@@ -1705,23 +2057,26 @@ function ProjectsPanel(props: PanelProps) {
             </Field>
             <Field label="Region">
               <select
+                disabled={activeRegions.length === 0}
                 onChange={(event) =>
                   setForm({ ...form, region_code: event.target.value })
                 }
                 required
-                value={String(form.region_code ?? "")}
+                value={selectedRegionCode}
               >
-                <option value="">Select region</option>
-                {props.regions
-                  .filter((region) => region.is_active !== false)
-                  .map((region) => (
-                    <option
-                      key={String(region.region_id)}
-                      value={String(region.region_code)}
-                    >
-                      {value(region, "region_name")}
-                    </option>
-                  ))}
+                <option disabled value="">
+                  {activeRegions.length
+                    ? "Select region"
+                    : "No active regions available"}
+                </option>
+                {activeRegions.map((region) => (
+                  <option
+                    key={String(region.region_id)}
+                    value={String(region.region_code)}
+                  >
+                    {value(region, "region_name")}
+                  </option>
+                ))}
               </select>
             </Field>
             <Field label="Project type">
@@ -1823,7 +2178,9 @@ function PeoplePanel(props: PanelProps) {
   const [pendingOpen, setPendingOpen] = useState(true);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
-  const [invitationActionBusy, setInvitationActionBusy] = useState<string | null>(null);
+  const [invitationActionBusy, setInvitationActionBusy] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     if (!dialogOpen) return;
@@ -1920,13 +2277,16 @@ function PeoplePanel(props: PanelProps) {
       );
       if (action === "link") {
         const link = String(result.invitation_url ?? "");
-        if (!link) throw new Error("The server did not return an invitation link");
+        if (!link)
+          throw new Error("The server did not return an invitation link");
         await navigator.clipboard.writeText(link);
       }
       toast.success(String(result.message ?? "Invitation updated"));
       await props.loadAll();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to update invitation");
+      toast.error(
+        error instanceof Error ? error.message : "Unable to update invitation",
+      );
     } finally {
       setInvitationActionBusy(null);
     }
@@ -2217,14 +2577,26 @@ function PeoplePanel(props: PanelProps) {
                             className="flex size-7 items-center justify-center rounded-md text-[#79817e] transition hover:bg-white/[0.06] hover:text-[#69c4a4] disabled:opacity-40"
                             disabled={invitationActionBusy !== null}
                             key={action}
-                            onClick={() => void invitationAction(String(row.invitation_id), action)}
+                            onClick={() =>
+                              void invitationAction(
+                                String(row.invitation_id),
+                                action,
+                              )
+                            }
                             title={label}
                             type="button"
                           >
                             {invitationActionBusy === actionKey ? (
-                              <LoaderCircle aria-hidden className="size-3.5 animate-spin" />
+                              <LoaderCircle
+                                aria-hidden
+                                className="size-3.5 animate-spin"
+                              />
                             ) : (
-                              <Icon aria-hidden className="size-3.5" strokeWidth={1.8} />
+                              <Icon
+                                aria-hidden
+                                className="size-3.5"
+                                strokeWidth={1.8}
+                              />
                             )}
                           </button>
                         );
@@ -2827,6 +3199,7 @@ function DefinitionEditor({
   addLabel,
   busy,
   columns,
+  description,
   items,
   onAdd,
   onChange,
@@ -2842,6 +3215,7 @@ function DefinitionEditor({
     type?: "text" | "select" | "checkbox";
     options?: string[];
   }[];
+  description?: string;
   items: Row[];
   onAdd: () => void;
   onChange: (index: number, key: string, value: unknown) => void;
@@ -2850,7 +3224,7 @@ function DefinitionEditor({
   title: string;
 }) {
   return (
-    <Card title={title}>
+    <Card description={description} title={title}>
       <div className="flex flex-col gap-2.5">
         {items.map((item, index) => (
           <div
@@ -3000,6 +3374,71 @@ function StagesPanel(props: PanelProps & { projectId: number }) {
       onRemove={(index) =>
         props.setStages(
           props.stages.filter((_, itemIndex) => itemIndex !== index),
+        )
+      }
+      onSave={saveStages}
+    />
+  );
+}
+
+function OpportunityStagesPanel(props: PanelProps & { projectId: number }) {
+  const change = (index: number, key: string, next: unknown) =>
+    props.setOpportunityStages(
+      props.opportunityStages.map((item, itemIndex) =>
+        itemIndex === index
+          ? { ...item, [key]: next }
+          : key === "is_initial" && next
+            ? { ...item, is_initial: false }
+            : item,
+      ),
+    );
+  const saveStages = () =>
+    void props.save(
+      `/api/projects/${props.projectId}/opportunity-stages`,
+      "PUT",
+      {
+        stages: props.opportunityStages.map((stage) => ({
+          stage_key: stage.stage_key,
+          stage_name: stage.stage_name,
+          probability: Number(stage.probability),
+          color: stage.color,
+          is_initial: Boolean(stage.is_initial),
+        })),
+      },
+      "Opportunity stages updated",
+      () => props.loadProject(props.projectId),
+    );
+
+  return (
+    <DefinitionEditor
+      title="Opportunity pipeline"
+      description="These stages begin after lead qualification. Won and lost remain closing outcomes."
+      addLabel="Add stage"
+      busy={props.busy}
+      items={props.opportunityStages}
+      columns={[
+        { key: "stage_name", label: "Stage name" },
+        { key: "stage_key", label: "Key" },
+        { key: "probability", label: "Probability %" },
+        { key: "color", label: "Colour" },
+        { key: "is_initial", label: "Initial", type: "checkbox" },
+      ]}
+      onAdd={() =>
+        props.setOpportunityStages([
+          ...props.opportunityStages,
+          {
+            stage_key: `stage_${props.opportunityStages.length + 1}`,
+            stage_name: "New stage",
+            probability: 50,
+            color: "#87908b",
+            is_initial: !props.opportunityStages.length,
+          },
+        ])
+      }
+      onChange={change}
+      onRemove={(index) =>
+        props.setOpportunityStages(
+          props.opportunityStages.filter((_, itemIndex) => itemIndex !== index),
         )
       }
       onSave={saveStages}

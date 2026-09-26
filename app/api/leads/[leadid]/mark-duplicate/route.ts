@@ -46,10 +46,15 @@ export async function POST(request: NextRequest, context: Context) {
       await client.query("ROLLBACK");
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
-    if (["closed", "duplicate"].includes(lead.status as string)) {
+    if (["qualified", "closed", "duplicate"].includes(lead.status as string)) {
       await client.query("ROLLBACK");
       return NextResponse.json(
-        { error: `Cannot mark a ${lead.status} lead as duplicate` },
+        {
+          error:
+            lead.status === "qualified"
+              ? "Converted leads cannot be marked as duplicates"
+              : `Cannot mark a ${lead.status} lead as duplicate`,
+        },
         { status: 409 },
       );
     }

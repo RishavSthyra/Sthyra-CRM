@@ -71,6 +71,7 @@ type Appointment = {
   project_id: number;
   project_name?: string | null;
   lead_id?: string | null;
+  opportunity_id?: string | null;
   contact_id?: string | null;
   appointment_type: AppointmentType;
   title: string;
@@ -350,7 +351,9 @@ function CalendarEvent({
   const meta = TYPE_META[appointment.appointment_type];
   const Icon = meta.Icon;
   const completed = appointment.status === "completed";
-  const terminal = completed || ["cancelled", "no_show", "checked_in"].includes(appointment.status);
+  const terminal =
+    completed ||
+    ["cancelled", "no_show", "checked_in"].includes(appointment.status);
   return (
     <button
       className={`group/event flex w-full items-start gap-1.5 overflow-hidden rounded-[5px] border px-2 text-left shadow-sm transition duration-150 ${
@@ -415,6 +418,9 @@ export function CalendarWorkspace() {
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [opportunityFilter, setOpportunityFilter] = useState<string | null>(
+    null,
+  );
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Appointment | null>(null);
   const [composerMode, setComposerMode] = useState<
@@ -433,6 +439,23 @@ export function CalendarWorkspace() {
 
   const projects = useMemo(() => context?.projects ?? [], [context?.projects]);
   const range = useMemo(() => dateRangeFor(view, cursor), [cursor, view]);
+
+  useEffect(() => {
+    const task = window.setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      const requestedView = params.get("view");
+      if (["day", "week", "month", "year"].includes(requestedView ?? ""))
+        setView(requestedView as CalendarView);
+      const requestedDate = params.get("date");
+      if (requestedDate) {
+        const date = new Date(`${requestedDate}T12:00:00`);
+        if (!Number.isNaN(date.getTime())) setCursor(date);
+      }
+      const requestedOpportunity = params.get("opportunity_id");
+      if (requestedOpportunity) setOpportunityFilter(requestedOpportunity);
+    }, 0);
+    return () => window.clearTimeout(task);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -492,6 +515,7 @@ export function CalendarWorkspace() {
       });
       if (selectedProjectId !== "all")
         params.set("project_id", selectedProjectId);
+      if (opportunityFilter) params.set("opportunity_id", opportunityFilter);
       const response = await fetchWithSession(
         `/api/appointments?${params.toString()}`,
         {
@@ -515,7 +539,7 @@ export function CalendarWorkspace() {
     } finally {
       setLoading(false);
     }
-  }, [range.from, range.to, router, selectedProjectId]);
+  }, [opportunityFilter, range.from, range.to, router, selectedProjectId]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void loadAppointments(), 0);
@@ -603,7 +627,8 @@ export function CalendarWorkspace() {
   const activeFilterCount =
     Number(ownerFilter !== "all") +
     Number(typeFilter !== "all") +
-    Number(statusFilter !== "all");
+    Number(statusFilter !== "all") +
+    Number(Boolean(opportunityFilter));
 
   function openCreate(startsAt?: Date) {
     const projectId =
@@ -775,10 +800,15 @@ export function CalendarWorkspace() {
         },
       );
       if (!response.ok) throw new Error(await getApiError(response));
-      const body = (await response.json()) as { appointment?: Appointment; site_visit?: Appointment };
+      const body = (await response.json()) as {
+        appointment?: Appointment;
+        site_visit?: Appointment;
+      };
       const updatedAppointment = body.appointment ?? body.site_visit;
       if (updatedAppointment) {
-        setSelected(enrichAppointment({ ...appointment, ...updatedAppointment }));
+        setSelected(
+          enrichAppointment({ ...appointment, ...updatedAppointment }),
+        );
       }
       setPendingAction(null);
       setActionReason("");
@@ -809,7 +839,12 @@ export function CalendarWorkspace() {
     const appointment = appointments.find(
       (item) => item.appointment_id === appointmentId,
     );
-    if (!appointment || ["cancelled", "completed", "no_show", "checked_in"].includes(appointment.status))
+    if (
+      !appointment ||
+      ["cancelled", "completed", "no_show", "checked_in"].includes(
+        appointment.status,
+      )
+    )
       return;
     const previousStart = new Date(appointment.starts_at);
     const duration =
@@ -1054,6 +1089,10 @@ export function CalendarWorkspace() {
                             setOwnerFilter("all");
                             setTypeFilter("all");
                             setStatusFilter("all");
+                            setOpportunityFilter(null);
+                            const url = new URL(window.location.href);
+                            url.searchParams.delete("opportunity_id");
+                            window.history.replaceState(null, "", url);
                           }}
                           type="button"
                         >
@@ -1122,9 +1161,26 @@ export function CalendarWorkspace() {
             </div>
 
             <div className="flex min-h-[58px] shrink-0 items-center justify-between gap-4 border-b border-white/[0.08] px-4 py-3 max-[700px]:items-start max-[700px]:flex-col">
-              <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#f0f2f1]">
-                {heading}
-              </h2>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <h2 className="text-lg font-semibold tracking-[-0.01em] text-[#f0f2f1]">
+                  {heading}
+                </h2>
+                {opportunityFilter && (
+                  <button
+                    className="flex h-7 items-center gap-1.5 rounded-full border border-[#2aa284]/30 bg-[#18332c] px-2.5 text-[10px] font-semibold text-[#72d9bd]"
+                    onClick={() => {
+                      setOpportunityFilter(null);
+                      const url = new URL(window.location.href);
+                      url.searchParams.delete("opportunity_id");
+                      window.history.replaceState(null, "", url);
+                    }}
+                    title="Show all appointments"
+                    type="button"
+                  >
+                    Opportunity schedule <X className="size-3" />
+                  </button>
+                )}
+              </div>
               <div className="flex flex-wrap items-center gap-1.5">
                 <label className="relative mr-1">
                   <span className="sr-only">Calendar year</span>
@@ -1686,7 +1742,9 @@ function AppointmentDrawer({
 }) {
   const meta = TYPE_META[appointment.appointment_type];
   const Icon = meta.Icon;
-  const terminal = ["cancelled", "completed", "no_show"].includes(appointment.status);
+  const terminal = ["cancelled", "completed", "no_show"].includes(
+    appointment.status,
+  );
   const overdue = !terminal && new Date(appointment.starts_at).getTime() < now;
   return (
     <div

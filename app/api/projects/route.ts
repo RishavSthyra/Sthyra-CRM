@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { DEFAULT_PROJECT_LEAD_STAGES } from "@/lib/defaultLeadStages";
+import { DEFAULT_PROJECT_OPPORTUNITY_STAGES } from "@/lib/defaultOpportunityStages";
 import {
   getProjectDatabaseErrorCode,
   isProjectStatus,
@@ -236,6 +237,23 @@ export async function POST(request: NextRequest) {
           index + 1,
           stage.is_initial,
           stage.is_terminal,
+        ],
+      );
+    }
+    for (const [index, stage] of DEFAULT_PROJECT_OPPORTUNITY_STAGES.entries()) {
+      await client.query(
+        `INSERT INTO project_opportunity_stages (
+          project_id, stage_key, stage_name, position, probability, color,
+          is_initial
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [
+          projectId,
+          stage.stage_key,
+          stage.stage_name,
+          index + 1,
+          stage.probability,
+          stage.color,
+          stage.is_initial,
         ],
       );
     }

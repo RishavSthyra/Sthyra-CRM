@@ -9,6 +9,7 @@ import {
   textValue,
 } from "@/lib/inventory";
 import { requireOperationsContext } from "@/lib/operationsAccess";
+import { syncProjectBasePrices } from "@/lib/inventoryPricing";
 
 function dateValue(value: unknown, field: string, errors: string[]) {
   if (value === undefined) return undefined;
@@ -130,9 +131,21 @@ export async function POST(request: NextRequest) {
         isDefault,
       ],
     );
+    const pricingSync = isDefault
+      ? await syncProjectBasePrices(
+          client,
+          scope.context.access.company.company_id,
+          projectId!,
+          currency,
+        )
+      : undefined;
     await client.query("COMMIT");
     return NextResponse.json(
-      { message: "Price book created", price_book: result.rows[0] },
+      {
+        message: "Price book created",
+        price_book: result.rows[0],
+        ...(pricingSync ? { pricing_sync: pricingSync.counts } : {}),
+      },
       { status: 201 },
     );
   } catch (error) {

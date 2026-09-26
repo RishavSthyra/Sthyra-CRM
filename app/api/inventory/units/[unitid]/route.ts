@@ -11,6 +11,7 @@ import {
   textValue,
   uuidValue,
   validateCatalogReferences,
+  validateInventoryAttributeValues,
 } from "@/lib/inventory";
 import {
   canAccessOperationsEntity,
@@ -196,6 +197,21 @@ export async function PATCH(request: NextRequest, context: Context) {
         { error: "Validation failed", details: referenceErrors },
         { status: 422 },
       );
+    }
+    if (data.metadata !== undefined) {
+      const attributeErrors = await validateInventoryAttributeValues(
+        client,
+        Number(access.unit.project_id),
+        "unit",
+        data.metadata as Record<string, unknown>,
+      );
+      if (attributeErrors.length) {
+        await client.query("ROLLBACK");
+        return NextResponse.json(
+          { error: "Validation failed", details: attributeErrors },
+          { status: 422 },
+        );
+      }
     }
     delete data.version;
     const fields = Object.entries(data).filter(

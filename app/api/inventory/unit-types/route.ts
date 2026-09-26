@@ -10,8 +10,10 @@ import {
   textValue,
   uuidValue,
   validateCatalogReferences,
+  validateInventoryAttributeValues,
 } from "@/lib/inventory";
 import { requireOperationsContext } from "@/lib/operationsAccess";
+import { syncUnitTypeBasePrice } from "@/lib/inventoryPricing";
 
 const TYPE_SELECT = `SELECT ut.*, at.type_key AS asset_type_key, at.display_name AS asset_type_name,
   COALESCE(jsonb_agg(jsonb_build_object('floor_plan_id',fp.floor_plan_id,'plan_code',fp.plan_code,'plan_name',fp.plan_name,'version',fp.version,'plan_role',link.plan_role,'display_order',link.display_order) ORDER BY link.display_order) FILTER (WHERE fp.floor_plan_id IS NOT NULL),'[]'::jsonb) AS floor_plans
@@ -158,6 +160,19 @@ export async function POST(request: NextRequest) {
         { status: 422 },
       );
     }
+    const attributeErrors = await validateInventoryAttributeValues(
+      client,
+      projectId!,
+      "unit_type",
+      specifications,
+    );
+    if (attributeErrors.length) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { error: "Validation failed", details: attributeErrors },
+        { status: 422 },
+      );
+    }
     const result = await client.query(
       `INSERT INTO inventory_unit_types (company_id,project_id,asset_type_id,type_code,type_name,configuration,bedrooms,bathrooms,balconies,carpet_area_sqft,built_up_area_sqft,saleable_area_sqft,base_price,currency,specifications) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
       [
@@ -183,9 +198,14 @@ export async function POST(request: NextRequest) {
         "INSERT INTO inventory_unit_type_floor_plans (unit_type_id,floor_plan_id,plan_role) VALUES ($1,$2,'primary')",
         [result.rows[0].unit_type_id, floorPlanId],
       );
+    const pricingSync = await syncUnitTypeBasePrice(client, result.rows[0]);
     await client.query("COMMIT");
     return NextResponse.json(
-      { message: "Inventory unit type created", unit_type: result.rows[0] },
+      {
+        message: "Inventory unit type created",
+        unit_type: result.rows[0],
+        pricing_sync: pricingSync,
+      },
       { status: 201 },
     );
   } catch (error) {

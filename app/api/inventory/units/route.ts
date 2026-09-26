@@ -12,6 +12,7 @@ import {
   textValue,
   uuidValue,
   validateCatalogReferences,
+  validateInventoryAttributeValues,
 } from "@/lib/inventory";
 import { requireOperationsContext } from "@/lib/operationsAccess";
 import { getAccessibleProjectIds } from "@/lib/projectAccess";
@@ -85,7 +86,51 @@ export async function GET(request: NextRequest) {
     );
     const listValues = [...values, pagination.limit, pagination.offset];
     const result = await pool.query(
-      `SELECT ${INVENTORY_UNIT_COLUMNS} FROM inventory_units iu LEFT JOIN project_inventory_nodes node ON node.node_id=iu.node_id LEFT JOIN inventory_unit_types unit_type ON unit_type.unit_type_id=iu.unit_type_id LEFT JOIN inventory_asset_types asset_type ON asset_type.asset_type_id=unit_type.asset_type_id ${where} ORDER BY iu.unit_code,iu.unit_id LIMIT $${listValues.length - 1} OFFSET $${listValues.length}`,
+      `SELECT ${INVENTORY_UNIT_COLUMNS},
+        COALESCE(iu.price_override,effective_price.total_amount,unit_type.base_price) AS effective_price,
+        CASE
+          WHEN iu.price_override IS NOT NULL THEN iu.currency
+          WHEN effective_price.total_amount IS NOT NULL THEN effective_price.currency
+          ELSE unit_type.currency
+        END AS effective_price_currency,
+        CASE
+          WHEN iu.price_override IS NOT NULL THEN 'unit_override'
+          WHEN effective_price.total_amount IS NOT NULL THEN effective_price.source
+          WHEN unit_type.base_price IS NOT NULL THEN 'unit_type_fallback'
+          ELSE NULL
+        END AS effective_price_source
+       FROM inventory_units iu
+       LEFT JOIN project_inventory_nodes node ON node.node_id=iu.node_id
+       LEFT JOIN inventory_unit_types unit_type ON unit_type.unit_type_id=iu.unit_type_id
+       LEFT JOIN inventory_asset_types asset_type ON asset_type.asset_type_id=unit_type.asset_type_id
+       LEFT JOIN LATERAL (
+         SELECT
+           book.currency,
+           CASE WHEN entry.unit_id IS NOT NULL THEN 'unit_price_book' ELSE entry.source END AS source,
+           entry.base_amount + COALESCE((
+             SELECT SUM(component.value::numeric)
+             FROM jsonb_each_text(entry.components) component
+             WHERE component.value ~ '^-?[0-9]+(?:\\.[0-9]+)?$'
+           ),0) AS total_amount
+         FROM inventory_price_books book
+         JOIN inventory_price_book_entries entry
+           ON entry.price_book_id=book.price_book_id
+         WHERE book.project_id=iu.project_id
+           AND book.is_default=TRUE
+           AND book.is_active=TRUE
+           AND (book.valid_from IS NULL OR book.valid_from<=CURRENT_DATE)
+           AND (book.valid_until IS NULL OR book.valid_until>=CURRENT_DATE)
+           AND (entry.unit_id=iu.unit_id OR
+             (entry.unit_id IS NULL AND entry.unit_type_id=iu.unit_type_id))
+           AND (entry.valid_from IS NULL OR entry.valid_from<=CURRENT_DATE)
+           AND (entry.valid_until IS NULL OR entry.valid_until>=CURRENT_DATE)
+         ORDER BY CASE WHEN entry.unit_id=iu.unit_id THEN 0 ELSE 1 END,
+           entry.valid_from DESC NULLS LAST,entry.updated_at DESC
+         LIMIT 1
+       ) effective_price ON TRUE
+       ${where}
+       ORDER BY iu.unit_code,iu.unit_id
+       LIMIT $${listValues.length - 1} OFFSET $${listValues.length}`,
       listValues,
     );
     const total = Number(count.rows[0]?.total ?? 0);
@@ -199,6 +244,19 @@ export async function POST(request: NextRequest) {
       await client.query("ROLLBACK");
       return NextResponse.json(
         { error: "Validation failed", details: referenceErrors },
+        { status: 422 },
+      );
+    }
+    const attributeErrors = await validateInventoryAttributeValues(
+      client,
+      projectId!,
+      "unit",
+      metadata,
+    );
+    if (attributeErrors.length) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { error: "Validation failed", details: attributeErrors },
         { status: 422 },
       );
     }

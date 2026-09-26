@@ -15,11 +15,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: pagination.error }, { status: 400 });
 
   const projectIds = getAccessibleProjectIds(scope.context.access);
-  const values: unknown[] = [scope.context.access.company.company_id, projectIds];
-  const filters = [
-    "o.company_id=$1",
-    "o.project_id=ANY($2::integer[])",
+  const values: unknown[] = [
+    scope.context.access.company.company_id,
+    projectIds,
   ];
+  const filters = ["o.company_id=$1", "o.project_id=ANY($2::integer[])"];
   const projectValue = request.nextUrl.searchParams.get("project_id");
   if (projectValue) {
     const projectId = parsePositiveInteger(projectValue);
@@ -34,14 +34,20 @@ export async function GET(request: NextRequest) {
   const status = request.nextUrl.searchParams.get("status");
   if (status) {
     if (!["open", "closed"].includes(status))
-      return NextResponse.json({ error: "Invalid opportunity status" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid opportunity status" },
+        { status: 400 },
+      );
     values.push(status);
     filters.push(`o.status=$${values.length}`);
   }
   const outcome = request.nextUrl.searchParams.get("outcome");
   if (outcome) {
     if (!["won", "lost"].includes(outcome))
-      return NextResponse.json({ error: "Invalid opportunity outcome" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid opportunity outcome" },
+        { status: 400 },
+      );
     values.push(outcome);
     filters.push(`o.outcome=$${values.length}`);
   }
@@ -50,12 +56,20 @@ export async function GET(request: NextRequest) {
     values.push(stageKey.toLowerCase());
     filters.push(`o.stage_key=$${values.length}`);
   }
-  for (const field of ["lead_id", "contact_id", "current_owner_user_id", "current_team_id"] as const) {
+  for (const field of [
+    "lead_id",
+    "contact_id",
+    "current_owner_user_id",
+    "current_team_id",
+  ] as const) {
     const raw = request.nextUrl.searchParams.get(field);
     if (!raw) continue;
     const id = parseUuid(raw);
     if (!id)
-      return NextResponse.json({ error: `${field} must be a valid UUID` }, { status: 400 });
+      return NextResponse.json(
+        { error: `${field} must be a valid UUID` },
+        { status: 400 },
+      );
     values.push(id);
     filters.push(`o.${field}=$${values.length}`);
   }
@@ -68,11 +82,32 @@ export async function GET(request: NextRequest) {
   }
   const where = `WHERE ${filters.join(" AND ")}`;
   try {
-    const count = await pool.query(
-      `SELECT COUNT(*)::integer AS total
-       FROM opportunities o JOIN contacts c ON c.contact_id=o.contact_id ${where}`,
-      values,
-    );
+    const stageValues: unknown[] = [projectIds];
+    const stageFilters = ["project_id=ANY($1::integer[])", "is_active=TRUE"];
+    if (projectValue) {
+      stageValues.push(Number(projectValue));
+      stageFilters.push(`project_id=$${stageValues.length}`);
+    }
+    const [count, stages] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*)::integer AS total
+         FROM opportunities o JOIN contacts c ON c.contact_id=o.contact_id ${where}`,
+        values,
+      ),
+      pool.query(
+        `SELECT stage_key,
+           (ARRAY_AGG(stage_name ORDER BY position, stage_id))[1] AS stage_name,
+           MIN(position)::integer AS position,
+           ROUND(AVG(probability))::integer AS probability,
+           (ARRAY_AGG(color ORDER BY position, stage_id))[1] AS color,
+           BOOL_OR(is_initial) AS is_initial
+         FROM project_opportunity_stages
+         WHERE ${stageFilters.join(" AND ")}
+         GROUP BY stage_key
+         ORDER BY MIN(position), stage_key`,
+        stageValues,
+      ),
+    ]);
     const listValues = [...values, pagination.limit, pagination.offset];
     const result = await pool.query(
       `SELECT ${OPPORTUNITY_COLUMNS}, p.project_name, p.project_code,
@@ -92,6 +127,7 @@ export async function GET(request: NextRequest) {
     const total = Number(count.rows[0]?.total ?? 0);
     return NextResponse.json({
       opportunities: result.rows,
+      stages: stages.rows,
       pagination: {
         page: pagination.page,
         limit: pagination.limit,
@@ -101,7 +137,9 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Failed to list opportunities", error);
-    return NextResponse.json({ error: "Unable to retrieve opportunities" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Unable to retrieve opportunities" },
+      { status: 500 },
+    );
   }
 }
-

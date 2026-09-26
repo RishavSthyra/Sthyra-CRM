@@ -97,37 +97,51 @@ export async function POST(request: NextRequest, context: Context) {
         { status: 422 },
       );
     }
-    let stageId = lead.stage_id as string | null;
-    if (typeof body.stage_key === "string") {
-      const stage = await getProjectStage(
-        client,
-        lead.project_id as number,
-        body.stage_key,
+    if (
+      typeof body.stage_key === "string" &&
+      body.stage_key.trim().toLowerCase() !== "qualified"
+    ) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { error: "Qualified leads must use the qualified conversion stage" },
+        { status: 422 },
       );
-      if (!stage || stage.is_terminal) {
-        await client.query("ROLLBACK");
-        return NextResponse.json(
-          { error: "Valid non-terminal project stage not found" },
-          { status: 422 },
-        );
-      }
-      stageId = stage.stage_id as string;
+    }
+    const qualifiedStage = await getProjectStage(
+      client,
+      lead.project_id as number,
+      "qualified",
+    );
+    if (!qualifiedStage) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { error: "The project does not have an active qualified lead stage" },
+        { status: 409 },
+      );
     }
     const updated = await transitionLead(
       client,
       lead,
       "qualify",
       "qualified",
-      stageId,
+      qualifiedStage.stage_id as string,
       { qualification_data: body.qualification_data, qualified_at: new Date() },
       { qualification_data: body.qualification_data },
       scope.context.userId,
     );
     const opportunityResult = await client.query(
-      `UPDATE opportunities
-       SET created_by=COALESCE(created_by,$2), updated_by=COALESCE(updated_by,$2)
-       WHERE lead_id=$1
-       RETURNING *`,
+      `UPDATE opportunities opportunity
+       SET stage_key=initial_stage.stage_key,
+           probability=initial_stage.probability,
+           created_by=COALESCE(opportunity.created_by,$2),
+           updated_by=COALESCE(opportunity.updated_by,$2),
+           updated_at=CURRENT_TIMESTAMP
+       FROM project_opportunity_stages initial_stage
+       WHERE opportunity.lead_id=$1
+         AND initial_stage.project_id=opportunity.project_id
+         AND initial_stage.is_active=TRUE
+         AND initial_stage.is_initial=TRUE
+       RETURNING opportunity.*`,
       [leadId, scope.context.userId],
     );
     const opportunity = opportunityResult.rows[0];
@@ -139,13 +153,18 @@ export async function POST(request: NextRequest, context: Context) {
          opportunity_id, action, from_status, to_status, from_stage_key,
          to_stage_key, metadata, performed_by
        )
-       SELECT $1, 'qualified_from_lead', NULL, 'open', NULL, 'qualified',
+       SELECT $1, 'qualified_from_lead', NULL, 'open', NULL, $4,
               JSONB_BUILD_OBJECT('lead_id',$2::uuid), $3
        WHERE NOT EXISTS (
          SELECT 1 FROM opportunity_state_history
          WHERE opportunity_id=$1 AND action='qualified_from_lead'
        )`,
-      [opportunity.opportunity_id, leadId, scope.context.userId],
+      [
+        opportunity.opportunity_id,
+        leadId,
+        scope.context.userId,
+        opportunity.stage_key,
+      ],
     );
     await client.query("COMMIT");
     return NextResponse.json({

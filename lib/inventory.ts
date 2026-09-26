@@ -27,6 +27,8 @@ export const INVENTORY_UNIT_COLUMNS = `
   unit_type.type_code, unit_type.type_name, unit_type.configuration,
   unit_type.carpet_area_sqft, unit_type.built_up_area_sqft,
   unit_type.saleable_area_sqft, unit_type.base_price,
+  unit_type.currency AS type_currency,
+  unit_type.specifications AS type_specifications,
   asset_type.type_key AS asset_type_key,
   asset_type.display_name AS asset_type_name
 `;
@@ -274,6 +276,68 @@ export async function validateCatalogReferences(
     );
     if (!result.rowCount)
       errors.push("floor_plan_id must belong to the selected project");
+  }
+  return errors;
+}
+
+export async function validateInventoryAttributeValues(
+  db: Queryable,
+  projectId: number,
+  appliesTo: "unit_type" | "unit",
+  values: Record<string, unknown>,
+) {
+  const result = await db.query(
+    `SELECT attribute_key,label,data_type,is_required,options
+     FROM inventory_attribute_definitions
+     WHERE project_id=$1 AND applies_to=$2 AND is_active=TRUE
+     ORDER BY display_order,label`,
+    [projectId, appliesTo],
+  );
+  const errors: string[] = [];
+  for (const definition of result.rows) {
+    const value = values[definition.attribute_key];
+    const empty =
+      value === undefined ||
+      value === null ||
+      value === "" ||
+      (Array.isArray(value) && value.length === 0);
+    if (empty) {
+      if (definition.is_required)
+        errors.push(`${definition.label} is required`);
+      continue;
+    }
+    const options = Array.isArray(definition.options)
+      ? definition.options.map(String)
+      : [];
+    if (definition.data_type === "text" && typeof value !== "string")
+      errors.push(`${definition.label} must be text`);
+    else if (
+      definition.data_type === "number" &&
+      (typeof value !== "number" || !Number.isFinite(value))
+    )
+      errors.push(`${definition.label} must be a finite number`);
+    else if (definition.data_type === "boolean" && typeof value !== "boolean")
+      errors.push(`${definition.label} must be true or false`);
+    else if (
+      definition.data_type === "date" &&
+      (typeof value !== "string" ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
+        Number.isNaN(Date.parse(`${value}T00:00:00Z`)))
+    )
+      errors.push(`${definition.label} must be a valid date`);
+    else if (
+      definition.data_type === "select" &&
+      (typeof value !== "string" || !options.includes(value))
+    )
+      errors.push(`${definition.label} must use one of its configured options`);
+    else if (
+      definition.data_type === "multi_select" &&
+      (!Array.isArray(value) ||
+        value.some((item) =>
+          typeof item === "string" ? !options.includes(item) : true,
+        ))
+    )
+      errors.push(`${definition.label} contains an invalid option`);
   }
   return errors;
 }

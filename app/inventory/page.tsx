@@ -1,10 +1,5 @@
-import { WorkspaceSectionPage } from "@/components/dashboard/WorkspaceSectionPage";
+import { InventoryWorkspace } from "@/components/inventory/InventoryWorkspace";
 
 export default function InventoryPage() {
-  return (
-    <WorkspaceSectionPage
-      description="Track project inventory, availability, and unit status."
-      title="Inventory"
-    />
-  );
+  return <InventoryWorkspace />;
 }

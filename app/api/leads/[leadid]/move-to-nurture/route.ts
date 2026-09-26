@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { lockLead, transitionLead } from "@/lib/leadCommands";
+import { getProjectStage, lockLead, transitionLead } from "@/lib/leadCommands";
 import { parseLeadId } from "@/lib/leads";
 import { isObject } from "@/utils/isObject";
 import { validateText } from "@/utils/validateText";
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest, context: Context) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
     if (
-      ["closed", "duplicate", "invalid", "nurture"].includes(
+      ["qualified", "closed", "duplicate", "invalid", "nurture"].includes(
         lead.status as string,
       )
     ) {
@@ -70,12 +70,24 @@ export async function POST(request: NextRequest, context: Context) {
         { status: 409 },
       );
     }
+    const nurtureStage = await getProjectStage(
+      client,
+      lead.project_id as number,
+      "nurturing",
+    );
+    if (!nurtureStage) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { error: "The project does not have an active nurturing stage" },
+        { status: 409 },
+      );
+    }
     const updated = await transitionLead(
       client,
       lead,
       "move_to_nurture",
       "nurture",
-      lead.stage_id as string | null,
+      nurtureStage.stage_id as string,
       { nurture_reason: reason ?? null, nurture_until: nurtureUntil },
       { reason: reason ?? null, nurture_until: nurtureUntil },
     );

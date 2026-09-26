@@ -52,10 +52,19 @@ export async function POST(request: NextRequest, context: Context) {
       await client.query("ROLLBACK");
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
-    if (["closed", "duplicate", "invalid"].includes(lead.status as string)) {
+    if (
+      ["qualified", "closed", "duplicate", "invalid"].includes(
+        lead.status as string,
+      )
+    ) {
       await client.query("ROLLBACK");
       return NextResponse.json(
-        { error: `Cannot close a ${lead.status} lead` },
+        {
+          error:
+            lead.status === "qualified"
+              ? "Converted leads must be closed through their opportunity"
+              : `Cannot close a ${lead.status} lead`,
+        },
         { status: 409 },
       );
     }

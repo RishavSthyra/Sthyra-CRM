@@ -48,10 +48,19 @@ export async function POST(request: NextRequest, context: Context) {
       await client.query("ROLLBACK");
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
-    if (["closed", "duplicate", "invalid"].includes(lead.status as string)) {
+    if (
+      ["qualified", "closed", "duplicate", "invalid"].includes(
+        lead.status as string,
+      )
+    ) {
       await client.query("ROLLBACK");
       return NextResponse.json(
-        { error: `Cannot invalidate a ${lead.status} lead` },
+        {
+          error:
+            lead.status === "qualified"
+              ? "Converted leads cannot be invalidated"
+              : `Cannot invalidate a ${lead.status} lead`,
+        },
         { status: 409 },
       );
     }

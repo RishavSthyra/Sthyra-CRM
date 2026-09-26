@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import {
+  assertOnlyFields,
   isRecord,
   jsonObjectValue,
   numberValue,
@@ -42,6 +43,19 @@ async function accessPrice(request: NextRequest, id: string) {
     };
   return { ok: true as const, price: result.rows[0] };
 }
+
+export async function GET(request: NextRequest, context: Context) {
+  const id = parseInventoryUuid((await context.params).priceentryid);
+  if (!id)
+    return NextResponse.json(
+      { error: "priceEntryId must be a valid UUID" },
+      { status: 400 },
+    );
+  const access = await accessPrice(request, id);
+  if (!access.ok) return access.response;
+  return NextResponse.json({ price: access.price });
+}
+
 export async function PATCH(request: NextRequest, context: Context) {
   const raw = (await context.params).priceentryid;
   const id = parseInventoryUuid(raw);
@@ -67,6 +81,11 @@ export async function PATCH(request: NextRequest, context: Context) {
       { status: 422 },
     );
   const errors: string[] = [];
+  assertOnlyFields(
+    body,
+    ["base_amount", "components", "valid_from", "valid_until"],
+    errors,
+  );
   const data: Record<string, unknown> = {
     base_amount: numberValue(body.base_amount, "base_amount", errors, {
       minimum: 0,
@@ -81,8 +100,12 @@ export async function PATCH(request: NextRequest, context: Context) {
       data[field] = value;
     else errors.push(`${field} must use YYYY-MM-DD format or be null`);
   }
-  const from = (data.valid_from ?? access.price.valid_from) as string | null;
-  const until = (data.valid_until ?? access.price.valid_until) as string | null;
+  const from = (
+    data.valid_from === undefined ? access.price.valid_from : data.valid_from
+  ) as string | null;
+  const until = (
+    data.valid_until === undefined ? access.price.valid_until : data.valid_until
+  ) as string | null;
   if (from && until && String(until) < String(from))
     errors.push("valid_until cannot be before valid_from");
   const fields = Object.entries(data).filter(
@@ -94,11 +117,15 @@ export async function PATCH(request: NextRequest, context: Context) {
       { error: "Validation failed", details: errors },
       { status: 422 },
     );
-  const values = fields.map(([, value]) => value);
+  const updateFields: Array<[string, unknown]> = [
+    ...fields,
+    ["source", "manual"],
+  ];
+  const values = updateFields.map(([, value]) => value);
   values.push(id);
   try {
     const result = await pool.query(
-      `UPDATE inventory_price_book_entries SET ${fields.map(([key], index) => `${key}=$${index + 1}`).join(",")},updated_at=CURRENT_TIMESTAMP WHERE price_entry_id=$${values.length} RETURNING *`,
+      `UPDATE inventory_price_book_entries SET ${updateFields.map(([key], index) => `${key}=$${index + 1}`).join(",")},updated_at=CURRENT_TIMESTAMP WHERE price_entry_id=$${values.length} RETURNING *`,
       values,
     );
     return NextResponse.json({

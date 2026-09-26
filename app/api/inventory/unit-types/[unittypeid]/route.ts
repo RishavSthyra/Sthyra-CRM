@@ -11,8 +11,13 @@ import {
   textValue,
   uuidValue,
   validateCatalogReferences,
+  validateInventoryAttributeValues,
 } from "@/lib/inventory";
 import { requireOperationsContext } from "@/lib/operationsAccess";
+import {
+  syncUnitTypeBasePrice,
+  type PricingSyncResult,
+} from "@/lib/inventoryPricing";
 
 type Context = { params: Promise<{ unittypeid: string }> };
 
@@ -144,6 +149,21 @@ export async function PATCH(request: NextRequest, context: Context) {
         { status: 422 },
       );
     }
+    if (data.specifications !== undefined) {
+      const attributeErrors = await validateInventoryAttributeValues(
+        client,
+        Number(existing.rows[0].project_id),
+        "unit_type",
+        data.specifications as Record<string, unknown>,
+      );
+      if (attributeErrors.length) {
+        await client.query("ROLLBACK");
+        return NextResponse.json(
+          { error: "Validation failed", details: attributeErrors },
+          { status: 422 },
+        );
+      }
+    }
     const fields = Object.entries(data).filter(
       ([, value]) => value !== undefined,
     );
@@ -168,10 +188,15 @@ export async function PATCH(request: NextRequest, context: Context) {
           [id, floorPlanId],
         );
     }
+    let pricingSync: PricingSyncResult | undefined;
+    if (body.base_price !== undefined || body.currency !== undefined) {
+      pricingSync = await syncUnitTypeBasePrice(client, updated);
+    }
     await client.query("COMMIT");
     return NextResponse.json({
       message: "Inventory unit type updated",
       unit_type: updated,
+      ...(pricingSync ? { pricing_sync: pricingSync } : {}),
     });
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);

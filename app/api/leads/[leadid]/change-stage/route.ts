@@ -40,10 +40,19 @@ export async function POST(request: NextRequest, context: Context) {
       await client.query("ROLLBACK");
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
-    if (["closed", "duplicate", "invalid"].includes(lead.status as string)) {
+    if (
+      ["qualified", "closed", "duplicate", "invalid"].includes(
+        lead.status as string,
+      )
+    ) {
       await client.query("ROLLBACK");
       return NextResponse.json(
-        { error: `Cannot change stage while lead is ${lead.status}` },
+        {
+          error:
+            lead.status === "qualified"
+              ? "Converted leads are managed through their opportunity"
+              : `Cannot change stage while lead is ${lead.status}`,
+        },
         { status: 409 },
       );
     }

@@ -12,6 +12,7 @@ import {
   canAccessOperationsEntity,
   requireOperationsContext,
 } from "@/lib/operationsAccess";
+import { syncProjectBasePrices } from "@/lib/inventoryPricing";
 type Context = { params: Promise<{ pricebookid: string }> };
 function dateValue(value: unknown, field: string, errors: string[]) {
   if (value === undefined) return undefined;
@@ -22,6 +23,53 @@ function dateValue(value: unknown, field: string, errors: string[]) {
   }
   return value;
 }
+
+export async function GET(request: NextRequest, context: Context) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
+  const id = parseInventoryUuid((await context.params).pricebookid);
+  if (!id)
+    return NextResponse.json(
+      { error: "priceBookId must be a valid UUID" },
+      { status: 400 },
+    );
+  try {
+    const result = await pool.query(
+      `SELECT book.*,COUNT(entry.price_entry_id)::integer AS entry_count
+       FROM inventory_price_books book
+       LEFT JOIN inventory_price_book_entries entry
+         ON entry.price_book_id=book.price_book_id
+       WHERE book.price_book_id=$1
+       GROUP BY book.price_book_id`,
+      [id],
+    );
+    if (!result.rowCount)
+      return NextResponse.json(
+        { error: "Price book not found" },
+        { status: 404 },
+      );
+    const book = result.rows[0];
+    if (
+      !canAccessOperationsEntity(
+        scope.context.access,
+        Number(book.company_id),
+        Number(book.project_id),
+      )
+    )
+      return NextResponse.json(
+        { error: "You do not have access to this price book" },
+        { status: 403 },
+      );
+    return NextResponse.json({ price_book: book });
+  } catch (error) {
+    console.error("Failed to retrieve price book", error);
+    return NextResponse.json(
+      { error: "Unable to retrieve price book" },
+      { status: 500 },
+    );
+  }
+}
+
 export async function PATCH(request: NextRequest, context: Context) {
   const scope = await requireOperationsContext(request);
   if (!scope.ok) return scope.response;
@@ -119,14 +167,34 @@ export async function PATCH(request: NextRequest, context: Context) {
         { status: 403 },
       );
     }
-    const from = (data.valid_from ?? book.valid_from) as string | null;
-    const until = (data.valid_until ?? book.valid_until) as string | null;
+    const from = (
+      data.valid_from === undefined ? book.valid_from : data.valid_from
+    ) as string | null;
+    const until = (
+      data.valid_until === undefined ? book.valid_until : data.valid_until
+    ) as string | null;
     if (from && until && String(until) < String(from)) {
       await client.query("ROLLBACK");
       return NextResponse.json(
         { error: "valid_until cannot be before valid_from" },
         { status: 422 },
       );
+    }
+    if (data.currency && data.currency !== book.currency) {
+      const entries = await client.query(
+        "SELECT 1 FROM inventory_price_book_entries WHERE price_book_id=$1 LIMIT 1",
+        [id],
+      );
+      if (entries.rowCount) {
+        await client.query("ROLLBACK");
+        return NextResponse.json(
+          {
+            error:
+              "Currency cannot be changed after prices have been added; create another price book instead",
+          },
+          { status: 409 },
+        );
+      }
     }
     if (data.is_default === true)
       await client.query(
@@ -143,10 +211,21 @@ export async function PATCH(request: NextRequest, context: Context) {
       `UPDATE inventory_price_books SET ${fields.map(([key], index) => `${key}=$${index + 1}`).join(",")},updated_at=CURRENT_TIMESTAMP WHERE price_book_id=$${values.length} RETURNING *`,
       values,
     );
+    const updated = result.rows[0];
+    const pricingSync =
+      updated.is_default && updated.is_active
+        ? await syncProjectBasePrices(
+            client,
+            Number(updated.company_id),
+            Number(updated.project_id),
+            String(updated.currency),
+          )
+        : undefined;
     await client.query("COMMIT");
     return NextResponse.json({
       message: "Price book updated",
-      price_book: result.rows[0],
+      price_book: updated,
+      ...(pricingSync ? { pricing_sync: pricingSync.counts } : {}),
     });
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);

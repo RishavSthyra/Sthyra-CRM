@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
@@ -39,6 +40,7 @@ type Lead = {
   campaign_id?: string | null;
   sub_source?: string | null;
   stage_name?: string | null;
+  opportunity_id?: string | null;
   updated_at?: string;
 };
 
@@ -235,6 +237,7 @@ export default function LeadsPage() {
   const [sort, setSort] = useState("newest");
   const [openTool, setOpenTool] = useState<"filter" | "sort" | null>(null);
   const leadToolsRef = useRef<HTMLDivElement>(null);
+  const requestedLeadOpenedRef = useRef(false);
   const [page, setPage] = useState(1);
   const [data, setData] = useState<LeadResponse>({ leads: [] });
   const [loading, setLoading] = useState(true);
@@ -318,6 +321,31 @@ export default function LeadsPage() {
       cancelled = true;
     };
   }, [router]);
+
+  useEffect(() => {
+    if (requestedLeadOpenedRef.current || projectContextLoading) return;
+    const leadId = new URLSearchParams(window.location.search).get("lead_id");
+    if (!leadId) return;
+    requestedLeadOpenedRef.current = true;
+    let active = true;
+    void fetchWithSession(`/api/leads/${encodeURIComponent(leadId)}`, {
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(await getApiError(response));
+        const payload = (await response.json()) as { lead?: LeadDetail };
+        if (active && payload.lead) setSelectedLead(payload.lead);
+      })
+      .catch((cause) => {
+        if (active)
+          toast.error(
+            cause instanceof Error ? cause.message : "Unable to open lead",
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectContextLoading]);
 
   useEffect(() => {
     if (!selectedProjectId) return;
@@ -526,9 +554,7 @@ export default function LeadsPage() {
         const failed = responses.find((response) => !response.ok);
         if (failed) throw new Error(await getApiError(failed));
         const [leadBody, activityBody, callsBody, emailsBody, notesBody] =
-          (await Promise.all(
-            responses.map((response) => response.json()),
-          )) as [
+          (await Promise.all(responses.map((response) => response.json()))) as [
             { lead?: LeadDetail },
             { timeline?: LeadActivity[] },
             { calls?: LeadCall[] },
@@ -785,9 +811,9 @@ export default function LeadsPage() {
               <small>All active relationships</small>
             </div>
             <div>
-              <span>Qualified</span>
+              <span>Converted</span>
               <strong>{qualified}</strong>
-              <small>Ready for next action</small>
+              <small>Managed as opportunities</small>
             </div>
             <div>
               <span>Hot leads</span>
@@ -966,7 +992,11 @@ export default function LeadsPage() {
                 title="Sort leads"
                 type="button"
               >
-                <ListFilter aria-hidden className="size-3.5" strokeWidth={1.8} />
+                <ListFilter
+                  aria-hidden
+                  className="size-3.5"
+                  strokeWidth={1.8}
+                />
               </button>
               {openTool === "sort" && (
                 <div className="absolute top-[calc(100%+9px)] right-0 z-20 w-[220px] rounded-xl border border-[#363636] bg-[#151515] p-2 text-[#f4f4f4] shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
@@ -1127,50 +1157,62 @@ export default function LeadsPage() {
                           actionMenuLead === lead.lead_id ? "relative z-30" : ""
                         }
                       >
-                        <span
-                          className={`relative inline-block ${actionMenuLead === lead.lead_id ? "z-[31]" : "z-[1]"}`}
-                          data-lead-row-actions
-                        >
-                          <button
-                            aria-expanded={actionMenuLead === lead.lead_id}
-                            aria-haspopup="menu"
-                            aria-label={`Actions for ${lead.first_name || "lead"}`}
-                            className="h-auto w-auto border-0 bg-transparent px-0 pt-[3px] pb-[5px] text-[10px] leading-none tracking-[0.75px] text-[#b4b4b4] outline-none focus-visible:text-white"
-                            disabled={actionLead === lead.lead_id}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setActionMenuLead((current) =>
-                                current === lead.lead_id ? null : lead.lead_id,
-                              );
-                            }}
-                            type="button"
+                        {lead.status === "qualified" && lead.opportunity_id ? (
+                          <Link
+                            className="text-[10px] font-semibold text-[#65c9a7] no-underline hover:text-[#a0ead1]"
+                            href={`/opportunities?opportunity_id=${lead.opportunity_id}`}
+                            onClick={(event) => event.stopPropagation()}
                           >
-                            •••
-                          </button>
-                          {actionMenuLead === lead.lead_id && (
-                            <div
-                              className="absolute top-[calc(100%+7px)] right-0 z-50 min-w-40 rounded-[9px] border border-[#363636] bg-[#151515] p-[5px] shadow-[0_15px_35px_rgba(0,0,0,0.55)] [&_button]:block [&_button]:w-full [&_button]:rounded-md [&_button]:border-0 [&_button]:bg-transparent [&_button]:px-[9px] [&_button]:py-2 [&_button]:text-left [&_button]:text-[11px] [&_button]:text-[#d0d0d0] [&_button]:hover:bg-[#2b2b2b] [&_button]:hover:text-white"
-                              onClick={(event) => event.stopPropagation()}
-                              role="menu"
+                            Open opportunity
+                          </Link>
+                        ) : (
+                          <span
+                            className={`relative inline-block ${actionMenuLead === lead.lead_id ? "z-[31]" : "z-[1]"}`}
+                            data-lead-row-actions
+                          >
+                            <button
+                              aria-expanded={actionMenuLead === lead.lead_id}
+                              aria-haspopup="menu"
+                              aria-label={`Actions for ${lead.first_name || "lead"}`}
+                              className="h-auto w-auto border-0 bg-transparent px-0 pt-[3px] pb-[5px] text-[10px] leading-none tracking-[0.75px] text-[#b4b4b4] outline-none focus-visible:text-white"
+                              disabled={actionLead === lead.lead_id}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setActionMenuLead((current) =>
+                                  current === lead.lead_id
+                                    ? null
+                                    : lead.lead_id,
+                                );
+                              }}
+                              type="button"
                             >
-                              {leadActions.map((option) => (
-                                <button
-                                  key={option.value}
-                                  onClick={() =>
-                                    void runLeadAction(
-                                      lead.lead_id,
-                                      option.value,
-                                    )
-                                  }
-                                  role="menuitem"
-                                  type="button"
-                                >
-                                  {option.label}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </span>
+                              •••
+                            </button>
+                            {actionMenuLead === lead.lead_id && (
+                              <div
+                                className="absolute top-[calc(100%+7px)] right-0 z-50 min-w-40 rounded-[9px] border border-[#363636] bg-[#151515] p-[5px] shadow-[0_15px_35px_rgba(0,0,0,0.55)] [&_button]:block [&_button]:w-full [&_button]:rounded-md [&_button]:border-0 [&_button]:bg-transparent [&_button]:px-[9px] [&_button]:py-2 [&_button]:text-left [&_button]:text-[11px] [&_button]:text-[#d0d0d0] [&_button]:hover:bg-[#2b2b2b] [&_button]:hover:text-white"
+                                onClick={(event) => event.stopPropagation()}
+                                role="menu"
+                              >
+                                {leadActions.map((option) => (
+                                  <button
+                                    key={option.value}
+                                    onClick={() =>
+                                      void runLeadAction(
+                                        lead.lead_id,
+                                        option.value,
+                                      )
+                                    }
+                                    role="menuitem"
+                                    type="button"
+                                  >
+                                    {option.label}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -1290,6 +1332,14 @@ export default function LeadsPage() {
                           <span>Call your lead</span>
                         </a>
                       ) : null}
+                      {currentLead.status === "qualified" && (
+                        <Link
+                          className="inline-flex shrink-0 items-center rounded-full border border-[#4bbf9b]/30 bg-[#173a30] px-3 py-2.5 text-[11px] font-semibold text-[#8be0c6] no-underline"
+                          href={`/opportunities?lead_id=${currentLead.lead_id}`}
+                        >
+                          View opportunity
+                        </Link>
+                      )}
                       <button
                         aria-label="More lead options"
                         className="border-0 bg-transparent p-1 text-[25px] leading-none text-[#d2d2d2]"
@@ -1314,7 +1364,11 @@ export default function LeadsPage() {
                         </div>
                         <div>
                           <span>Status</span>
-                          <strong>{label(currentLead.status)}</strong>
+                          <strong>
+                            {currentLead.status === "qualified"
+                              ? "Converted"
+                              : label(currentLead.status)}
+                          </strong>
                         </div>
                         <div>
                           <span>Stage</span>
@@ -1407,7 +1461,8 @@ export default function LeadsPage() {
                           <div className="flex flex-col gap-[22px]">
                             {timeline.length === 0 && (
                               <p className="px-0 py-5 text-xs leading-normal text-[#8d8d8d]">
-                                No real activity has been recorded for this lead yet.
+                                No real activity has been recorded for this lead
+                                yet.
                               </p>
                             )}
                             {timeline.map((event) => (
@@ -1420,12 +1475,23 @@ export default function LeadsPage() {
                                 </span>
                                 <div className="flex min-w-0 flex-1 flex-col gap-[5px]">
                                   <div className="flex items-start justify-between gap-3">
-                                    <strong className="text-xs font-medium text-[#f5f5f5]">{event.title}</strong>
-                                    <span className="rounded-full bg-white/[0.06] px-2 py-1 text-[8px] text-[#9ca19f]">{label(event.source_type)}</span>
+                                    <strong className="text-xs font-medium text-[#f5f5f5]">
+                                      {event.title}
+                                    </strong>
+                                    <span className="rounded-full bg-white/[0.06] px-2 py-1 text-[8px] text-[#9ca19f]">
+                                      {label(event.source_type)}
+                                    </span>
                                   </div>
-                                  <small className="text-[10px] text-[#70746f]">{new Date(event.occurred_at).toLocaleString()}</small>
+                                  <small className="text-[10px] text-[#70746f]">
+                                    {new Date(
+                                      event.occurred_at,
+                                    ).toLocaleString()}
+                                  </small>
                                   {event.description && (
-                                    <RichTextContent className="mt-[3px] rounded-lg border border-[#2c2c2c] bg-[#191919] p-3 text-[11px] leading-[1.5] text-[#d0d0d0]" value={event.description} />
+                                    <RichTextContent
+                                      className="mt-[3px] rounded-lg border border-[#2c2c2c] bg-[#191919] p-3 text-[11px] leading-[1.5] text-[#d0d0d0]"
+                                      value={event.description}
+                                    />
                                   )}
                                 </div>
                               </article>
@@ -1436,55 +1502,226 @@ export default function LeadsPage() {
                         !drawerError &&
                         drawerTab === "calls" && (
                           <div className="space-y-2.5">
-                            {!leadCalls.length && <p className="py-8 text-center text-xs text-[#777c79]">No calls recorded for this lead.</p>}
+                            {!leadCalls.length && (
+                              <p className="py-8 text-center text-xs text-[#777c79]">
+                                No calls recorded for this lead.
+                              </p>
+                            )}
                             {leadCalls.map((call) => (
-                              <article className="rounded-xl border border-[#2c2f2d] bg-[#171918] p-4" key={call.call_id}>
-                                <div className="flex items-start justify-between gap-3"><div><strong className="text-xs font-medium text-[#f0f2f1]">{call.subject}</strong><p className="mt-1 text-[10px] text-[#888d8a]">{label(call.direction)} · {label(call.status)} · {call.phone_number}</p></div><Phone className="size-4 shrink-0 text-[#5bc6a2]" aria-hidden /></div>
-                                {call.summary && <p className="mt-3 text-[11px] leading-5 text-[#afb3b1]">{call.summary}</p>}
-                                <div className="mt-3 flex items-center justify-between text-[9px] text-[#6f7471]"><time>{new Date(call.started_at).toLocaleString()}</time>{call.duration_seconds ? <span>{Math.floor(call.duration_seconds / 60)}m {call.duration_seconds % 60}s</span> : null}</div>
+                              <article
+                                className="rounded-xl border border-[#2c2f2d] bg-[#171918] p-4"
+                                key={call.call_id}
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    <strong className="text-xs font-medium text-[#f0f2f1]">
+                                      {call.subject}
+                                    </strong>
+                                    <p className="mt-1 text-[10px] text-[#888d8a]">
+                                      {label(call.direction)} ·{" "}
+                                      {label(call.status)} · {call.phone_number}
+                                    </p>
+                                  </div>
+                                  <Phone
+                                    className="size-4 shrink-0 text-[#5bc6a2]"
+                                    aria-hidden
+                                  />
+                                </div>
+                                {call.summary && (
+                                  <p className="mt-3 text-[11px] leading-5 text-[#afb3b1]">
+                                    {call.summary}
+                                  </p>
+                                )}
+                                <div className="mt-3 flex items-center justify-between text-[9px] text-[#6f7471]">
+                                  <time>
+                                    {new Date(call.started_at).toLocaleString()}
+                                  </time>
+                                  {call.duration_seconds ? (
+                                    <span>
+                                      {Math.floor(call.duration_seconds / 60)}m{" "}
+                                      {call.duration_seconds % 60}s
+                                    </span>
+                                  ) : null}
+                                </div>
                               </article>
                             ))}
                           </div>
                         )}
-                      {!drawerLoading && !drawerError && drawerTab === "email" && (
-                        <div className="space-y-2.5">
-                          {!leadEmails.length ? (
-                            <div className="flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed border-[#303431] bg-[#101211] px-5 text-center">
-                              <span className="flex size-10 items-center justify-center rounded-full bg-[#17372e] text-[#6dd3b0]"><Mail className="size-4" aria-hidden /></span>
-                              <strong className="mt-3 text-xs font-medium text-[#e9ecea]">No emails with this lead</strong>
-                              <p className="mt-1 max-w-xs text-[10px] leading-5 text-[#747a77]">Start a conversation and the sent email will appear here automatically.</p>
-                              <button className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg bg-[#247b5d] px-4 text-[10px] font-semibold text-white transition hover:bg-[#2d9470]" onClick={() => openLeadEmailComposer(currentLead, email ?? "")} type="button"><Mail className="size-3.5" aria-hidden />Compose email</button>
-                            </div>
-                          ) : leadEmails.map((message) => (
-                            <article className="rounded-xl border border-[#2c2f2d] bg-[#171918] p-4" key={message.email_id}>
-                              <div className="flex items-start justify-between gap-3"><div className="min-w-0"><strong className="block truncate text-xs font-medium text-[#f0f2f1]">{message.subject}</strong><p className="mt-1 truncate text-[10px] text-[#858a87]">{message.direction === "inbound" ? `From ${message.from_address}` : `To ${message.to_addresses.join(", ")}`}</p></div><span className="rounded-full bg-[#17372e] px-2 py-1 text-[8px] text-[#75d0b1]">{label(message.status)}</span></div>
-                              <RichTextContent className="mt-3 line-clamp-3 text-[11px] leading-5 text-[#afb3b1]" value={message.body} />
-                              <time className="mt-3 block text-[9px] text-[#6f7471]">{new Date(message.sent_at || message.received_at || message.created_at).toLocaleString()}</time>
-                            </article>
-                          ))}
-                        </div>
-                      )}
-                      {!drawerLoading && !drawerError && drawerTab === "notes" && (
-                        <div>
-                          <div className="mb-3 flex items-center justify-between"><span className="text-[10px] text-[#777c79]">{leadNotes.length} {leadNotes.length === 1 ? "note" : "notes"}</span><button className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#315f50] bg-[#18382e] px-3 text-[10px] font-medium text-[#bdebdc] transition hover:bg-[#214a3d]" onClick={() => setNoteComposerOpen((current) => !current)} type="button"><Plus className="size-3" aria-hidden />Add note</button></div>
-                          {noteComposerOpen && (
-                            <form className="mb-4 rounded-xl border border-[#345d4f] bg-[#131715] p-3" onSubmit={createLeadNote}>
-                              <input className="h-9 w-full rounded-lg border border-[#303431] bg-[#0d0f0e] px-3 text-[11px] text-white outline-none placeholder:text-[#606562] focus:border-[#3c8c70]" onChange={(event) => setNoteTitle(event.target.value)} placeholder="Note title (optional)" value={noteTitle} />
-                              <div className="mt-2"><RichTextEditor ariaLabel="Lead note" minHeight="min-h-28" onChange={setNoteBody} placeholder="Write a note about this lead..." value={noteBody} /></div>
-                              <div className="mt-3 flex justify-end gap-2"><button className="h-8 rounded-lg px-3 text-[10px] text-[#a9aeab] hover:bg-white/[0.05]" onClick={() => { setNoteComposerOpen(false); setNoteTitle(""); setNoteBody(""); }} type="button">Cancel</button><button className="h-8 rounded-lg bg-[#247b5d] px-4 text-[10px] font-semibold text-white hover:bg-[#2d9470] disabled:opacity-50" disabled={noteSaving} type="submit">{noteSaving ? "Saving..." : "Save note"}</button></div>
-                            </form>
-                          )}
+                      {!drawerLoading &&
+                        !drawerError &&
+                        drawerTab === "email" && (
                           <div className="space-y-2.5">
-                            {!leadNotes.length && !noteComposerOpen && <div className="flex min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-[#303431] bg-[#101211] text-center"><StickyNote className="size-5 text-[#5f8e7c]" aria-hidden /><p className="mt-2 text-[11px] text-[#777c79]">No notes added for this lead.</p></div>}
-                            {leadNotes.map((note) => (
-                              <article className="rounded-xl border border-[#2c2f2d] bg-[#171918] p-4" key={note.note_id}>
-                                <div className="flex items-start justify-between gap-3"><strong className="text-xs font-medium text-[#f0f2f1]">{note.title || "Untitled note"}</strong><time className="shrink-0 text-[9px] text-[#6f7471]">{new Date(note.created_at).toLocaleDateString()}</time></div>
-                                <p className="mt-1 text-[9px] text-[#777c79]">{[note.author_first_name, note.author_last_name].filter(Boolean).join(" ") || "CRM note"} · {label(note.visibility)}</p>
-                                <RichTextContent className="mt-3 text-[11px] leading-5 text-[#afb3b1]" value={note.body} />
-                              </article>
-                            ))}
+                            {!leadEmails.length ? (
+                              <div className="flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed border-[#303431] bg-[#101211] px-5 text-center">
+                                <span className="flex size-10 items-center justify-center rounded-full bg-[#17372e] text-[#6dd3b0]">
+                                  <Mail className="size-4" aria-hidden />
+                                </span>
+                                <strong className="mt-3 text-xs font-medium text-[#e9ecea]">
+                                  No emails with this lead
+                                </strong>
+                                <p className="mt-1 max-w-xs text-[10px] leading-5 text-[#747a77]">
+                                  Start a conversation and the sent email will
+                                  appear here automatically.
+                                </p>
+                                <button
+                                  className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg bg-[#247b5d] px-4 text-[10px] font-semibold text-white transition hover:bg-[#2d9470]"
+                                  onClick={() =>
+                                    openLeadEmailComposer(
+                                      currentLead,
+                                      email ?? "",
+                                    )
+                                  }
+                                  type="button"
+                                >
+                                  <Mail className="size-3.5" aria-hidden />
+                                  Compose email
+                                </button>
+                              </div>
+                            ) : (
+                              leadEmails.map((message) => (
+                                <article
+                                  className="rounded-xl border border-[#2c2f2d] bg-[#171918] p-4"
+                                  key={message.email_id}
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                      <strong className="block truncate text-xs font-medium text-[#f0f2f1]">
+                                        {message.subject}
+                                      </strong>
+                                      <p className="mt-1 truncate text-[10px] text-[#858a87]">
+                                        {message.direction === "inbound"
+                                          ? `From ${message.from_address}`
+                                          : `To ${message.to_addresses.join(", ")}`}
+                                      </p>
+                                    </div>
+                                    <span className="rounded-full bg-[#17372e] px-2 py-1 text-[8px] text-[#75d0b1]">
+                                      {label(message.status)}
+                                    </span>
+                                  </div>
+                                  <RichTextContent
+                                    className="mt-3 line-clamp-3 text-[11px] leading-5 text-[#afb3b1]"
+                                    value={message.body}
+                                  />
+                                  <time className="mt-3 block text-[9px] text-[#6f7471]">
+                                    {new Date(
+                                      message.sent_at ||
+                                        message.received_at ||
+                                        message.created_at,
+                                    ).toLocaleString()}
+                                  </time>
+                                </article>
+                              ))
+                            )}
                           </div>
-                        </div>
+                        )}
+                      {!drawerLoading &&
+                        !drawerError &&
+                        drawerTab === "notes" && (
+                          <div>
+                            <div className="mb-3 flex items-center justify-between">
+                              <span className="text-[10px] text-[#777c79]">
+                                {leadNotes.length}{" "}
+                                {leadNotes.length === 1 ? "note" : "notes"}
+                              </span>
+                              <button
+                                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#315f50] bg-[#18382e] px-3 text-[10px] font-medium text-[#bdebdc] transition hover:bg-[#214a3d]"
+                                onClick={() =>
+                                  setNoteComposerOpen((current) => !current)
+                                }
+                                type="button"
+                              >
+                                <Plus className="size-3" aria-hidden />
+                                Add note
+                              </button>
+                            </div>
+                            {noteComposerOpen && (
+                              <form
+                                className="mb-4 rounded-xl border border-[#345d4f] bg-[#131715] p-3"
+                                onSubmit={createLeadNote}
+                              >
+                                <input
+                                  className="h-9 w-full rounded-lg border border-[#303431] bg-[#0d0f0e] px-3 text-[11px] text-white outline-none placeholder:text-[#606562] focus:border-[#3c8c70]"
+                                  onChange={(event) =>
+                                    setNoteTitle(event.target.value)
+                                  }
+                                  placeholder="Note title (optional)"
+                                  value={noteTitle}
+                                />
+                                <div className="mt-2">
+                                  <RichTextEditor
+                                    ariaLabel="Lead note"
+                                    minHeight="min-h-28"
+                                    onChange={setNoteBody}
+                                    placeholder="Write a note about this lead..."
+                                    value={noteBody}
+                                  />
+                                </div>
+                                <div className="mt-3 flex justify-end gap-2">
+                                  <button
+                                    className="h-8 rounded-lg px-3 text-[10px] text-[#a9aeab] hover:bg-white/[0.05]"
+                                    onClick={() => {
+                                      setNoteComposerOpen(false);
+                                      setNoteTitle("");
+                                      setNoteBody("");
+                                    }}
+                                    type="button"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    className="h-8 rounded-lg bg-[#247b5d] px-4 text-[10px] font-semibold text-white hover:bg-[#2d9470] disabled:opacity-50"
+                                    disabled={noteSaving}
+                                    type="submit"
+                                  >
+                                    {noteSaving ? "Saving..." : "Save note"}
+                                  </button>
+                                </div>
+                              </form>
+                            )}
+                            <div className="space-y-2.5">
+                              {!leadNotes.length && !noteComposerOpen && (
+                                <div className="flex min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-[#303431] bg-[#101211] text-center">
+                                  <StickyNote
+                                    className="size-5 text-[#5f8e7c]"
+                                    aria-hidden
+                                  />
+                                  <p className="mt-2 text-[11px] text-[#777c79]">
+                                    No notes added for this lead.
+                                  </p>
+                                </div>
+                              )}
+                              {leadNotes.map((note) => (
+                                <article
+                                  className="rounded-xl border border-[#2c2f2d] bg-[#171918] p-4"
+                                  key={note.note_id}
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <strong className="text-xs font-medium text-[#f0f2f1]">
+                                      {note.title || "Untitled note"}
+                                    </strong>
+                                    <time className="shrink-0 text-[9px] text-[#6f7471]">
+                                      {new Date(
+                                        note.created_at,
+                                      ).toLocaleDateString()}
+                                    </time>
+                                  </div>
+                                  <p className="mt-1 text-[9px] text-[#777c79]">
+                                    {[
+                                      note.author_first_name,
+                                      note.author_last_name,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" ") || "CRM note"}{" "}
+                                    · {label(note.visibility)}
+                                  </p>
+                                  <RichTextContent
+                                    className="mt-3 text-[11px] leading-5 text-[#afb3b1]"
+                                    value={note.body}
+                                  />
+                                </article>
+                              ))}
+                            </div>
+                          </div>
                         )}
                     </section>
                   </>

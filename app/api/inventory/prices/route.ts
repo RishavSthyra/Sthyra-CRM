@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import {
+  assertOnlyFields,
   isRecord,
   jsonObjectValue,
   numberValue,
@@ -74,6 +75,19 @@ export async function POST(request: NextRequest) {
       { status: 422 },
     );
   const errors: string[] = [];
+  assertOnlyFields(
+    body,
+    [
+      "price_book_id",
+      "unit_type_id",
+      "unit_id",
+      "base_amount",
+      "components",
+      "valid_from",
+      "valid_until",
+    ],
+    errors,
+  );
   const bookId = uuidValue(body.price_book_id, "price_book_id", errors);
   const unitTypeId = uuidValue(body.unit_type_id, "unit_type_id", errors, true);
   const unitId = uuidValue(body.unit_id, "unit_id", errors, true);

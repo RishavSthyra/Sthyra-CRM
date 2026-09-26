@@ -24,8 +24,7 @@ export type OpportunityPatch = {
 };
 
 type ValidationResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; errors: string[] };
+  { ok: true; data: T } | { ok: false; errors: string[] };
 
 function nullableUuid(
   value: unknown,
@@ -121,11 +120,7 @@ export function validateOpportunityPatch(
     "current_owner_user_id",
     errors,
   );
-  const team = nullableUuid(
-    body.current_team_id,
-    "current_team_id",
-    errors,
-  );
+  const team = nullableUuid(body.current_team_id, "current_team_id", errors);
 
   return errors.length
     ? { ok: false, errors }
@@ -217,6 +212,67 @@ export async function addOpportunityStateHistory(
       performedBy,
     ],
   );
+}
+
+export async function advanceOpportunityToStage(
+  client: PoolClient,
+  reference: { opportunityId?: string | null; leadId?: string | null },
+  stageKey: string,
+  action: string,
+  performedBy: string | null,
+): Promise<Record<string, unknown> | null> {
+  if (!reference.opportunityId && !reference.leadId) return null;
+  const result = await client.query(
+    `SELECT o.*, current_stage.position AS current_position,
+       target_stage.position AS target_position,
+       target_stage.probability AS target_probability
+     FROM opportunities o
+     LEFT JOIN project_opportunity_stages current_stage
+       ON current_stage.project_id=o.project_id
+      AND current_stage.stage_key=o.stage_key
+      AND current_stage.is_active=TRUE
+     JOIN project_opportunity_stages target_stage
+       ON target_stage.project_id=o.project_id
+      AND target_stage.stage_key=$3
+      AND target_stage.is_active=TRUE
+     WHERE ($1::uuid IS NOT NULL AND o.opportunity_id=$1)
+        OR ($1::uuid IS NULL AND $2::uuid IS NOT NULL AND o.lead_id=$2)
+     FOR UPDATE OF o`,
+    [reference.opportunityId ?? null, reference.leadId ?? null, stageKey],
+  );
+  if (!result.rowCount) return null;
+
+  const opportunity = result.rows[0] as Record<string, unknown>;
+  if (
+    opportunity.status !== "open" ||
+    Number(opportunity.current_position ?? 0) >=
+      Number(opportunity.target_position)
+  ) {
+    return opportunity;
+  }
+
+  await addOpportunityStateHistory(
+    client,
+    opportunity,
+    action,
+    "open",
+    stageKey,
+    performedBy,
+  );
+  const updated = await client.query(
+    `UPDATE opportunities
+     SET stage_key=$1, probability=$2, updated_by=$3,
+         updated_at=CURRENT_TIMESTAMP
+     WHERE opportunity_id=$4
+     RETURNING *`,
+    [
+      stageKey,
+      opportunity.target_probability,
+      performedBy,
+      opportunity.opportunity_id,
+    ],
+  );
+  return updated.rows[0] ?? opportunity;
 }
 
 export async function addOpportunityOwnershipHistory(

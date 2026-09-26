@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   LayoutDashboard,
   Settings,
+  Target,
   UserRoundPlus,
   UsersRound,
   type LucideIcon,
@@ -18,6 +19,7 @@ import {
 const primaryItems = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/leads", icon: UserRoundPlus, label: "Leads" },
+  { href: "/opportunities", icon: Target, label: "Opportunities" },
   { href: "/activity", icon: ChartNoAxesColumnIncreasing, label: "Activity" },
   { href: "/calendar", icon: CalendarDays, label: "Calendar" },
   { href: "/inventory", icon: ClipboardCheck, label: "Inventory" },
