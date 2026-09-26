@@ -37,7 +37,7 @@ export function WorkspaceSectionPage({
   return (
     <main className="min-h-dvh bg-black text-[#f5f5f5]">
       <DashboardSidebar />
-      <section className="ml-[100px] min-h-dvh py-8 pr-8 pb-12 transition-[margin] duration-200 peer-hover:ml-[250px] max-[900px]:ml-[250px] max-[900px]:py-6 max-[900px]:pr-5 max-[900px]:pb-10 max-[560px]:ml-0 max-[560px]:px-3 max-[560px]:pt-24 max-[560px]:pb-8">
+      <section className="ml-[96px] min-h-dvh py-8 pr-8 pb-12 max-[900px]:py-6 max-[900px]:pr-5 max-[900px]:pb-10 max-[560px]:ml-[84px] max-[560px]:px-3 max-[560px]:py-5 max-[560px]:pb-8">
         <div>
           <span className="text-xs text-[#5b5b5b]">{eyebrow}</span>
           <h1 className="mt-3 font-[var(--font-bricolage)] text-[clamp(32px,3vw,44px)] leading-[1.1]">

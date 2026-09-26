@@ -1,5 +1,5 @@
-import Image from "next/image";
 import type { ReactNode } from "react";
+import { Check } from "lucide-react";
 
 type AuthShellProps = {
   activeStep: number;
@@ -54,11 +54,10 @@ export function AuthShell({
                       }`}
                     >
                       {completed ? (
-                        <Image
-                          src="/auth/check.svg"
-                          alt="Completed"
-                          width={20}
-                          height={20}
+                        <Check
+                          aria-label="Completed"
+                          className="size-5"
+                          strokeWidth={2}
                         />
                       ) : (
                         step

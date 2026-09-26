@@ -1,68 +1,60 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-
-const icons = {
-  logo: "https://www.figma.com/api/mcp/asset/7d88936b-1213-4985-8f66-19df13e87427/6517c.svg",
-  bell: "https://www.figma.com/api/mcp/asset/7d88936b-1213-4985-8f66-19df13e87427/a3f57.svg",
-  dashboard:
-    "https://www.figma.com/api/mcp/asset/7d88936b-1213-4985-8f66-19df13e87427/59e8e.svg",
-  leads:
-    "https://www.figma.com/api/mcp/asset/7d88936b-1213-4985-8f66-19df13e87427/8e64f.svg",
-  activity:
-    "https://www.figma.com/api/mcp/asset/7d88936b-1213-4985-8f66-19df13e87427/1b83e.svg",
-  calendar:
-    "https://www.figma.com/api/mcp/asset/7d88936b-1213-4985-8f66-19df13e87427/886a2.svg",
-  inventory:
-    "https://www.figma.com/api/mcp/asset/7d88936b-1213-4985-8f66-19df13e87427/cae45.svg",
-  transfers:
-    "https://www.figma.com/api/mcp/asset/7d88936b-1213-4985-8f66-19df13e87427/fb3bd.svg",
-  team: "https://www.figma.com/api/mcp/asset/7d88936b-1213-4985-8f66-19df13e87427/47a06.svg",
-  settings:
-    "https://www.figma.com/api/mcp/asset/7d88936b-1213-4985-8f66-19df13e87427/d5fba.svg",
-};
+import {
+  ArrowRightLeft,
+  CalendarDays,
+  ChartNoAxesColumnIncreasing,
+  ClipboardCheck,
+  LayoutDashboard,
+  Settings,
+  UserRoundPlus,
+  UsersRound,
+  type LucideIcon,
+} from "lucide-react";
 
 const primaryItems = [
-  { href: "/dashboard", icon: icons.dashboard, label: "Dashboard" },
-  { href: "/leads", icon: icons.leads, label: "Leads" },
-  { href: "/activity", icon: icons.activity, label: "Activity" },
-  { href: "/calendar", icon: icons.calendar, label: "Calendar" },
-  { href: "/inventory", icon: icons.inventory, label: "Inventory" },
+  { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+  { href: "/leads", icon: UserRoundPlus, label: "Leads" },
+  { href: "/activity", icon: ChartNoAxesColumnIncreasing, label: "Activity" },
+  { href: "/calendar", icon: CalendarDays, label: "Calendar" },
+  { href: "/inventory", icon: ClipboardCheck, label: "Inventory" },
 ];
 const secondaryItems = [
-  { href: "/transfers", icon: icons.transfers, label: "Transfers" },
-  { href: "/team-members", icon: icons.team, label: "Team Members" },
+  { href: "/transfers", icon: ArrowRightLeft, label: "Transfers" },
+  { href: "/team-members", icon: UsersRound, label: "Team Members" },
 ];
 
 function NavItem({
   active = false,
   href,
-  icon,
+  icon: Icon,
   label,
 }: {
   active?: boolean;
   href: string;
-  icon: string;
+  icon: LucideIcon;
   label: string;
 }) {
   return (
     <Link
       aria-current={active ? "page" : undefined}
-      className={`flex h-11 w-full items-center gap-2.5 rounded-xl border-0 px-3 text-left text-[#f5f5f5] no-underline transition-colors hover:bg-[#2c2c2c] max-[900px]:justify-center max-[900px]:px-0 ${
-        active ? "bg-[#2c2c2c]" : "bg-transparent"
+      className={`group/item flex w-full flex-col items-center justify-start gap-1 rounded-lg px-0.5 py-1 text-center text-[#aeb4b1] no-underline transition-colors hover:text-white ${
+        active ? "text-white" : ""
       }`}
       href={href}
       title={label}
     >
-      <img
-        alt=""
-        className="size-5 shrink-0 object-contain"
-        height={20}
-        src={icon}
-        width={20}
-      />
-      <span className="whitespace-nowrap text-sm opacity-0 transition-opacity duration-100 group-hover/sidebar:opacity-100 max-[900px]:hidden">
+      <span
+        className={`flex size-8 items-center justify-center rounded-lg transition-colors group-hover/item:bg-white/[0.07] ${
+          active ? "bg-white/[0.12]" : "bg-transparent"
+        }`}
+      >
+        <Icon aria-hidden className="size-[15px]" strokeWidth={1.8} />
+      </span>
+      <span className="max-w-full text-[9px] leading-[11px] font-medium whitespace-normal">
         {label}
       </span>
     </Link>
@@ -77,37 +69,27 @@ export function DashboardSidebar() {
   }
 
   return (
-    <aside className="peer group/sidebar fixed inset-y-3 left-3 z-50 flex w-[76px] flex-col overflow-hidden rounded-2xl border border-[#2c2c2c] bg-[#111] transition-[width] duration-200 hover:w-[226px] max-[900px]:w-[226px] max-[560px]:inset-x-2 max-[560px]:top-2 max-[560px]:bottom-auto max-[560px]:h-16 max-[560px]:w-auto max-[560px]:hover:w-auto">
-      <div className="basis-24 border-b border-[#2c2c2c] p-4 transition-[flex-basis] duration-200 group-hover/sidebar:basis-[164px] max-[560px]:basis-16 max-[560px]:border-0 max-[560px]:px-4 max-[560px]:py-3 max-[560px]:group-hover/sidebar:basis-16">
-        <div className="flex flex-col items-start justify-start gap-4 group-hover/sidebar:flex-row group-hover/sidebar:items-center group-hover/sidebar:justify-between max-[900px]:flex-col max-[560px]:flex-row">
-          <Link aria-label="Dashboard" href="/dashboard">
-            <img alt="Sthyra CRM" height={30} src={icons.logo} width={30} />
-          </Link>
-          <Link
-            aria-label="Notifications"
-            className="hidden size-9 items-center justify-center rounded-xl border border-[#3b3b3b] bg-[#2c2c2c] group-hover/sidebar:flex max-[560px]:group-hover/sidebar:hidden"
-            href="/notifications"
-          >
-            <img
-              alt=""
-              className="size-5"
-              height={24}
-              src={icons.bell}
-              width={24}
-            />
-          </Link>
-        </div>
-        <div className="mt-9 flex flex-col gap-1 opacity-0 transition-opacity duration-100 group-hover/sidebar:opacity-100 max-[900px]:hidden">
-          <span className="text-xs">Welcome!</span>
-          <strong className="font-[var(--font-bricolage)] text-2xl">
-            John Doe
-          </strong>
-        </div>
+    <aside className="fixed inset-y-3 left-3 z-50 flex w-[68px] flex-col overflow-hidden rounded-[19px] border border-white/[0.11] bg-[#0d100f] shadow-[0_20px_55px_rgba(0,0,0,0.4)] max-[560px]:inset-y-2 max-[560px]:left-2">
+      <div className="flex h-16 shrink-0 items-center justify-center border-b border-white/[0.09]">
+        <Link
+          aria-label="Dashboard"
+          className="flex size-9 items-center justify-center rounded-lg transition hover:bg-white/[0.06]"
+          href="/dashboard"
+        >
+          <Image
+            alt=""
+            className="size-7 object-contain"
+            height={28}
+            priority
+            src="/sthyra-logo.png"
+            width={28}
+          />
+        </Link>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col justify-between p-4 max-[560px]:hidden">
+      <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <nav
           aria-label="Workspace navigation"
-          className="flex min-h-0 flex-col gap-2.5 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex flex-col items-center gap-0.5"
         >
           {primaryItems.map((item) => (
             <NavItem
@@ -118,7 +100,7 @@ export function DashboardSidebar() {
               label={item.label}
             />
           ))}
-          <div className="my-1.5 border-t border-[#2c2c2c]" />
+          <div className="my-1.5 h-px w-8 bg-white/[0.12]" />
           {secondaryItems.map((item) => (
             <NavItem
               active={isActive(item.href)}
@@ -128,15 +110,14 @@ export function DashboardSidebar() {
               label={item.label}
             />
           ))}
-        </nav>
-        <div className="border-t border-[#2c2c2c] pt-2">
+          <div className="my-1.5 h-px w-8 bg-white/[0.12]" />
           <NavItem
             active={isActive("/settings") || isActive("/preferences")}
             href="/settings"
-            icon={icons.settings}
+            icon={Settings}
             label="Settings"
           />
-        </div>
+        </nav>
       </div>
     </aside>
   );

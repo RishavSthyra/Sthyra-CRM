@@ -7,10 +7,16 @@ import {
   validateQualificationValues,
 } from "@/lib/leadCommands";
 import { parseLeadId } from "@/lib/leads";
+import {
+  canAccessOperationsEntity,
+  requireOperationsContext,
+} from "@/lib/operationsAccess";
 import { isObject } from "@/utils/isObject";
 
 type Context = { params: Promise<{ leadid: string }> };
 export async function POST(request: NextRequest, context: Context) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
   const leadId = parseLeadId((await context.params).leadid);
   if (!leadId) {
     return NextResponse.json(
@@ -53,6 +59,24 @@ export async function POST(request: NextRequest, context: Context) {
     if (!lead) {
       await client.query("ROLLBACK");
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+    }
+    const project = await client.query(
+      "SELECT company_id FROM projects WHERE project_id=$1",
+      [lead.project_id],
+    );
+    if (
+      !project.rowCount ||
+      !canAccessOperationsEntity(
+        scope.context.access,
+        Number(project.rows[0].company_id),
+        Number(lead.project_id),
+      )
+    ) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { error: "You do not have access to this lead" },
+        { status: 403 },
+      );
     }
     if (!["active", "nurture"].includes(lead.status as string)) {
       await client.query("ROLLBACK");
@@ -97,9 +121,38 @@ export async function POST(request: NextRequest, context: Context) {
       stageId,
       { qualification_data: body.qualification_data, qualified_at: new Date() },
       { qualification_data: body.qualification_data },
+      scope.context.userId,
+    );
+    const opportunityResult = await client.query(
+      `UPDATE opportunities
+       SET created_by=COALESCE(created_by,$2), updated_by=COALESCE(updated_by,$2)
+       WHERE lead_id=$1
+       RETURNING *`,
+      [leadId, scope.context.userId],
+    );
+    const opportunity = opportunityResult.rows[0];
+    if (!opportunity) {
+      throw new Error("Qualified lead did not create an opportunity");
+    }
+    await client.query(
+      `INSERT INTO opportunity_state_history (
+         opportunity_id, action, from_status, to_status, from_stage_key,
+         to_stage_key, metadata, performed_by
+       )
+       SELECT $1, 'qualified_from_lead', NULL, 'open', NULL, 'qualified',
+              JSONB_BUILD_OBJECT('lead_id',$2::uuid), $3
+       WHERE NOT EXISTS (
+         SELECT 1 FROM opportunity_state_history
+         WHERE opportunity_id=$1 AND action='qualified_from_lead'
+       )`,
+      [opportunity.opportunity_id, leadId, scope.context.userId],
     );
     await client.query("COMMIT");
-    return NextResponse.json({ message: "Lead qualified", lead: updated });
+    return NextResponse.json({
+      message: "Lead qualified and opportunity created",
+      lead: updated,
+      opportunity,
+    });
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     console.error("Failed to qualify lead", error);

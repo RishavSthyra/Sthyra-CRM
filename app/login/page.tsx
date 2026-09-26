@@ -77,7 +77,7 @@ export default function LoginPage() {
       description="Enter your account details to continue to your CRM"
       stepLabels={["Sign in with your account", "Start managing your CRM"]}
     >
-      <SocialButtons />
+      <SocialButtons mode="login" />
       <OrDivider />
       <form
         className="flex flex-col gap-3.5"

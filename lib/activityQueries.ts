@@ -50,7 +50,7 @@ export async function listActivities(request: NextRequest, timeline = false) {
   }
   const sourceType = request.nextUrl.searchParams.get("source_type");
   if (sourceType) {
-    if (!["task", "note", "appointment"].includes(sourceType)) {
+    if (!["task", "note", "appointment", "call", "email"].includes(sourceType)) {
       return NextResponse.json(
         { error: "Invalid source_type" },
         { status: 400 },
@@ -97,6 +97,16 @@ export async function listActivities(request: NextRequest, timeline = false) {
     const listValues = [...values, pagination.limit, pagination.offset];
     const result = await pool.query(
       `SELECT ${ACTIVITY_COLUMNS}, p.project_name,
+        ap.appointment_type AS source_appointment_type,
+        COALESCE(ap.starts_at, cl.started_at, em.sent_at, em.received_at) AS source_starts_at,
+        COALESCE(n.body, t.description, ap.description, cl.summary, em.body) AS source_description,
+        COALESCE(cl.direction, em.direction) AS source_direction,
+        COALESCE(cl.status, em.status) AS source_status,
+        cl.outcome AS source_outcome,
+        cl.phone_number AS source_phone_number,
+        cl.duration_seconds AS source_duration_seconds,
+        em.from_address AS source_from_address,
+        em.to_addresses AS source_to_addresses,
         c.first_name AS contact_first_name, c.last_name AS contact_last_name,
         u.first_name AS actor_first_name, u.last_name AS actor_last_name
        FROM activities a
@@ -104,6 +114,10 @@ export async function listActivities(request: NextRequest, timeline = false) {
        LEFT JOIN contacts c ON c.contact_id=a.contact_id
        LEFT JOIN users u ON u.user_id=a.actor_user_id
        LEFT JOIN notes n ON n.note_id=a.source_id AND a.source_type='note'
+       LEFT JOIN tasks t ON t.task_id=a.source_id AND a.source_type='task'
+       LEFT JOIN appointments ap ON ap.appointment_id=a.source_id AND a.source_type='appointment'
+       LEFT JOIN calls cl ON cl.call_id=a.source_id AND a.source_type='call'
+       LEFT JOIN emails em ON em.email_id=a.source_id AND a.source_type='email'
        ${where}
        ORDER BY a.occurred_at DESC, a.activity_id DESC
        LIMIT $${listValues.length - 1} OFFSET $${listValues.length}`,
@@ -147,6 +161,8 @@ export async function getActivity(request: NextRequest, rawActivityId: string) {
           WHEN 'task' THEN to_jsonb(t)
           WHEN 'note' THEN to_jsonb(n)
           WHEN 'appointment' THEN to_jsonb(ap)
+          WHEN 'call' THEN to_jsonb(cl)
+          WHEN 'email' THEN to_jsonb(em)
         END AS source
        FROM activities a
        JOIN projects p ON p.project_id=a.project_id
@@ -155,6 +171,8 @@ export async function getActivity(request: NextRequest, rawActivityId: string) {
        LEFT JOIN tasks t ON t.task_id=a.source_id AND a.source_type='task'
        LEFT JOIN notes n ON n.note_id=a.source_id AND a.source_type='note'
        LEFT JOIN appointments ap ON ap.appointment_id=a.source_id AND a.source_type='appointment'
+       LEFT JOIN calls cl ON cl.call_id=a.source_id AND a.source_type='call'
+       LEFT JOIN emails em ON em.email_id=a.source_id AND a.source_type='email'
        WHERE a.activity_id=$1`,
       [activityId],
     );

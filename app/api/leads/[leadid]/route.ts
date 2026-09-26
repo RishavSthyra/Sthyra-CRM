@@ -19,9 +19,16 @@ export async function GET(_request: NextRequest, context: Context) {
               CASE WHEN s.stage_id IS NULL THEN NULL ELSE JSONB_BUILD_OBJECT(
                 'stage_id', s.stage_id, 'stage_key', s.stage_key,
                 'stage_name', s.stage_name, 'is_terminal', s.is_terminal
-              ) END AS stage
+              ) END AS stage,
+              CASE WHEN o.opportunity_id IS NULL THEN NULL ELSE JSONB_BUILD_OBJECT(
+                'opportunity_id', o.opportunity_id,
+                'opportunity_name', o.opportunity_name,
+                'stage_key', o.stage_key, 'status', o.status,
+                'outcome', o.outcome, 'amount', o.amount
+              ) END AS opportunity
        FROM leads l JOIN contacts c ON c.contact_id=l.contact_id
        LEFT JOIN project_lead_stages s ON s.stage_id=l.stage_id
+       LEFT JOIN opportunities o ON o.lead_id=l.lead_id
        WHERE l.lead_id=$1`,
       [leadId],
     );

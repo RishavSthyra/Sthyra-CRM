@@ -25,7 +25,8 @@ export const NOTE_COLUMNS = `
 `;
 
 export const APPOINTMENT_COLUMNS = `
-  ap.appointment_id, ap.company_id, ap.project_id, ap.lead_id, ap.contact_id,
+  ap.appointment_id, ap.company_id, ap.project_id, ap.lead_id,
+  ap.opportunity_id, ap.contact_id,
   ap.appointment_type, ap.title, ap.description, ap.location, ap.meeting_url,
   ap.starts_at, ap.ends_at, ap.timezone, ap.status, ap.organizer_user_id,
   ap.assigned_to_user_id, ap.assigned_to_team_id, ap.created_by, ap.updated_by,
@@ -256,6 +257,7 @@ export function validateNotePayload(
 export type AppointmentInput = {
   project_id?: number;
   lead_id?: string | null;
+  opportunity_id?: string | null;
   contact_id?: string | null;
   appointment_type?: "call" | "meeting" | "site_visit" | "video" | "other";
   title?: string;
@@ -280,6 +282,7 @@ export function validateAppointmentPayload(
   const allowed = new Set([
     "project_id",
     "lead_id",
+    "opportunity_id",
     "contact_id",
     "appointment_type",
     "title",
@@ -298,6 +301,11 @@ export function validateAppointmentPayload(
     .map((field) => `Unknown field: ${field}`);
   const project = projectId(body.project_id, errors);
   const lead = uuid(body.lead_id, "lead_id", errors);
+  const opportunity = uuid(
+    body.opportunity_id,
+    "opportunity_id",
+    errors,
+  );
   const contact = uuid(body.contact_id, "contact_id", errors);
   const types = ["call", "meeting", "site_visit", "video", "other"] as const;
   let appointmentType: AppointmentInput["appointment_type"];
@@ -363,6 +371,7 @@ export function validateAppointmentPayload(
         data: {
           project_id: project,
           lead_id: lead,
+          opportunity_id: opportunity,
           contact_id: contact,
           appointment_type: appointmentType,
           title: title ?? undefined,
@@ -385,6 +394,7 @@ export async function validateActivityReferences(
   data: {
     project_id?: number;
     lead_id?: string | null;
+    opportunity_id?: string | null;
     contact_id?: string | null;
     assigned_to_user_id?: string | null;
     organizer_user_id?: string | null;
@@ -412,15 +422,47 @@ export async function validateActivityReferences(
       );
     }
   }
+  if (data.opportunity_id) {
+    const opportunity = await client.query(
+      `SELECT lead_id, contact_id FROM opportunities
+       WHERE opportunity_id=$1 AND project_id=$2 AND company_id=$3`,
+      [data.opportunity_id, data.project_id, companyId],
+    );
+    if (!opportunity.rowCount)
+      throw new ActivityReferenceError(
+        "Opportunity not found in this project",
+      );
+    if (
+      data.lead_id &&
+      opportunity.rows[0].lead_id !== data.lead_id
+    ) {
+      throw new ActivityReferenceError(
+        "lead_id does not match the opportunity lead",
+      );
+    }
+    if (
+      data.contact_id &&
+      opportunity.rows[0].contact_id !== data.contact_id
+    ) {
+      throw new ActivityReferenceError(
+        "contact_id does not match the opportunity contact",
+      );
+    }
+  }
   if (data.contact_id) {
     const contact = await client.query(
       `SELECT 1 FROM contacts c
        WHERE c.contact_id=$1 AND c.archived_at IS NULL
-         AND ($2::uuid IS NOT NULL OR EXISTS (
+         AND ($2::uuid IS NOT NULL OR $4::uuid IS NOT NULL OR EXISTS (
            SELECT 1 FROM leads l
            WHERE l.contact_id=c.contact_id AND l.project_id=$3
          ))`,
-      [data.contact_id, data.lead_id ?? null, data.project_id],
+      [
+        data.contact_id,
+        data.lead_id ?? null,
+        data.project_id,
+        data.opportunity_id ?? null,
+      ],
     );
     if (!contact.rowCount) {
       throw new ActivityReferenceError("Active contact not found");
@@ -455,22 +497,24 @@ export async function validateActivityReferences(
 }
 
 export async function recordActivity(
-  client: PoolClient,
+  client: Pick<PoolClient, "query">,
   entity: Record<string, unknown>,
-  sourceType: "task" | "note" | "appointment",
+  sourceType: "task" | "note" | "appointment" | "call" | "email",
   activityType: string,
   title: string,
-  actorUserId: string,
+  actorUserId: string | null,
   options: {
     description?: string | null;
     metadata?: Record<string, unknown>;
+    occurredAt?: string | Date | null;
   } = {},
 ): Promise<void> {
   await client.query(
     `INSERT INTO activities (
        company_id, project_id, lead_id, contact_id, activity_type,
-       source_type, source_id, title, description, metadata, actor_user_id
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)`,
+       source_type, source_id, title, description, metadata, actor_user_id,
+       occurred_at
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,COALESCE($12,CURRENT_TIMESTAMP))`,
     [
       entity.company_id,
       entity.project_id,
@@ -483,6 +527,7 @@ export async function recordActivity(
       options.description ?? null,
       JSON.stringify(options.metadata ?? {}),
       actorUserId,
+      options.occurredAt ?? null,
     ],
   );
 }

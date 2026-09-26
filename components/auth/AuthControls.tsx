@@ -1,8 +1,10 @@
 "use client";
 
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import type { InputHTMLAttributes, ReactNode } from "react";
 import { useState } from "react";
+import { ArrowRight, ChevronDown, Eye, EyeOff } from "lucide-react";
 
 type FieldProps = InputHTMLAttributes<HTMLInputElement> & {
   label: string;
@@ -54,7 +56,11 @@ export function PasswordField({
           onClick={() => setVisible((current) => !current)}
           type="button"
         >
-          <Image src="/auth/eye.svg" alt="" width={20} height={14} />
+          {visible ? (
+            <EyeOff aria-hidden className="size-5" strokeWidth={1.8} />
+          ) : (
+            <Eye aria-hidden className="size-5" strokeWidth={1.8} />
+          )}
         </button>
       </span>
     </label>
@@ -83,16 +89,23 @@ export function AuthSelect({
       <span className="text-[13px] leading-5 font-medium sm:text-sm">
         {label}
       </span>
-      <select
-        className="h-12 w-full appearance-none rounded-[10px] border border-[#342e2e] bg-[#070707] bg-[url('/auth/chevron.svg')] bg-[length:20px_20px] bg-[position:right_14px_center] bg-no-repeat px-3 pr-11 text-sm text-white outline-none transition focus:border-[#2aa284] focus:ring-2 focus:ring-[#2aa284]/20"
-        id={id}
-        name={name}
-        onChange={onChange}
-        required={required}
-        value={value}
-      >
-        {children}
-      </select>
+      <span className="relative block">
+        <select
+          className="h-12 w-full appearance-none rounded-[10px] border border-[#342e2e] bg-[#070707] px-3 pr-11 text-sm text-white outline-none transition focus:border-[#2aa284] focus:ring-2 focus:ring-[#2aa284]/20"
+          id={id}
+          name={name}
+          onChange={onChange}
+          required={required}
+          value={value}
+        >
+          {children}
+        </select>
+        <ChevronDown
+          aria-hidden
+          className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-white/60"
+          strokeWidth={1.8}
+        />
+      </span>
     </label>
   );
 }
@@ -106,25 +119,39 @@ export function SubmitButton({
 }) {
   return (
     <button
-      className="flex h-[52px] w-full items-center gap-2 rounded-[10px] bg-[linear-gradient(90deg,#1b6151_0%,#266756_25%,#0a261c_100%)] px-4 text-left text-[15px] font-medium shadow-[inset_0_4px_50px_rgba(0,0,0,0.25),0_4px_50px_rgba(0,0,0,0.25)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+      className="flex h-[52px] w-full items-center gap-2 rounded-[10px] bg-[#236f5a] px-4 text-left text-[15px] font-medium shadow-[0_10px_30px_rgba(20,88,69,0.28)] transition hover:bg-[#2a8068] disabled:cursor-not-allowed disabled:opacity-60"
       disabled={pending}
       type="submit"
     >
       <span className="flex-1">{pending ? "Please wait…" : children}</span>
       {!pending && (
-        <Image src="/auth/arrow-right.svg" alt="" width={20} height={20} />
+        <ArrowRight aria-hidden className="size-5" strokeWidth={1.8} />
       )}
     </button>
   );
 }
 
-export function SocialButtons() {
+export function SocialButtons({ mode = "login" }: { mode?: "login" | "signup" }) {
+  const router = useRouter();
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {[
-        ["google", "Continue with Google"],
-        ["apple", "Continue with Apple"],
-      ].map(([provider, label]) => (
+      <button
+        className="flex h-12 items-center justify-center gap-2.5 rounded-[10px] border border-[#342e2e] bg-[#222]/20 px-3 text-sm text-white transition hover:border-[#4b4444] hover:bg-white/[0.07]"
+        onClick={() => router.push(`/api/auth/google/start?mode=${mode}`)}
+        type="button"
+      >
+        <span className="relative size-6 overflow-hidden">
+          <Image
+            className="object-contain"
+            src="/auth/google.png"
+            alt=""
+            fill
+            sizes="24px"
+          />
+        </span>
+        Continue with Google
+      </button>
+      {[["apple", "Continue with Apple"]].map(([provider, label]) => (
         <button
           className="flex h-12 cursor-not-allowed items-center justify-center gap-2.5 rounded-[10px] border border-[#342e2e] bg-[#222]/20 px-3 text-sm text-white/65"
           disabled

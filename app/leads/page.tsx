@@ -1,10 +1,25 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
+import {
+  ChevronDown,
+  Funnel,
+  ListFilter,
+  Mail,
+  Phone,
+  Plus,
+  RefreshCw,
+  Search,
+  StickyNote,
+} from "lucide-react";
+import {
+  RichTextContent,
+  RichTextEditor,
+} from "@/components/activity/RichTextEditor";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
-import { fetchWithSession } from "@/lib/clientAuth";
+import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 import { DEFAULT_PROJECT_LEAD_STAGES } from "@/lib/defaultLeadStages";
 
 type Lead = {
@@ -74,11 +89,47 @@ type LeadDetail = Lead & {
   stage?: { stage_name?: string | null } | null;
 };
 
-type TimelineEvent = {
-  event_id: string;
-  event_type: string;
-  data?: Record<string, unknown>;
+type LeadActivity = {
+  activity_id: string;
+  activity_type: string;
+  source_type: "task" | "note" | "appointment" | "call" | "email";
+  title: string;
+  description?: string | null;
   occurred_at: string;
+};
+
+type LeadCall = {
+  call_id: string;
+  direction: "inbound" | "outbound";
+  status: string;
+  phone_number: string;
+  subject: string;
+  summary?: string | null;
+  started_at: string;
+  duration_seconds?: number | null;
+};
+
+type LeadEmail = {
+  email_id: string;
+  direction: "inbound" | "outbound";
+  status: string;
+  subject: string;
+  body: string;
+  from_address: string;
+  to_addresses: string[];
+  sent_at?: string | null;
+  received_at?: string | null;
+  created_at: string;
+};
+
+type LeadNote = {
+  note_id: string;
+  title?: string | null;
+  body: string;
+  visibility: string;
+  created_at: string;
+  author_first_name?: string | null;
+  author_last_name?: string | null;
 };
 
 type LeadResponse = {
@@ -167,33 +218,6 @@ function formatBudget(value?: string | number | null) {
     : String(value);
 }
 
-function timelineTitle(event: TimelineEvent) {
-  if (event.event_type === "state_change") {
-    return `${label(String(event.data?.command || "Lead updated"))}`;
-  }
-  if (event.event_type === "ownership_change") return "Ownership updated";
-  if (event.event_type === "attribution_added") return "Attribution added";
-  if (event.event_type.startsWith("tag_")) return "Lead tags updated";
-  if (event.event_type === "next_action_updated") return "Next action updated";
-  return label(event.event_type);
-}
-
-function timelineDescription(event: TimelineEvent) {
-  const metadata = event.data?.metadata;
-  if (metadata && typeof metadata === "object") {
-    return Object.entries(metadata)
-      .map(([key, value]) => `${label(key)}: ${String(value)}`)
-      .join(" · ");
-  }
-  if (event.event_type === "state_change") {
-    const from = event.data?.from_status;
-    const to = event.data?.to_status;
-    if (from || to)
-      return `${label(String(from || "New"))} → ${label(String(to || "—"))}`;
-  }
-  return "Lead activity recorded in the CRM.";
-}
-
 export default function LeadsPage() {
   const router = useRouter();
   const [projectContext, setProjectContext] =
@@ -219,7 +243,14 @@ export default function LeadsPage() {
   const [actionMenuLead, setActionMenuLead] = useState<string | null>(null);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [leadDetail, setLeadDetail] = useState<LeadDetail | null>(null);
-  const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
+  const [timeline, setTimeline] = useState<LeadActivity[]>([]);
+  const [leadCalls, setLeadCalls] = useState<LeadCall[]>([]);
+  const [leadEmails, setLeadEmails] = useState<LeadEmail[]>([]);
+  const [leadNotes, setLeadNotes] = useState<LeadNote[]>([]);
+  const [noteComposerOpen, setNoteComposerOpen] = useState(false);
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteBody, setNoteBody] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [drawerError, setDrawerError] = useState<string | null>(null);
   const [drawerTab, setDrawerTab] = useState<
@@ -449,6 +480,7 @@ export default function LeadsPage() {
 
   useEffect(() => {
     if (!selectedLeadId) return;
+    const leadId: string = selectedLeadId;
 
     let cancelled = false;
 
@@ -459,40 +491,59 @@ export default function LeadsPage() {
       setDrawerError(null);
       setLeadDetail(null);
       setTimeline([]);
+      setLeadCalls([]);
+      setLeadEmails([]);
+      setLeadNotes([]);
+      setNoteComposerOpen(false);
+      setNoteTitle("");
+      setNoteBody("");
       setDrawerTab("activity");
 
       try {
-        const [leadResponse, timelineResponse] = await Promise.all([
-          fetchWithSession(`/api/leads/${selectedLeadId}`, {
+        const leadQuery = encodeURIComponent(leadId);
+        const responses = await Promise.all([
+          fetchWithSession(`/api/leads/${leadId}`, {
             cache: "no-store",
           }),
-          fetchWithSession(`/api/leads/${selectedLeadId}/timeline?limit=20`, {
+          fetchWithSession(
+            `/api/activities/timeline?lead_id=${leadQuery}&limit=100`,
+            { cache: "no-store" },
+          ),
+          fetchWithSession(`/api/calls?lead_id=${leadQuery}&limit=100`, {
+            cache: "no-store",
+          }),
+          fetchWithSession(`/api/emails?lead_id=${leadQuery}&limit=100`, {
+            cache: "no-store",
+          }),
+          fetchWithSession(`/api/notes?lead_id=${leadQuery}&limit=100`, {
             cache: "no-store",
           }),
         ]);
-        if (leadResponse.status === 401 || timelineResponse.status === 401) {
+        if (responses.some((response) => response.status === 401)) {
           router.replace("/login");
           return;
         }
-        const leadBody = (await leadResponse.json()) as {
+        const failed = responses.find((response) => !response.ok);
+        if (failed) throw new Error(await getApiError(failed));
+        const [leadBody, activityBody, callsBody, emailsBody, notesBody] =
+          (await Promise.all(
+            responses.map((response) => response.json()),
+          )) as [
+            { lead?: LeadDetail },
+            { timeline?: LeadActivity[] },
+            { calls?: LeadCall[] },
+            { emails?: LeadEmail[] },
+            { notes?: LeadNote[] },
+          ];
+        const typedLeadBody = leadBody as {
           lead?: LeadDetail;
-          error?: string;
         };
-        const timelineBody = (await timelineResponse.json()) as {
-          events?: TimelineEvent[];
-          error?: string;
-        };
-        if (!leadResponse.ok) {
-          throw new Error(leadBody.error || "Unable to retrieve lead");
-        }
-        if (!timelineResponse.ok) {
-          throw new Error(
-            timelineBody.error || "Unable to retrieve lead activity",
-          );
-        }
         if (!cancelled) {
-          setLeadDetail(leadBody.lead ?? null);
-          setTimeline(timelineBody.events ?? []);
+          setLeadDetail(typedLeadBody.lead ?? null);
+          setTimeline(activityBody.timeline ?? []);
+          setLeadCalls(callsBody.calls ?? []);
+          setLeadEmails(emailsBody.emails ?? []);
+          setLeadNotes(notesBody.notes ?? []);
         }
       } catch (cause) {
         if (!cancelled) {
@@ -512,6 +563,84 @@ export default function LeadsPage() {
       cancelled = true;
     };
   }, [router, selectedLeadId]);
+
+  function openLeadEmailComposer(lead: LeadDetail | Lead, email: string) {
+    const projectId = lead.project_id;
+    if (!projectId) {
+      toast.error("This lead is not connected to a project.");
+      return;
+    }
+    const params = new URLSearchParams({
+      tab: "email",
+      compose: "1",
+      lead_id: lead.lead_id,
+      project_id: String(projectId),
+    });
+    if (email) params.set("to", email);
+    router.push(`/activity?${params.toString()}`);
+  }
+
+  async function createLeadNote(event: FormEvent) {
+    event.preventDefault();
+    const lead = leadDetail ?? selectedLead;
+    const projectId = lead?.project_id;
+    if (!lead || !projectId) {
+      toast.error("This lead is not connected to a project.");
+      return;
+    }
+    const noteText = noteBody
+      .replace(/<br\s*\/?\s*>/gi, " ")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/gi, " ")
+      .trim();
+    if (!noteText) {
+      toast.error("Write the note before saving.");
+      return;
+    }
+    setNoteSaving(true);
+    try {
+      const response = await fetchWithSession("/api/notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_id: projectId,
+          lead_id: lead.lead_id,
+          title: noteTitle.trim() || null,
+          body: noteBody,
+          visibility: "company",
+        }),
+      });
+      if (response.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      if (!response.ok) throw new Error(await getApiError(response));
+      const payload = (await response.json()) as { note?: LeadNote };
+      if (payload.note) {
+        setLeadNotes((current) => [payload.note!, ...current]);
+      }
+      const activityResponse = await fetchWithSession(
+        `/api/activities/timeline?lead_id=${encodeURIComponent(lead.lead_id)}&limit=100`,
+        { cache: "no-store" },
+      );
+      if (activityResponse.ok) {
+        const activityPayload = (await activityResponse.json()) as {
+          timeline?: LeadActivity[];
+        };
+        setTimeline(activityPayload.timeline ?? []);
+      }
+      setNoteTitle("");
+      setNoteBody("");
+      setNoteComposerOpen(false);
+      toast.success("Note added to lead");
+    } catch (cause) {
+      toast.error(
+        cause instanceof Error ? cause.message : "Unable to add note.",
+      );
+    } finally {
+      setNoteSaving(false);
+    }
+  }
 
   async function runLeadAction(leadId: string, action: string) {
     let body: Record<string, unknown> = {};
@@ -594,7 +723,7 @@ export default function LeadsPage() {
   return (
     <main className="min-h-dvh bg-black text-[#f5f5f5]">
       <DashboardSidebar />
-      <section className="ml-[100px] min-h-dvh py-8 pr-8 pb-12 transition-[margin] duration-200 peer-hover:ml-[250px] max-[900px]:ml-[250px] max-[900px]:py-6 max-[900px]:pr-5 max-[900px]:pb-10 max-[560px]:ml-0 max-[560px]:px-3 max-[560px]:pt-24 max-[560px]:pb-8">
+      <section className="ml-[96px] min-h-dvh py-8 pr-8 pb-12 max-[900px]:py-6 max-[900px]:pr-5 max-[900px]:pb-10 max-[560px]:ml-[84px] max-[560px]:px-3 max-[560px]:py-5 max-[560px]:pb-8">
         <div className="flex items-end justify-between gap-6 max-[900px]:items-stretch max-[900px]:flex-col">
           <div>
             <span className="text-xs text-[#5b5b5b]">
@@ -637,9 +766,10 @@ export default function LeadsPage() {
                   <option value="">No projects available</option>
                 )}
               </select>
-              <i
-                aria-hidden="true"
-                className="pointer-events-none absolute top-1/2 right-4 size-2 -translate-y-[65%] rotate-45 border-r-[1.7px] border-b-[1.7px] border-[#d6d6d6]"
+              <ChevronDown
+                aria-hidden
+                className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-[#a6aba9]"
+                strokeWidth={1.8}
               />
             </span>
           </label>
@@ -682,13 +812,7 @@ export default function LeadsPage() {
               aria-hidden="true"
               className="flex size-4 shrink-0 items-center justify-center"
             >
-              <svg
-                className="size-4 fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.8]"
-                viewBox="0 0 24 24"
-              >
-                <circle cx="11" cy="11" r="6" />
-                <path d="m16 16 4 4" />
-              </svg>
+              <Search aria-hidden className="size-4" strokeWidth={1.8} />
             </span>
             <input
               className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#f5f5f5] outline-none max-[1550px]:w-0 max-[1550px]:flex-none max-[1550px]:opacity-0 max-[1550px]:transition-all max-[1550px]:group-focus-within:flex-1 max-[1550px]:group-focus-within:opacity-100"
@@ -726,7 +850,7 @@ export default function LeadsPage() {
               <button
                 aria-expanded={openTool === "filter"}
                 aria-label="Filter leads"
-                className={`relative flex size-10 items-center justify-center rounded-[9px] border p-0 text-[#e8e8e8] outline-none focus-visible:ring-2 focus-visible:ring-[#65c9a7] ${activeFilterCount || openTool === "filter" ? "border-[#565656] bg-[#333]" : "border-[#393939] bg-[#242424] hover:border-[#565656] hover:bg-[#333]"} [&_svg]:size-[21px] [&_svg]:fill-none [&_svg]:stroke-current [&_svg]:[stroke-linecap:round] [&_svg]:[stroke-linejoin:round] [&_svg]:[stroke-width:1.8]`}
+                className={`relative flex size-7 items-center justify-center rounded-md border p-0 text-[#d9dcda] outline-none transition focus-visible:ring-2 focus-visible:ring-[#65c9a7]/45 ${activeFilterCount || openTool === "filter" ? "border-[#2aa284] bg-[#23463b] text-white" : "border-[#3b3b3b] bg-[#2c2c2c] hover:border-[#555] hover:bg-[#353535]"}`}
                 onClick={() =>
                   setOpenTool((current) =>
                     current === "filter" ? null : "filter",
@@ -735,9 +859,7 @@ export default function LeadsPage() {
                 title="Filter leads"
                 type="button"
               >
-                <svg aria-hidden="true" viewBox="0 0 24 24">
-                  <path d="M4 5h16l-6.5 7.2V19l-3 1v-7.8L4 5Z" />
-                </svg>
+                <Funnel aria-hidden className="size-3.5" strokeWidth={1.8} />
                 {activeFilterCount > 0 && (
                   <span className="absolute -top-[5px] -right-[5px] flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-[#35ae86] px-[3px] text-[9px] text-white">
                     {activeFilterCount}
@@ -778,9 +900,10 @@ export default function LeadsPage() {
                           </option>
                         ))}
                       </select>
-                      <i
-                        aria-hidden="true"
-                        className="pointer-events-none absolute top-1/2 right-[15px] size-2 -translate-y-[65%] rotate-45 border-r-[1.7px] border-b-[1.7px] border-[#d6d6d6]"
+                      <ChevronDown
+                        aria-hidden
+                        className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-[#b2b7b5]"
+                        strokeWidth={1.8}
                       />
                     </span>
                   </label>
@@ -800,9 +923,10 @@ export default function LeadsPage() {
                         <option value="warm">Warm</option>
                         <option value="cold">Cold</option>
                       </select>
-                      <i
-                        aria-hidden="true"
-                        className="pointer-events-none absolute top-1/2 right-[15px] size-2 -translate-y-[65%] rotate-45 border-r-[1.7px] border-b-[1.7px] border-[#d6d6d6]"
+                      <ChevronDown
+                        aria-hidden
+                        className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-[#b2b7b5]"
+                        strokeWidth={1.8}
                       />
                     </span>
                   </label>
@@ -821,9 +945,10 @@ export default function LeadsPage() {
                         <option value="assigned">Assigned</option>
                         <option value="unassigned">Unassigned</option>
                       </select>
-                      <i
-                        aria-hidden="true"
-                        className="pointer-events-none absolute top-1/2 right-[15px] size-2 -translate-y-[65%] rotate-45 border-r-[1.7px] border-b-[1.7px] border-[#d6d6d6]"
+                      <ChevronDown
+                        aria-hidden
+                        className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-[#b2b7b5]"
+                        strokeWidth={1.8}
                       />
                     </span>
                   </label>
@@ -834,16 +959,14 @@ export default function LeadsPage() {
               <button
                 aria-expanded={openTool === "sort"}
                 aria-label="Sort leads"
-                className={`relative flex size-10 items-center justify-center rounded-[9px] border p-0 text-[#e8e8e8] outline-none focus-visible:ring-2 focus-visible:ring-[#65c9a7] ${sort !== "newest" || openTool === "sort" ? "border-[#565656] bg-[#333]" : "border-[#393939] bg-[#242424] hover:border-[#565656] hover:bg-[#333]"} [&_svg]:size-[21px] [&_svg]:fill-none [&_svg]:stroke-current [&_svg]:[stroke-linecap:round] [&_svg]:[stroke-linejoin:round] [&_svg]:[stroke-width:1.8]`}
+                className={`relative flex size-7 items-center justify-center rounded-md border p-0 text-[#d9dcda] outline-none transition focus-visible:ring-2 focus-visible:ring-[#65c9a7]/45 ${sort !== "newest" || openTool === "sort" ? "border-[#2aa284] bg-[#23463b] text-white" : "border-[#3b3b3b] bg-[#2c2c2c] hover:border-[#555] hover:bg-[#353535]"}`}
                 onClick={() =>
                   setOpenTool((current) => (current === "sort" ? null : "sort"))
                 }
                 title="Sort leads"
                 type="button"
               >
-                <svg aria-hidden="true" viewBox="0 0 24 24">
-                  <path d="M5 7h14M5 12h10M5 17h6" />
-                </svg>
+                <ListFilter aria-hidden className="size-3.5" strokeWidth={1.8} />
               </button>
               {openTool === "sort" && (
                 <div className="absolute top-[calc(100%+9px)] right-0 z-20 w-[220px] rounded-xl border border-[#363636] bg-[#151515] p-2 text-[#f4f4f4] shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
@@ -878,28 +1001,26 @@ export default function LeadsPage() {
           </div>
         </div>
         <section className="overflow-hidden rounded-2xl border border-[#2c2c2c] bg-[#080808]">
-          <header className="flex items-center justify-between border-b border-[#2c2c2c] bg-[#191919] p-3 font-[var(--font-bricolage)] text-sm [&>div]:flex [&>div]:gap-2 [&_button]:border-0 [&_button]:bg-transparent [&_button]:text-base [&_button]:text-[#b4b4b4]">
+          <header className="flex items-center justify-between border-b border-[#2c2c2c] bg-[#191919] p-3 font-[var(--font-bricolage)] text-sm">
             <strong>
               {selectedProject
                 ? `${selectedProject.project_name} leads`
                 : "All leads"}
             </strong>
-            <div>
+            <div className="flex items-center">
               <button
                 aria-label="Refresh leads"
+                className="flex size-7 items-center justify-center rounded-md border border-[#3b3b3b] bg-[#2c2c2c] text-[#d9dcda] transition hover:border-[#555] hover:bg-[#353535] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#65c9a7]/45"
                 onClick={() => void loadLeads()}
                 type="button"
               >
-                ↻
-              </button>
-              <button aria-label="More lead actions" type="button">
-                •••
+                <RefreshCw aria-hidden className="size-3.5" strokeWidth={1.8} />
               </button>
             </div>
           </header>
           <div
             aria-busy={loading}
-            className={`relative h-[clamp(380px,calc(100dvh-430px),760px)] overflow-auto max-[560px]:h-[clamp(360px,calc(100dvh-330px),620px)] [&_table]:w-full [&_table]:min-w-[920px] [&_table]:border-collapse [&_table]:transition-all [&_th]:sticky [&_th]:top-0 [&_th]:z-[2] [&_th]:h-10 [&_th]:bg-[#080808] [&_th]:px-3 [&_th]:text-left [&_th]:text-[11px] [&_th]:font-medium [&_th]:text-[#8a8d93] [&_th:first-child]:pl-[17px] [&_td]:h-[72px] [&_td]:whitespace-nowrap [&_td]:border-t [&_td]:border-[#2c2c2c] [&_td]:px-3 [&_td]:text-xs [&_td]:text-[#b4b4b4] [&_td:first-child]:flex [&_td:first-child]:items-center [&_td:first-child]:gap-3 [&_td:first-child]:pl-[17px] ${loading && data.leads.length ? "[&_table]:translate-y-0.5 [&_table]:opacity-45" : ""}`}
+            className={`relative overflow-x-auto overflow-y-visible [&_table]:w-full [&_table]:min-w-[920px] [&_table]:border-collapse [&_table]:transition-all [&_th]:h-10 [&_th]:bg-[#080808] [&_th]:px-3 [&_th]:text-left [&_th]:text-[11px] [&_th]:font-medium [&_th]:text-[#8a8d93] [&_th:first-child]:pl-[17px] [&_td]:h-[72px] [&_td]:whitespace-nowrap [&_td]:border-t [&_td]:border-[#2c2c2c] [&_td]:px-3 [&_td]:text-xs [&_td]:text-[#b4b4b4] [&_td:first-child]:flex [&_td:first-child]:items-center [&_td:first-child]:gap-3 [&_td:first-child]:pl-[17px] ${loading && data.leads.length ? "[&_table]:translate-y-0.5 [&_table]:opacity-45" : ""}`}
           >
             <table>
               <thead>
@@ -1161,13 +1282,11 @@ export default function LeadsPage() {
                           href={`tel:${phone}`}
                           className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#216939] px-[15px] py-[11px] text-xs text-white no-underline shadow-[inset_0_4px_12px_rgba(0,0,0,0.25)] max-[560px]:px-2.5 max-[560px]:py-[9px] max-[560px]:text-[11px]"
                         >
-                          <svg
-                            aria-hidden="true"
-                            className="size-[15px] shrink-0 fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:2]"
-                            viewBox="0 0 24 24"
-                          >
-                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.29 1.73.5 2.63.62A2 2 0 0 1 22 16.92Z" />
-                          </svg>
+                          <Phone
+                            aria-hidden
+                            className="size-[15px] shrink-0"
+                            strokeWidth={2}
+                          />
                           <span>Call your lead</span>
                         </a>
                       ) : null}
@@ -1288,29 +1407,26 @@ export default function LeadsPage() {
                           <div className="flex flex-col gap-[22px]">
                             {timeline.length === 0 && (
                               <p className="px-0 py-5 text-xs leading-normal text-[#8d8d8d]">
-                                No activity recorded yet.
+                                No real activity has been recorded for this lead yet.
                               </p>
                             )}
                             {timeline.map((event) => (
                               <article
                                 className="flex min-h-[92px] gap-3"
-                                key={event.event_id}
+                                key={event.activity_id}
                               >
                                 <span className="flex basis-[18px] flex-col items-center after:mt-2 after:w-px after:flex-1 after:bg-[#2c2c2c] last:after:hidden">
-                                  <i className="block size-4 rounded-full border border-[#3a3a3a] bg-[#111]" />
+                                  <i className="block size-4 rounded-full border border-[#367b65] bg-[#17372e]" />
                                 </span>
                                 <div className="flex min-w-0 flex-1 flex-col gap-[5px]">
-                                  <strong className="text-xs font-medium text-[#f5f5f5]">
-                                    {timelineTitle(event)}
-                                  </strong>
-                                  <small className="text-[10px] text-[#70746f]">
-                                    {new Date(
-                                      event.occurred_at,
-                                    ).toLocaleString()}
-                                  </small>
-                                  <p className="mt-[3px] rounded-lg border border-[#2c2c2c] bg-[#191919] p-3 text-[11px] leading-[1.35] text-[#d0d0d0]">
-                                    {timelineDescription(event)}
-                                  </p>
+                                  <div className="flex items-start justify-between gap-3">
+                                    <strong className="text-xs font-medium text-[#f5f5f5]">{event.title}</strong>
+                                    <span className="rounded-full bg-white/[0.06] px-2 py-1 text-[8px] text-[#9ca19f]">{label(event.source_type)}</span>
+                                  </div>
+                                  <small className="text-[10px] text-[#70746f]">{new Date(event.occurred_at).toLocaleString()}</small>
+                                  {event.description && (
+                                    <RichTextContent className="mt-[3px] rounded-lg border border-[#2c2c2c] bg-[#191919] p-3 text-[11px] leading-[1.5] text-[#d0d0d0]" value={event.description} />
+                                  )}
                                 </div>
                               </article>
                             ))}
@@ -1318,17 +1434,57 @@ export default function LeadsPage() {
                         )}
                       {!drawerLoading &&
                         !drawerError &&
-                        drawerTab === "notes" && (
-                          <p className="px-0 py-5 text-xs leading-normal whitespace-pre-wrap text-[#d1d1d1]">
-                            {description}
-                          </p>
+                        drawerTab === "calls" && (
+                          <div className="space-y-2.5">
+                            {!leadCalls.length && <p className="py-8 text-center text-xs text-[#777c79]">No calls recorded for this lead.</p>}
+                            {leadCalls.map((call) => (
+                              <article className="rounded-xl border border-[#2c2f2d] bg-[#171918] p-4" key={call.call_id}>
+                                <div className="flex items-start justify-between gap-3"><div><strong className="text-xs font-medium text-[#f0f2f1]">{call.subject}</strong><p className="mt-1 text-[10px] text-[#888d8a]">{label(call.direction)} · {label(call.status)} · {call.phone_number}</p></div><Phone className="size-4 shrink-0 text-[#5bc6a2]" aria-hidden /></div>
+                                {call.summary && <p className="mt-3 text-[11px] leading-5 text-[#afb3b1]">{call.summary}</p>}
+                                <div className="mt-3 flex items-center justify-between text-[9px] text-[#6f7471]"><time>{new Date(call.started_at).toLocaleString()}</time>{call.duration_seconds ? <span>{Math.floor(call.duration_seconds / 60)}m {call.duration_seconds % 60}s</span> : null}</div>
+                              </article>
+                            ))}
+                          </div>
                         )}
-                      {!drawerLoading &&
-                        !drawerError &&
-                        (drawerTab === "calls" || drawerTab === "email") && (
-                          <p className="px-0 py-5 text-xs leading-normal text-[#8d8d8d]">
-                            No {drawerTab} activity recorded yet.
-                          </p>
+                      {!drawerLoading && !drawerError && drawerTab === "email" && (
+                        <div className="space-y-2.5">
+                          {!leadEmails.length ? (
+                            <div className="flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed border-[#303431] bg-[#101211] px-5 text-center">
+                              <span className="flex size-10 items-center justify-center rounded-full bg-[#17372e] text-[#6dd3b0]"><Mail className="size-4" aria-hidden /></span>
+                              <strong className="mt-3 text-xs font-medium text-[#e9ecea]">No emails with this lead</strong>
+                              <p className="mt-1 max-w-xs text-[10px] leading-5 text-[#747a77]">Start a conversation and the sent email will appear here automatically.</p>
+                              <button className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg bg-[#247b5d] px-4 text-[10px] font-semibold text-white transition hover:bg-[#2d9470]" onClick={() => openLeadEmailComposer(currentLead, email ?? "")} type="button"><Mail className="size-3.5" aria-hidden />Compose email</button>
+                            </div>
+                          ) : leadEmails.map((message) => (
+                            <article className="rounded-xl border border-[#2c2f2d] bg-[#171918] p-4" key={message.email_id}>
+                              <div className="flex items-start justify-between gap-3"><div className="min-w-0"><strong className="block truncate text-xs font-medium text-[#f0f2f1]">{message.subject}</strong><p className="mt-1 truncate text-[10px] text-[#858a87]">{message.direction === "inbound" ? `From ${message.from_address}` : `To ${message.to_addresses.join(", ")}`}</p></div><span className="rounded-full bg-[#17372e] px-2 py-1 text-[8px] text-[#75d0b1]">{label(message.status)}</span></div>
+                              <RichTextContent className="mt-3 line-clamp-3 text-[11px] leading-5 text-[#afb3b1]" value={message.body} />
+                              <time className="mt-3 block text-[9px] text-[#6f7471]">{new Date(message.sent_at || message.received_at || message.created_at).toLocaleString()}</time>
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                      {!drawerLoading && !drawerError && drawerTab === "notes" && (
+                        <div>
+                          <div className="mb-3 flex items-center justify-between"><span className="text-[10px] text-[#777c79]">{leadNotes.length} {leadNotes.length === 1 ? "note" : "notes"}</span><button className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#315f50] bg-[#18382e] px-3 text-[10px] font-medium text-[#bdebdc] transition hover:bg-[#214a3d]" onClick={() => setNoteComposerOpen((current) => !current)} type="button"><Plus className="size-3" aria-hidden />Add note</button></div>
+                          {noteComposerOpen && (
+                            <form className="mb-4 rounded-xl border border-[#345d4f] bg-[#131715] p-3" onSubmit={createLeadNote}>
+                              <input className="h-9 w-full rounded-lg border border-[#303431] bg-[#0d0f0e] px-3 text-[11px] text-white outline-none placeholder:text-[#606562] focus:border-[#3c8c70]" onChange={(event) => setNoteTitle(event.target.value)} placeholder="Note title (optional)" value={noteTitle} />
+                              <div className="mt-2"><RichTextEditor ariaLabel="Lead note" minHeight="min-h-28" onChange={setNoteBody} placeholder="Write a note about this lead..." value={noteBody} /></div>
+                              <div className="mt-3 flex justify-end gap-2"><button className="h-8 rounded-lg px-3 text-[10px] text-[#a9aeab] hover:bg-white/[0.05]" onClick={() => { setNoteComposerOpen(false); setNoteTitle(""); setNoteBody(""); }} type="button">Cancel</button><button className="h-8 rounded-lg bg-[#247b5d] px-4 text-[10px] font-semibold text-white hover:bg-[#2d9470] disabled:opacity-50" disabled={noteSaving} type="submit">{noteSaving ? "Saving..." : "Save note"}</button></div>
+                            </form>
+                          )}
+                          <div className="space-y-2.5">
+                            {!leadNotes.length && !noteComposerOpen && <div className="flex min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-[#303431] bg-[#101211] text-center"><StickyNote className="size-5 text-[#5f8e7c]" aria-hidden /><p className="mt-2 text-[11px] text-[#777c79]">No notes added for this lead.</p></div>}
+                            {leadNotes.map((note) => (
+                              <article className="rounded-xl border border-[#2c2f2d] bg-[#171918] p-4" key={note.note_id}>
+                                <div className="flex items-start justify-between gap-3"><strong className="text-xs font-medium text-[#f0f2f1]">{note.title || "Untitled note"}</strong><time className="shrink-0 text-[9px] text-[#6f7471]">{new Date(note.created_at).toLocaleDateString()}</time></div>
+                                <p className="mt-1 text-[9px] text-[#777c79]">{[note.author_first_name, note.author_last_name].filter(Boolean).join(" ") || "CRM note"} · {label(note.visibility)}</p>
+                                <RichTextContent className="mt-3 text-[11px] leading-5 text-[#afb3b1]" value={note.body} />
+                              </article>
+                            ))}
+                          </div>
+                        </div>
                         )}
                     </section>
                   </>

@@ -1,10 +1,5 @@
-import { WorkspaceSectionPage } from "@/components/dashboard/WorkspaceSectionPage";
+import { CalendarWorkspace } from "@/components/calendar/CalendarWorkspace";
 
 export default function CalendarPage() {
-  return (
-    <WorkspaceSectionPage
-      description="Plan appointments, site visits, and follow-ups."
-      title="Calendar"
-    />
-  );
+  return <CalendarWorkspace />;
 }

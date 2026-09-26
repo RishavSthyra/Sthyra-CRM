@@ -136,7 +136,7 @@ export default function DashboardPage() {
   return (
     <main className="min-h-dvh bg-black text-[#f5f5f5]">
       <DashboardSidebar />
-      <section className="ml-[100px] min-h-dvh py-8 pr-8 pb-12 transition-[margin] duration-200 peer-hover:ml-[250px] max-[900px]:ml-[250px] max-[900px]:py-6 max-[900px]:pr-5 max-[900px]:pb-10 max-[560px]:ml-0 max-[560px]:px-3 max-[560px]:pt-24 max-[560px]:pb-8">
+      <section className="ml-[96px] min-h-dvh py-8 pr-8 pb-12 max-[900px]:py-6 max-[900px]:pr-5 max-[900px]:pb-10 max-[560px]:ml-[84px] max-[560px]:px-3 max-[560px]:py-5 max-[560px]:pb-8">
         <div>
           <span className="text-xs text-[#5b5b5b]">Workspace</span>
           <h1 className="mt-3 font-[var(--font-bricolage)] text-[clamp(32px,3vw,44px)] leading-[1.1]">
@@ -169,20 +169,29 @@ export default function DashboardPage() {
           <Widget title="Floor status" wide>
             <div className="relative h-[194px]">
               <div className="mt-3 h-[130px] bg-[repeating-linear-gradient(to_bottom,transparent_0_38px,#555_39px_40px)] opacity-65" />
-              <svg
+              <div
                 aria-hidden="true"
-                className="absolute top-3 right-2 left-2 h-[130px] w-[calc(100%-16px)] overflow-visible"
-                preserveAspectRatio="none"
-                viewBox="0 0 495 130"
+                className="absolute top-3 right-2 left-2 h-[130px] overflow-hidden"
               >
-                <polyline
-                  fill="none"
-                  points={linePoints.map(([x, y]) => `${x},${y}`).join(" ")}
-                  stroke="#f5f5f5"
-                  strokeWidth="2"
-                  vectorEffect="non-scaling-stroke"
-                />
-              </svg>
+                {linePoints.slice(0, -1).map(([x, y], index) => {
+                  const [nextX, nextY] = linePoints[index + 1];
+                  const width = Math.hypot(nextX - x, nextY - y);
+                  const angle =
+                    Math.atan2(nextY - y, nextX - x) * (180 / Math.PI);
+                  return (
+                    <i
+                      className="absolute h-0.5 origin-left bg-[#f5f5f5]"
+                      key={`${x}-${y}`}
+                      style={{
+                        left: `${(x / 495) * 100}%`,
+                        top: `${(y / 130) * 100}%`,
+                        transform: `rotate(${angle}deg)`,
+                        width: `${(width / 495) * 100}%`,
+                      }}
+                    />
+                  );
+                })}
+              </div>
               <div className="absolute right-0 bottom-0 left-0 flex justify-between text-[9px] text-[#8a8d93]">
                 {[
                   "Jan",

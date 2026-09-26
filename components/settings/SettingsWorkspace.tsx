@@ -1,8 +1,50 @@
 "use client";
 
-import { FormEvent, ReactNode, useCallback, useEffect, useState } from "react";
+import {
+  FormEvent,
+  ReactNode,
+  isValidElement,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
+import Link from "next/link";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
+import {
+  ArrowLeft,
+  Bell,
+  Ban,
+  Building2,
+  CheckCircle2,
+  ChevronDown,
+  CircleGauge,
+  ClipboardList,
+  Clock3,
+  Copy,
+  FolderKanban,
+  Funnel,
+  Inbox,
+  ListTree,
+  LoaderCircle,
+  Mail,
+  Megaphone,
+  Plus,
+  Route,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
+  Star,
+  Tag,
+  Timer,
+  TimerOff,
+  Unplug,
+  UserRound,
+  UsersRound,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 
@@ -22,6 +64,7 @@ type ContextData = {
 };
 type Section =
   | "profile"
+  | "email-accounts"
   | "notifications"
   | "availability"
   | "security"
@@ -45,6 +88,11 @@ const personalSections: { id: Section; label: string; description: string }[] =
       id: "profile",
       label: "Profile",
       description: "Your identity and contact information",
+    },
+    {
+      id: "email-accounts",
+      label: "Email accounts",
+      description: "Connect Gmail or Outlook for lead conversations",
     },
     {
       id: "notifications",
@@ -127,18 +175,16 @@ const allSectionIds = new Set<Section>([
 
 const settingsUi = {
   field:
-    "flex min-w-0 flex-col gap-2 [&>span]:text-[11px] [&>span]:font-medium [&>span]:tracking-wide [&>span]:text-[#8e9693] [&_input]:h-11 [&_input]:w-full [&_input]:min-w-0 [&_input]:rounded-xl [&_input]:border [&_input]:border-white/10 [&_input]:bg-black/35 [&_input]:px-3.5 [&_input]:text-xs [&_input]:text-[#f0f0f0] [&_input]:outline-none [&_input]:transition [&_input]:placeholder:text-white/25 [&_input]:focus:border-[#4ea98b] [&_input]:focus:ring-2 [&_input]:focus:ring-[#4ea98b]/15 [&_input[type=date]]:[color-scheme:dark] [&_select]:h-11 [&_select]:w-full [&_select]:min-w-0 [&_select]:rounded-xl [&_select]:border [&_select]:border-white/10 [&_select]:bg-[#0b0d0c] [&_select]:px-3.5 [&_select]:text-xs [&_select]:text-[#f0f0f0] [&_select]:outline-none [&_select]:transition [&_select]:focus:border-[#4ea98b] [&_select]:focus:ring-2 [&_select]:focus:ring-[#4ea98b]/15 [&_textarea]:min-h-24 [&_textarea]:w-full [&_textarea]:rounded-xl [&_textarea]:border [&_textarea]:border-white/10 [&_textarea]:bg-black/35 [&_textarea]:p-3.5 [&_textarea]:text-xs [&_textarea]:outline-none [&_textarea]:focus:border-[#4ea98b]",
-  card: "overflow-hidden rounded-2xl border border-white/[0.08] bg-[#101311]/95 shadow-[0_16px_50px_rgba(0,0,0,0.18)]",
-  cardBody: "p-5 sm:p-6",
+    "flex min-w-0 flex-col gap-2 [&>span]:text-[11px] [&>span]:font-medium [&>span]:tracking-wide [&>span]:text-[#8e9693] [&_input]:h-11 [&_input]:w-full [&_input]:min-w-0 [&_input]:rounded-lg [&_input]:border [&_input]:border-white/10 [&_input]:bg-black/25 [&_input]:px-3.5 [&_input]:text-xs [&_input]:text-[#f0f0f0] [&_input]:outline-none [&_input]:transition [&_input]:placeholder:text-white/25 [&_input]:focus:border-[#4ea98b] [&_input]:focus:ring-2 [&_input]:focus:ring-[#4ea98b]/15 [&_input[type=date]]:[color-scheme:dark] [&_select]:h-11 [&_select]:w-full [&_select]:min-w-0 [&_select]:appearance-none [&_select]:rounded-lg [&_select]:border [&_select]:border-white/10 [&_select]:bg-[#0b0d0c] [&_select]:px-3.5 [&_select]:pr-10 [&_select]:text-xs [&_select]:text-[#f0f0f0] [&_select]:outline-none [&_select]:transition [&_select]:focus:border-[#4ea98b] [&_select]:focus:ring-2 [&_select]:focus:ring-[#4ea98b]/15 [&_textarea]:min-h-24 [&_textarea]:w-full [&_textarea]:rounded-lg [&_textarea]:border [&_textarea]:border-white/10 [&_textarea]:bg-black/25 [&_textarea]:p-3.5 [&_textarea]:text-xs [&_textarea]:outline-none [&_textarea]:focus:border-[#4ea98b]",
   primaryButton:
-    "inline-flex h-10 items-center justify-center rounded-xl border border-[#368e75] bg-[linear-gradient(135deg,#2d8a70,#155441)] px-5 text-xs font-semibold text-white shadow-[0_8px_24px_rgba(35,117,95,0.22)] transition hover:-translate-y-px hover:brightness-110 disabled:cursor-wait disabled:opacity-50",
+    "inline-flex h-10 items-center justify-center rounded-lg border border-[#3a9e7e] bg-[#287b63] px-5 text-xs font-semibold text-white transition hover:bg-[#309173] disabled:cursor-wait disabled:opacity-50",
   secondaryButton:
-    "inline-flex h-10 w-max items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] px-4 text-xs font-medium text-[#e7e7e7] transition hover:border-[#4ea98b]/40 hover:bg-[#4ea98b]/10",
+    "inline-flex h-10 w-max items-center justify-center rounded-lg border border-white/10 bg-white/[0.035] px-4 text-xs font-medium text-[#e7e7e7] transition hover:border-[#4ea98b]/40 hover:bg-[#4ea98b]/10",
   form: "flex flex-col gap-5",
   grid: "grid grid-cols-2 gap-4 max-[720px]:grid-cols-1",
   compactGrid: "grid max-w-[680px] grid-cols-2 gap-4 max-[720px]:grid-cols-1",
   actions: "flex items-center justify-end gap-3",
-  stack: "flex flex-col gap-4",
+  stack: "flex flex-col gap-8",
   tableAction:
     "border-0 bg-transparent p-1 text-[10px] font-semibold text-[#65c9a7] transition hover:text-[#a0ead1] disabled:cursor-wait disabled:opacity-50",
   status:
@@ -152,10 +198,20 @@ function value(row: Row, key: string) {
 }
 
 function Field({ children, label }: { children: ReactNode; label: string }) {
+  const isSelect = isValidElement(children) && children.type === "select";
   return (
     <label className={settingsUi.field}>
       <span>{label}</span>
-      {children}
+      <div className="relative">
+        {children}
+        {isSelect && (
+          <ChevronDown
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 right-3.5 size-4 -translate-y-1/2 text-[#8e9693]"
+            strokeWidth={1.8}
+          />
+        )}
+      </div>
     </label>
   );
 }
@@ -170,20 +226,18 @@ function Card({
   title: string;
 }) {
   return (
-    <section className={settingsUi.card}>
-      <header className="border-b border-white/[0.07] bg-white/[0.025] px-5 py-4 sm:px-6">
-        <div>
-          <h2 className="font-[var(--font-bricolage)] text-sm font-semibold text-[#f5f5f5]">
-            {title}
-          </h2>
-          {description && (
-            <p className="mt-1 text-[11px] leading-relaxed text-[#777f7c]">
-              {description}
-            </p>
-          )}
-        </div>
+    <section className="border-b border-white/[0.08] pb-8 last:border-b-0 last:pb-0">
+      <header className="mb-5">
+        <h2 className="font-[var(--font-bricolage)] text-sm font-semibold text-[#f5f5f5]">
+          {title}
+        </h2>
+        {description && (
+          <p className="mt-1 text-[11px] leading-relaxed text-[#777f7c]">
+            {description}
+          </p>
+        )}
       </header>
-      <div className={settingsUi.cardBody}>{children}</div>
+      <div>{children}</div>
     </section>
   );
 }
@@ -239,7 +293,7 @@ function Toggle({
 
 function Empty({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-36 items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/15 p-6 text-center text-xs text-[#686f6c]">
+    <div className="flex min-h-28 items-center justify-center border-y border-white/[0.07] py-8 text-center text-xs text-[#686f6c]">
       {children}
     </div>
   );
@@ -293,6 +347,32 @@ function ListTable({
   );
 }
 
+const settingsSectionIcons: Record<Section, LucideIcon> = {
+  profile: UserRound,
+  "email-accounts": Mail,
+  notifications: Bell,
+  availability: Clock3,
+  security: ShieldCheck,
+  company: Building2,
+  projects: FolderKanban,
+  people: UsersRound,
+  sources: Funnel,
+  campaigns: Megaphone,
+  tags: Tag,
+  "lead-configuration": SlidersHorizontal,
+  "lead-stages": ListTree,
+  "qualification-fields": ClipboardList,
+  "closing-reasons": CheckCircle2,
+  queues: Inbox,
+  "routing-rules": Route,
+  "sla-rules": Timer,
+};
+
+function SettingsSectionIcon({ section }: { section: Section }) {
+  const Icon = settingsSectionIcons[section] ?? CircleGauge;
+  return <Icon aria-hidden className="size-full" strokeWidth={1.7} />;
+}
+
 export function SettingsWorkspace() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -318,6 +398,7 @@ export function SettingsWorkspace() {
   const [users, setUsers] = useState<Row[]>([]);
   const [teams, setTeams] = useState<Row[]>([]);
   const [roles, setRoles] = useState<Row[]>([]);
+  const [invitations, setInvitations] = useState<Row[]>([]);
   const [sources, setSources] = useState<Row[]>([]);
   const [campaigns, setCampaigns] = useState<Row[]>([]);
   const [tags, setTags] = useState<Row[]>([]);
@@ -387,8 +468,20 @@ export function SettingsWorkspace() {
         ]);
       const nextContext = contextData as unknown as ContextData;
       const nextUser = (meData.user as Row) ?? {};
+      const contextProjects = Array.isArray(nextContext.projects)
+        ? nextContext.projects
+        : [];
+      const contextProjectRows = contextProjects.map((project) => ({
+        ...project,
+        is_active: true,
+      })) as Row[];
       setUser(nextUser);
       setContext(nextContext);
+      // The signed-in user and accessible projects are already authoritative
+      // context data. Render them immediately instead of making these panels
+      // depend on every secondary settings request succeeding.
+      setUsers([nextUser]);
+      setProjects(contextProjectRows);
       setPreferences((preferenceData.preferences as Row) ?? {});
       setSessions((sessionData.sessions as Row[]) ?? []);
       const requestedProject = Number(
@@ -400,19 +493,21 @@ export function SettingsWorkspace() {
       const preferredProject = Number.isFinite(requestedProject)
         ? requestedProject
         : storedProject;
-      const projectId = nextContext.projects.some(
+      const projectId = contextProjects.some(
         (project) => project.project_id === preferredProject,
       )
         ? preferredProject
-        : (nextContext.projects[0]?.project_id ?? null);
+        : (contextProjects[0]?.project_id ?? null);
       setSelectedProjectId(projectId);
       const companyId = nextContext.company.company_id;
-      const baseRequests: Promise<Record<string, unknown>>[] = [
+      const core = await Promise.all([
         api(`/api/companies/${companyId}`),
         api(`/api/users/${String(nextUser.user_id)}/availability`),
-      ];
+      ]);
+      setCompany((core[0].company as Row) ?? {});
+      setAvailability((core[1].availability as Row) ?? {});
       if (nextContext.can_view_all_projects) {
-        baseRequests.push(
+        const adminResults = await Promise.allSettled([
           api("/api/users?limit=100"),
           api(
             `/api/teams?companyId=${companyId}&limit=100&includeInactive=true`,
@@ -425,20 +520,50 @@ export function SettingsWorkspace() {
             `/api/projects?companyCode=${encodeURIComponent(nextContext.company.company_code)}&includeInactive=true&limit=100`,
           ),
           api("/api/regions?includeInactive=true&limit=100"),
+          api("/api/invitations?status=pending"),
+        ]);
+        const payload = (index: number) =>
+          adminResults[index]?.status === "fulfilled"
+            ? adminResults[index].value
+            : null;
+        const loadedUsers = (payload(0)?.users as Row[] | undefined) ?? [];
+        const loadedProjects =
+          (payload(6)?.projects as Row[] | undefined) ?? [];
+        const currentUserId = String(nextUser.user_id ?? "");
+        const usersWithCurrent = loadedUsers.some(
+          (row) => String(row.user_id ?? "") === currentUserId,
+        )
+          ? loadedUsers
+          : [nextUser, ...loadedUsers];
+        const projectIds = new Set(
+          loadedProjects.map((row) => String(row.project_id ?? "")),
         );
-      }
-      const base = await Promise.all(baseRequests);
-      setCompany((base[0].company as Row) ?? {});
-      setAvailability((base[1].availability as Row) ?? {});
-      if (nextContext.can_view_all_projects) {
-        setUsers((base[2].users as Row[]) ?? []);
-        setTeams((base[3].teams as Row[]) ?? []);
-        setRoles((base[4].roles as Row[]) ?? []);
-        setSources((base[5].sources as Row[]) ?? []);
-        setCampaigns((base[6].campaigns as Row[]) ?? []);
-        setTags((base[7].tags as Row[]) ?? []);
-        setProjects((base[8].projects as Row[]) ?? []);
-        setRegions((base[9].regions as Row[]) ?? []);
+        const projectsWithContext = [
+          ...loadedProjects,
+          ...contextProjectRows.filter(
+            (row) => !projectIds.has(String(row.project_id ?? "")),
+          ),
+        ];
+        setUsers(usersWithCurrent);
+        setTeams((payload(1)?.teams as Row[]) ?? []);
+        setRoles((payload(2)?.roles as Row[]) ?? []);
+        setSources((payload(3)?.sources as Row[]) ?? []);
+        setCampaigns((payload(4)?.campaigns as Row[]) ?? []);
+        setTags((payload(5)?.tags as Row[]) ?? []);
+        setProjects(projectsWithContext);
+        setRegions((payload(7)?.regions as Row[]) ?? []);
+        setInvitations((payload(8)?.invitations as Row[]) ?? []);
+        const failedRequests = adminResults.filter(
+          (result) => result.status === "rejected",
+        );
+        if (failedRequests.length) {
+          console.error(
+            "Some workspace settings requests failed",
+            failedRequests.map((result) =>
+              result.status === "rejected" ? result.reason : null,
+            ),
+          );
+        }
       }
       if (projectId) await loadProject(projectId);
     } catch (error) {
@@ -523,122 +648,143 @@ export function SettingsWorkspace() {
   const admin = context?.can_view_all_projects === true;
 
   const navGroup = (title: string, items: typeof personalSections) => (
-    <div className="flex flex-col gap-1.5 border-t border-white/[0.07] pt-5 first:border-0 first:pt-0">
-      <span className="mb-1 px-3 text-[9px] font-bold tracking-[0.16em] text-[#5f6865] uppercase">
+    <div className="flex flex-col gap-0.5 border-t border-white/[0.07] pt-4 first:border-0 first:pt-0">
+      <span className="mb-1.5 px-2 text-[9px] font-semibold tracking-[0.08em] text-[#656c69] uppercase">
         {title}
       </span>
       {items.map((item) => (
         <button
-          className={`group relative flex min-h-[58px] w-full flex-col items-start justify-center overflow-hidden rounded-xl border px-3.5 text-left transition ${
+          className={`group flex h-9 w-full items-center gap-2.5 rounded-lg border px-2.5 text-left transition ${
             section === item.id
-              ? "border-[#4ea98b]/35 bg-[linear-gradient(110deg,rgba(45,125,101,0.2),rgba(255,255,255,0.04))] shadow-[inset_3px_0_0_#4ea98b]"
-              : "border-transparent bg-transparent hover:border-white/[0.06] hover:bg-white/[0.035]"
+              ? "border-white/[0.06] bg-white/[0.09] text-white"
+              : "border-transparent bg-transparent text-[#9da3a1] hover:bg-white/[0.045] hover:text-white"
           }`}
           key={item.id}
           onClick={() => chooseSection(item.id)}
           type="button"
         >
-          <strong
-            className={`text-xs font-semibold transition ${section === item.id ? "text-[#eef8f4]" : "text-[#b7bdbb] group-hover:text-white"}`}
-          >
+          <span className="size-4 shrink-0 opacity-80">
+            <SettingsSectionIcon section={item.id} />
+          </span>
+          <strong className="truncate text-[11px] font-medium">
             {item.label}
           </strong>
-          <small className="mt-1 text-[9px] leading-tight text-[#666e6b]">
-            {item.description}
-          </small>
         </button>
       ))}
     </div>
   );
 
   return (
-    <main className="min-h-dvh bg-[radial-gradient(circle_at_85%_0%,rgba(29,103,82,0.12),transparent_28%),#000] text-[#f5f5f5]">
+    <main className="min-h-dvh bg-[#050706] text-[#f5f5f5]">
       <DashboardSidebar />
-      <section className="ml-[100px] min-h-dvh py-8 pr-8 pb-12 transition-[margin] duration-200 peer-hover:ml-[250px] max-[900px]:ml-[250px] max-[900px]:py-6 max-[900px]:pr-5 max-[900px]:pb-10 max-[560px]:ml-0 max-[560px]:px-3 max-[560px]:pt-24 max-[560px]:pb-8">
-        <div className="mx-auto max-w-[1720px]">
-          <div className="flex items-end justify-between gap-6 max-[720px]:items-start max-[720px]:flex-col">
-            <div>
-              <span className="text-xs text-[#5b5b5b]">
-                Workspace / Settings
-              </span>
-              <h1 className="mt-3 font-[var(--font-bricolage)] text-[clamp(32px,3vw,44px)] leading-[1.1]">
-                Settings
-              </h1>
-              <p className="mt-2 text-sm text-[#9ba19f]">
-                Configure your account, company and project operations.
-              </p>
-            </div>
-            {context && (
-              <div className="flex items-center gap-3 rounded-full border border-[#2e7d65]/45 bg-[#153a2f]/45 px-4 py-2 shadow-[0_8px_30px_rgba(0,0,0,0.2)]">
-                <span className="text-[10px] text-[#9fc7ba]">
-                  {context.company.company_name}
-                </span>
-                <strong className="border-l border-[#4ea98b]/25 pl-3 text-[9px] font-bold tracking-[0.12em] text-[#70c5a9] uppercase">
-                  {context.role_key.replaceAll("_", " ")}
-                </strong>
-              </div>
-            )}
-          </div>
-          <div className="mt-8 grid grid-cols-[286px_minmax(0,1fr)] items-start gap-5 max-[1050px]:grid-cols-[240px_minmax(0,1fr)] max-[760px]:grid-cols-1">
-            <aside className="sticky top-6 flex max-h-[calc(100dvh-48px)] flex-col gap-5 overflow-y-auto rounded-2xl border border-white/[0.08] bg-[#0d100f]/95 p-3.5 shadow-[0_18px_55px_rgba(0,0,0,0.24)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-[760px]:static max-[760px]:grid max-[760px]:max-h-[360px] max-[760px]:grid-cols-2 max-[560px]:grid-cols-1">
+      <section className="ml-[96px] h-dvh p-3 pl-0 max-[560px]:ml-[84px] max-[560px]:h-auto max-[560px]:min-h-dvh max-[560px]:px-2 max-[560px]:py-2">
+        <div className="mx-auto grid h-[calc(100dvh-24px)] max-w-[1800px] grid-cols-[250px_minmax(0,1fr)] overflow-hidden rounded-2xl border border-white/[0.09] bg-[#0c0f0e] shadow-[0_24px_80px_rgba(0,0,0,0.38)] max-[820px]:grid-cols-[210px_minmax(0,1fr)] max-[680px]:h-auto max-[680px]:min-h-[calc(100dvh-88px)] max-[680px]:grid-cols-1">
+          <aside className="flex min-h-0 flex-col border-r border-white/[0.08] bg-[#0a0d0c] max-[680px]:max-h-[340px] max-[680px]:border-r-0 max-[680px]:border-b">
+            <header className="flex h-14 shrink-0 items-center gap-2 border-b border-white/[0.08] px-4">
+              <Link
+                aria-label="Back to dashboard"
+                className="flex size-7 items-center justify-center rounded-lg text-[#8e9693] transition hover:bg-white/[0.06] hover:text-white"
+                href="/dashboard"
+              >
+                <ArrowLeft aria-hidden className="size-4" strokeWidth={1.8} />
+              </Link>
+              <strong className="text-[12px] font-semibold text-[#e7eae9]">
+                Workspace settings
+              </strong>
+            </header>
+            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {context && (
+                <div className="flex items-center gap-2.5 px-2 py-1">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[#286e59] text-xs font-semibold text-white">
+                    {context.company.company_name.slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <strong className="block truncate text-[11px] font-semibold text-[#e4e8e6]">
+                      {context.company.company_name}
+                    </strong>
+                    <small className="block truncate text-[9px] text-[#69716e] capitalize">
+                      {context.role_key.replaceAll("_", " ")}
+                    </small>
+                  </span>
+                </div>
+              )}
               {navGroup("Personal", personalSections)}
-              {admin && navGroup("Company", companySections)}
-              <div className="flex flex-col gap-2 border-t border-white/[0.07] pt-5">
-                <span className="px-3 text-[9px] font-bold tracking-[0.16em] text-[#5f6865] uppercase">
+              {admin && navGroup("Administration", companySections)}
+              <div className="flex flex-col gap-2 border-t border-white/[0.07] pt-4">
+                <span className="px-2 text-[9px] font-semibold tracking-[0.08em] text-[#656c69] uppercase">
                   Project settings
                 </span>
-                <select
-                  className="h-11 w-full rounded-xl border border-[#3a443f] bg-[#111513] px-3 text-[11px] text-[#dfe4e2] outline-none transition focus:border-[#4ea98b]"
-                  disabled={!context?.projects.length || busy}
-                  onChange={(event) =>
-                    void changeProject(Number(event.target.value))
-                  }
-                  value={selectedProjectId ?? ""}
-                >
-                  {!context?.projects.length && (
-                    <option value="">No projects available</option>
-                  )}
-                  {context?.projects.map((project) => (
-                    <option key={project.project_id} value={project.project_id}>
-                      {project.project_name}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select
+                    className="h-9 w-full appearance-none rounded-lg border border-white/10 bg-[#121614] px-2.5 pr-9 text-[10px] text-[#dfe4e2] outline-none transition focus:border-[#4ea98b]"
+                    disabled={!context?.projects.length || busy}
+                    onChange={(event) =>
+                      void changeProject(Number(event.target.value))
+                    }
+                    value={selectedProjectId ?? ""}
+                  >
+                    {!context?.projects.length && (
+                      <option value="">No projects available</option>
+                    )}
+                    {context?.projects.map((project) => (
+                      <option
+                        key={project.project_id}
+                        value={project.project_id}
+                      >
+                        {project.project_name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    aria-hidden
+                    className="pointer-events-none absolute top-1/2 right-3 size-3.5 -translate-y-1/2 text-[#79817e]"
+                    strokeWidth={1.8}
+                  />
+                </div>
               </div>
               {selectedProject && navGroup("Current project", projectSections)}
-            </aside>
-            <section className="min-w-0 overflow-hidden rounded-[20px] border border-white/[0.08] bg-[#090b0a]/90 shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
-              <header className="flex min-h-[126px] items-center justify-between gap-6 border-b border-white/[0.08] bg-[linear-gradient(120deg,rgba(37,112,89,0.13),rgba(255,255,255,0.025)_55%,transparent)] px-7 py-6 max-[560px]:px-5">
-                <div>
-                  <span className="text-[9px] font-semibold tracking-[0.14em] text-[#4ea98b] uppercase">
-                    {section.startsWith("lead-") ||
-                    projectSections.some((item) => item.id === section)
-                      ? selectedProject?.project_name
-                      : section === "profile" ||
-                          personalSections.some((item) => item.id === section)
-                        ? "Personal"
-                        : context?.company.company_name}
-                  </span>
-                  <h2 className="mt-2 font-[var(--font-bricolage)] text-2xl font-medium tracking-[-0.01em] text-[#f1f4f3]">
-                    {currentDefinition?.label}
-                  </h2>
-                  <p className="mt-1 text-[11px] text-[#7d8582]">
-                    {currentDefinition?.description}
-                  </p>
-                </div>
-                {busy && (
-                  <span className="flex items-center gap-2 rounded-full border border-[#4ea98b]/20 bg-[#16392f]/60 px-3 py-1.5 text-[9px] font-semibold text-[#75d0b1] before:size-1.5 before:animate-pulse before:rounded-full before:bg-[#75d0b1]">
-                    Saving
-                  </span>
-                )}
-              </header>
+            </div>
+          </aside>
+          <section className="flex min-h-0 min-w-0 flex-col bg-[#0e1110]">
+            <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-white/[0.08] px-5">
+              <div className="flex min-w-0 items-center gap-2.5 text-[#cbd0ce]">
+                <span className="size-4 shrink-0">
+                  <SettingsSectionIcon section={section} />
+                </span>
+                <strong className="truncate text-[11px] font-medium">
+                  {currentDefinition?.label}
+                </strong>
+              </div>
+              {busy && (
+                <span className="flex items-center gap-2 rounded-full border border-[#4ea98b]/20 bg-[#16392f]/60 px-3 py-1.5 text-[9px] font-semibold text-[#75d0b1] before:size-1.5 before:animate-pulse before:rounded-full before:bg-[#75d0b1]">
+                  Saving
+                </span>
+              )}
+            </header>
+            <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-color:#29302d_transparent] [scrollbar-width:thin]">
               {loading ? (
                 <div className="flex min-h-[420px] flex-col items-center justify-center gap-3 text-xs text-[#747b79]">
                   <i className="size-6 animate-spin rounded-full border-2 border-white/10 border-t-[#4ea98b]" />
                   <span>Loading workspace settings…</span>
                 </div>
               ) : (
-                <div className="p-4 sm:p-5">
+                <div
+                  className={
+                    section === "people"
+                      ? "p-0"
+                      : "w-full max-w-[1120px] p-6 sm:p-8"
+                  }
+                >
+                  {section !== "people" && (
+                    <div className="mb-7">
+                      <h1 className="font-[var(--font-bricolage)] text-[26px] font-medium tracking-[-0.02em] text-[#f1f4f3]">
+                        {currentDefinition?.label}
+                      </h1>
+                      <p className="mt-1.5 text-[12px] text-[#858c89]">
+                        {currentDefinition?.description}
+                      </p>
+                    </div>
+                  )}
                   <SettingsPanel
                     admin={admin}
                     api={api}
@@ -649,6 +795,7 @@ export function SettingsWorkspace() {
                     company={company}
                     context={context}
                     leadConfiguration={leadConfiguration}
+                    invitations={invitations}
                     loadAll={loadAll}
                     loadProject={loadProject}
                     preferences={preferences}
@@ -680,8 +827,8 @@ export function SettingsWorkspace() {
                   />
                 </div>
               )}
-            </section>
-          </div>
+            </div>
+          </section>
         </div>
       </section>
     </main>
@@ -698,6 +845,7 @@ type PanelProps = {
   company: Row;
   context: ContextData | null;
   leadConfiguration: Row;
+  invitations: Row[];
   loadAll: () => Promise<void>;
   loadProject: (projectId: number) => Promise<void>;
   preferences: Row;
@@ -737,6 +885,7 @@ type PanelProps = {
 function SettingsPanel(props: PanelProps) {
   const projectId = props.selectedProject?.project_id;
   if (props.section === "profile") return <ProfilePanel {...props} />;
+  if (props.section === "email-accounts") return <EmailAccountsPanel {...props} />;
   if (props.section === "notifications")
     return <NotificationPanel {...props} />;
   if (props.section === "availability") return <AvailabilityPanel {...props} />;
@@ -785,6 +934,231 @@ function SettingsPanel(props: PanelProps) {
       projectId={projectId}
       rows={props.slaRules}
     />
+  );
+}
+
+type EmailConnectionRow = {
+  email_connection_id: string;
+  provider: "google" | "microsoft";
+  email_address: string;
+  display_name: string | null;
+  status: string;
+  is_default: boolean;
+  created_at: string;
+};
+
+function EmailAccountsPanel(props: PanelProps) {
+  const router = useRouter();
+  const { api } = props;
+  const [connections, setConnections] = useState<EmailConnectionRow[]>([]);
+  const [loadingConnections, setLoadingConnections] = useState(true);
+  const [connectionBusy, setConnectionBusy] = useState<string | null>(null);
+  const [connectOpen, setConnectOpen] = useState(false);
+
+  const loadConnections = useCallback(async () => {
+    setLoadingConnections(true);
+    try {
+      const payload = await api("/api/email-connections");
+      setConnections((payload.connections as EmailConnectionRow[]) ?? []);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to load email accounts");
+    } finally {
+      setLoadingConnections(false);
+    }
+  }, [api]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => void loadConnections(), 0);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("mailbox_connected")) toast.success("Email account connected");
+    if (params.get("mailbox_error")) toast.error("Email account connection failed");
+    return () => window.clearTimeout(timeout);
+  }, [loadConnections]);
+
+  useEffect(() => {
+    if (!connectOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setConnectOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [connectOpen]);
+
+  const updateConnection = async (id: string, method: "PATCH" | "DELETE") => {
+    setConnectionBusy(id);
+    try {
+      const result = await api(`/api/email-connections/accounts/${id}`, {
+        method,
+      });
+      toast.success(String(result.message || "Email account updated"));
+      await loadConnections();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to update email account");
+    } finally {
+      setConnectionBusy(null);
+    }
+  };
+
+  return (
+    <div className="max-w-[980px]">
+      <section>
+        <div className="flex flex-wrap items-start justify-between gap-4 pb-5">
+          <div>
+            <h2 className="text-sm font-semibold text-[#eef1ef]">
+              Connected accounts
+            </h2>
+            <p className="mt-1 text-[11px] leading-relaxed text-[#777f7c]">
+              Choose which work mailbox Sthyra uses for lead conversations.
+            </p>
+          </div>
+          <button
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#287b63] px-3.5 text-[10px] font-semibold text-white shadow-[0_6px_18px_rgba(35,117,95,0.18)] transition hover:bg-[#309173]"
+            onClick={() => setConnectOpen(true)}
+            type="button"
+          >
+            <Plus className="size-3.5" aria-hidden />
+            Connect account
+          </button>
+        </div>
+
+        <div className="border-y border-white/[0.08]">
+          {loadingConnections ? (
+            <div className="flex min-h-24 items-center gap-2 text-[11px] text-[#737b78]">
+              <LoaderCircle className="size-4 animate-spin" aria-hidden />
+              Loading accounts…
+            </div>
+          ) : connections.length ? (
+            <div className="divide-y divide-white/[0.07]">
+              {connections.map((connection) => (
+                <div
+                  className="flex min-h-[72px] flex-wrap items-center gap-3 py-3"
+                  key={connection.email_connection_id}
+                >
+                  <span className="relative flex size-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.05]">
+                    {connection.provider === "google" ? (
+                      <span className="relative size-4 overflow-hidden">
+                        <Image alt="" fill sizes="16px" src="/auth/google.png" />
+                      </span>
+                    ) : (
+                      <span aria-hidden className="grid size-4 grid-cols-2 gap-[1.5px]">
+                        <i className="bg-[#f35325]" />
+                        <i className="bg-[#81bc06]" />
+                        <i className="bg-[#05a6f0]" />
+                        <i className="bg-[#ffba08]" />
+                      </span>
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2">
+                      <strong className="truncate text-[11px] font-medium text-[#e9ecea]">
+                        {connection.email_address}
+                      </strong>
+                      <i className="size-1.5 shrink-0 rounded-full bg-[#45b892]" />
+                    </span>
+                    <small className="mt-1 block truncate text-[9px] text-[#69716e]">
+                      {connection.provider === "google" ? "Google Workspace" : "Microsoft 365"}
+                      {connection.display_name ? ` · ${connection.display_name}` : ""}
+                    </small>
+                  </span>
+                  {connection.is_default ? (
+                    <span className="inline-flex items-center gap-1.5 text-[9px] font-medium text-[#79bba5]">
+                      <Star className="size-3" aria-hidden /> Default sender
+                    </span>
+                  ) : (
+                    <button
+                      className="px-2 py-1 text-[9px] font-medium text-[#9aa19e] transition hover:text-white disabled:opacity-50"
+                      disabled={connectionBusy === connection.email_connection_id}
+                      onClick={() => void updateConnection(connection.email_connection_id, "PATCH")}
+                      type="button"
+                    >
+                      Make default
+                    </button>
+                  )}
+                  <button
+                    aria-label={`Disconnect ${connection.email_address}`}
+                    className="flex size-8 items-center justify-center rounded-lg text-[#777f7c] transition hover:bg-red-400/[0.08] hover:text-red-300 disabled:opacity-50"
+                    disabled={connectionBusy === connection.email_connection_id}
+                    onClick={() => void updateConnection(connection.email_connection_id, "DELETE")}
+                    title="Disconnect account"
+                    type="button"
+                  >
+                    <Unplug className="size-3.5" aria-hidden />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex min-h-28 items-center gap-3 py-5">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/[0.04] text-[#68706d]">
+                <Mail className="size-4" aria-hidden />
+              </span>
+              <span>
+                <strong className="block text-[11px] font-medium text-[#cbd0ce]">
+                  No connected mailbox
+                </strong>
+                <small className="mt-1 block text-[10px] text-[#69716e]">
+                  Connect a work account before sending email from the CRM.
+                </small>
+              </span>
+            </div>
+          )}
+        </div>
+
+      </section>
+
+      {connectOpen && (
+        <div
+          aria-modal="true"
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4 backdrop-blur-[2px]"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) setConnectOpen(false);
+          }}
+          role="dialog"
+        >
+          <div className="w-full max-w-[430px] overflow-hidden rounded-2xl border border-white/[0.11] bg-[#121513] shadow-[0_30px_100px_rgba(0,0,0,0.68)]">
+            <div className="flex items-start justify-between gap-4 border-b border-white/[0.08] px-5 py-4">
+              <div>
+                <h3 className="text-sm font-semibold text-[#f2f4f3]">Connect your work email</h3>
+                <p className="mt-1 text-[10px] text-[#777f7c]">Select the provider that hosts your mailbox.</p>
+              </div>
+              <button
+                aria-label="Close"
+                className="flex size-7 items-center justify-center rounded-lg text-[#838a87] transition hover:bg-white/[0.06] hover:text-white"
+                onClick={() => setConnectOpen(false)}
+                type="button"
+              >
+                <X className="size-4" aria-hidden />
+              </button>
+            </div>
+            <div className="space-y-2 p-5">
+              <button
+                className="relative flex h-12 w-full items-center justify-center rounded-lg border border-[#d9dcda] bg-white px-12 text-[11px] font-semibold text-[#252725] transition hover:bg-[#f3f4f3]"
+                onClick={() => router.push("/api/email-connections/google/start")}
+                type="button"
+              >
+                <span className="absolute left-4 size-[18px] overflow-hidden">
+                  <Image alt="" fill sizes="18px" src="/auth/google.png" />
+                </span>
+                Continue with Google
+              </button>
+              <button
+                className="relative flex h-12 w-full items-center justify-center rounded-lg border border-white/[0.13] bg-[#1b1e1c] px-12 text-[11px] font-semibold text-[#eef1ef] transition hover:border-white/20 hover:bg-[#222624]"
+                onClick={() => router.push("/api/email-connections/microsoft/start")}
+                type="button"
+              >
+                <span aria-hidden className="absolute left-4 grid size-[17px] grid-cols-2 gap-[1.5px]">
+                  <i className="bg-[#f35325]" />
+                  <i className="bg-[#81bc06]" />
+                  <i className="bg-[#05a6f0]" />
+                  <i className="bg-[#ffba08]" />
+                </span>
+                Continue with Microsoft
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1445,10 +1819,34 @@ function ProjectsPanel(props: PanelProps) {
 function PeoplePanel(props: PanelProps) {
   const [mode, setMode] = useState<"user" | "team" | "role">("user");
   const [form, setForm] = useState<Row>({ is_active: true });
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [pendingOpen, setPendingOpen] = useState(true);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("all");
+  const [invitationActionBusy, setInvitationActionBusy] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!dialogOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDialogOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [dialogOpen]);
+
+  const openCreate = () => {
+    setForm({ is_active: true });
+    setDialogOpen(true);
+  };
+
   const create = async (event: FormEvent) => {
     event.preventDefault();
-    let url = "/api/users";
-    let payload: Row = form;
+    let url = "/api/invitations";
+    let payload: Row = {
+      email: form.email,
+      role_id: form.role_id,
+      team_id: form.team_id,
+    };
     if (mode === "team") {
       url = "/api/teams";
       payload = {
@@ -1470,291 +1868,576 @@ function PeoplePanel(props: PanelProps) {
       url,
       "POST",
       payload,
-      `${mode} created`,
+      mode === "user" ? "Invitation created" : `${mode} created`,
       props.loadAll,
     );
-    if (result) setForm({ is_active: true });
+    if (result) {
+      setForm({ is_active: true });
+      setDialogOpen(false);
+    }
   };
+
+  const roleName = (row: Row) =>
+    value(
+      props.roles.find(
+        (role) => String(role.role_id) === String(row.role_id),
+      ) ?? {},
+      "role_name",
+    );
+  const teamName = (row: Row) =>
+    row.team_id
+      ? value(
+          props.teams.find(
+            (team) => String(team.team_id) === String(row.team_id),
+          ) ?? {},
+          "name",
+        )
+      : "No team";
+  const displayName = (row: Row) =>
+    `${String(row.first_name ?? "")} ${String(row.last_name ?? "")}`.trim() ||
+    String(row.username ?? row.email ?? "Unnamed member");
+  const formatDate = (input: unknown) => {
+    if (!input) return "—";
+    const date = new Date(String(input));
+    return Number.isNaN(date.getTime())
+      ? "—"
+      : new Intl.DateTimeFormat("en", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }).format(date);
+  };
+  const invitationAction = async (
+    invitationId: string,
+    action: "link" | "resend" | "revoke" | "expire",
+  ) => {
+    const key = `${invitationId}:${action}`;
+    setInvitationActionBusy(key);
+    try {
+      const result = await props.api(
+        `/api/invitations/${invitationId}/${action}`,
+        { method: "POST" },
+      );
+      if (action === "link") {
+        const link = String(result.invitation_url ?? "");
+        if (!link) throw new Error("The server did not return an invitation link");
+        await navigator.clipboard.writeText(link);
+      }
+      toast.success(String(result.message ?? "Invitation updated"));
+      await props.loadAll();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to update invitation");
+    } finally {
+      setInvitationActionBusy(null);
+    }
+  };
+  const pendingInvitations = props.invitations;
+  const memberUsers = props.users;
+  const normalizedQuery = query.trim().toLowerCase();
+  const matchesQuery = (row: Row) =>
+    !normalizedQuery ||
+    Object.values(row).some((item) =>
+      String(item ?? "")
+        .toLowerCase()
+        .includes(normalizedQuery),
+    );
+  const visibleUsers = memberUsers.filter(
+    (row) =>
+      matchesQuery(row) &&
+      (status === "all" ||
+        (status === "active"
+          ? row.is_active !== false
+          : row.is_active === false)),
+  );
+  const visibleTeams = props.teams.filter(matchesQuery);
+  const visibleRoles = props.roles.filter(matchesQuery);
+  const inputClass =
+    "h-11 w-full rounded-xl border border-white/10 bg-[#0b0e0d] px-3.5 text-xs text-[#f0f0f0] outline-none transition placeholder:text-white/25 focus:border-[#4ea98b] focus:ring-2 focus:ring-[#4ea98b]/15";
+  const dialogTitle =
+    mode === "user"
+      ? "Invite teammate"
+      : mode === "team"
+        ? "Create team"
+        : "Create role";
+
   return (
-    <div className={settingsUi.stack}>
-      <div className="grid grid-cols-3 gap-3 max-[560px]:grid-cols-1 [&>div]:flex [&>div]:min-h-24 [&>div]:flex-col [&>div]:justify-between [&>div]:rounded-2xl [&>div]:border [&>div]:border-white/[0.08] [&>div]:bg-[linear-gradient(145deg,rgba(35,117,95,0.12),rgba(255,255,255,0.025))] [&>div]:p-4 [&_span]:text-[9px] [&_span]:font-semibold [&_span]:uppercase [&_span]:tracking-[0.12em] [&_span]:text-[#68716e] [&_strong]:font-[var(--font-bricolage)] [&_strong]:text-2xl">
-        <div>
-          <span>Users</span>
-          <strong>{props.users.length}</strong>
+    <div className="p-6 sm:p-8">
+      <div className="mb-6">
+        <h1 className="font-[var(--font-bricolage)] text-[28px] font-medium tracking-[-0.02em] text-[#f1f4f3]">
+          Members
+        </h1>
+        <p className="mt-1 text-[12px] text-[#858c89]">
+          Manage workspace access, teams, and roles.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex w-max min-w-0 overflow-x-auto rounded-[10px] border border-[#2c2c2c] bg-[#191919] p-[3px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {(
+            [
+              ["user", "People", props.users.length],
+              ["team", "Teams", props.teams.length],
+              ["role", "Roles", props.roles.length],
+            ] as const
+          ).map(([itemMode, label, count]) => (
+            <button
+              className={`h-9 shrink-0 rounded-[7px] border-0 px-3.5 text-xs whitespace-nowrap transition ${
+                mode === itemMode
+                  ? "bg-[#3b3b3b] text-[#f5f5f5]"
+                  : "bg-transparent text-[#b4b4b4]"
+              }`}
+              key={itemMode}
+              onClick={() => {
+                setMode(itemMode);
+                setQuery("");
+                setStatus("all");
+              }}
+              type="button"
+            >
+              {label}
+              <span
+                className={`ml-2 text-[10px] ${
+                  mode === itemMode ? "text-[#aeb2b1]" : "text-[#707472]"
+                }`}
+              >
+                {count}
+              </span>
+            </button>
+          ))}
         </div>
-        <div>
-          <span>Teams</span>
-          <strong>{props.teams.length}</strong>
-        </div>
-        <div>
-          <span>Roles</span>
-          <strong>{props.roles.length}</strong>
+        <div className="flex flex-wrap items-center justify-end gap-2 max-[640px]:w-full max-[640px]:justify-start">
+          <label className="flex h-9 w-[230px] items-center gap-2 rounded-lg border border-white/10 bg-black/15 px-3 text-[#747c79] max-[520px]:w-full">
+            <Search
+              aria-hidden
+              className="size-3.5 shrink-0"
+              strokeWidth={1.8}
+            />
+            <input
+              className="min-w-0 flex-1 border-0 bg-transparent text-[11px] text-white outline-none placeholder:text-[#59605e]"
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={`Search ${mode === "user" ? "members" : `${mode}s`}...`}
+              value={query}
+            />
+          </label>
+          {mode === "user" && (
+            <div className="relative">
+              <select
+                aria-label="Filter members by status"
+                className="h-9 appearance-none rounded-lg border border-white/10 bg-[#151918] py-0 pr-9 pl-3 text-[10px] text-[#b9bfbd] outline-none focus:border-[#4ea98b]"
+                onChange={(event) => setStatus(event.target.value)}
+                value={status}
+              >
+                <option value="all">All statuses</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+              <ChevronDown
+                aria-hidden
+                className="pointer-events-none absolute top-1/2 right-3 size-3.5 -translate-y-1/2 text-[#8e9693]"
+                strokeWidth={1.8}
+              />
+            </div>
+          )}
+          <button
+            className="inline-flex h-9 items-center justify-center rounded-lg border border-[#3a9e7e] bg-[#2c8a6e] px-4 text-[10px] font-semibold text-white transition hover:bg-[#35a080]"
+            onClick={openCreate}
+            type="button"
+          >
+            +{" "}
+            {mode === "user"
+              ? "Invite teammate"
+              : mode === "team"
+                ? "Create team"
+                : "Create role"}
+          </button>
         </div>
       </div>
-      <Card title="People and access">
-        <div className="mb-5 flex w-max gap-1 rounded-xl border border-white/[0.07] bg-black/30 p-1 max-[560px]:w-full [&_button]:h-8 [&_button]:rounded-lg [&_button]:border-0 [&_button]:px-3.5 [&_button]:text-[10px] [&_button]:text-[#888f8c] [&_button]:transition">
-          <button
-            className={
-              mode === "user" ? "bg-white/10! text-white!" : "bg-transparent"
-            }
-            onClick={() => {
-              setMode("user");
-              setForm({ is_active: true });
-            }}
-            type="button"
-          >
-            Users
-          </button>
-          <button
-            className={
-              mode === "team" ? "bg-white/10! text-white!" : "bg-transparent"
-            }
-            onClick={() => {
-              setMode("team");
-              setForm({ is_active: true });
-            }}
-            type="button"
-          >
-            Teams
-          </button>
-          <button
-            className={
-              mode === "role" ? "bg-white/10! text-white!" : "bg-transparent"
-            }
-            onClick={() => {
-              setMode("role");
-              setForm({ is_active: true });
-            }}
-            type="button"
-          >
-            Roles
-          </button>
+
+      <div className="mt-4 overflow-hidden rounded-xl border border-white/[0.08] bg-[#0c0f0e]">
+        <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {mode === "user" && (
+            <table className="w-full min-w-[920px] border-collapse text-left">
+              <thead className="bg-white/[0.018] text-[9px] font-semibold tracking-[0.04em] text-[#737b78]">
+                <tr className="border-b border-white/[0.08]">
+                  <th className="px-4 py-3.5">Full name</th>
+                  <th className="px-4 py-3.5">Username</th>
+                  <th className="px-4 py-3.5">Email</th>
+                  <th className="px-4 py-3.5">Role</th>
+                  <th className="px-4 py-3.5">Team</th>
+                  <th className="px-4 py-3.5">Status</th>
+                  <th className="px-4 py-3.5">Joining date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleUsers.map((row, index) => (
+                  <tr
+                    className="border-b border-white/[0.06] text-[11px] text-[#b8bebc] transition last:border-0 hover:bg-white/[0.02]"
+                    key={String(row.user_id ?? index)}
+                  >
+                    <td className="px-4 py-3.5">
+                      <div className="flex items-center gap-2.5">
+                        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#1f5c49] text-[9px] font-semibold text-[#c5eee0]">
+                          {displayName(row).slice(0, 1).toUpperCase()}
+                        </span>
+                        <strong className="font-medium text-[#e2e5e4]">
+                          {displayName(row)}
+                        </strong>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3.5">{value(row, "username")}</td>
+                    <td className="px-4 py-3.5">{value(row, "email")}</td>
+                    <td className="px-4 py-3.5">{roleName(row)}</td>
+                    <td className="px-4 py-3.5">{teamName(row)}</td>
+                    <td className="px-4 py-3.5">
+                      <span
+                        className={`${settingsUi.status} ${row.is_active !== false ? settingsUi.statusOn : ""}`}
+                      >
+                        {row.is_active !== false ? "Active" : "Inactive"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      {formatDate(row.created_at)}
+                    </td>
+                  </tr>
+                ))}
+                {!visibleUsers.length && (
+                  <tr>
+                    <td
+                      className="px-4 py-12 text-center text-[11px] text-[#646c69]"
+                      colSpan={7}
+                    >
+                      No members match your search.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+          {mode === "team" && (
+            <ListTable
+              rows={visibleTeams}
+              columns={[
+                { key: "name", label: "Team" },
+                { key: "team_type", label: "Type" },
+                { key: "description", label: "Description" },
+                {
+                  key: "is_active",
+                  label: "Status",
+                  render: (row) => (
+                    <span
+                      className={`${settingsUi.status} ${row.is_active !== false ? settingsUi.statusOn : ""}`}
+                    >
+                      {row.is_active !== false ? "Active" : "Inactive"}
+                    </span>
+                  ),
+                },
+              ]}
+            />
+          )}
+          {mode === "role" && (
+            <ListTable
+              rows={visibleRoles}
+              columns={[
+                { key: "role_name", label: "Role" },
+                { key: "role_key", label: "Key" },
+                { key: "description", label: "Description" },
+                {
+                  key: "is_system_role",
+                  label: "Type",
+                  render: (row) => (row.is_system_role ? "System" : "Custom"),
+                },
+              ]}
+            />
+          )}
         </div>
-        {mode === "user" && (
-          <ListTable
-            rows={props.users}
-            columns={[
-              {
-                key: "first_name",
-                label: "Name",
-                render: (row) =>
-                  `${value(row, "first_name")} ${row.last_name ?? ""}`,
-              },
-              { key: "email", label: "Email" },
-              {
-                key: "is_active",
-                label: "Status",
-                render: (row) => (
-                  <span
-                    className={`${settingsUi.status} ${row.is_active ? settingsUi.statusOn : ""}`}
+      </div>
+
+      {mode === "user" && (
+        <section className="mt-7 border-t border-white/[0.08] pt-5">
+          <button
+            className="flex w-full items-center justify-between text-left"
+            onClick={() => setPendingOpen((open) => !open)}
+            type="button"
+          >
+            <span className="flex items-center gap-2.5">
+              <strong className="text-sm font-medium text-[#e7eae9]">
+                Pending invitations
+              </strong>
+              <span className="rounded-full bg-[#153c30] px-2 py-0.5 text-[9px] font-semibold text-[#6bc4a5]">
+                {pendingInvitations.length}
+              </span>
+            </span>
+            <ChevronDown
+              aria-hidden
+              className={`size-4 text-[#777f7c] transition-transform ${pendingOpen ? "rotate-180" : ""}`}
+              strokeWidth={1.8}
+            />
+          </button>
+          {pendingOpen && (
+            <div className="mt-4 overflow-hidden rounded-xl border border-white/[0.07] bg-black/10">
+              {pendingInvitations.length ? (
+                pendingInvitations.map((row, index) => (
+                  <div
+                    className="flex flex-wrap items-center gap-3 border-b border-white/[0.06] px-4 py-3 last:border-0"
+                    key={String(row.invitation_id ?? index)}
                   >
-                    {row.is_active ? "Active" : "Inactive"}
-                  </span>
-                ),
-              },
-            ]}
-          />
-        )}
-        {mode === "team" && (
-          <ListTable
-            rows={props.teams}
-            columns={[
-              { key: "name", label: "Team" },
-              { key: "team_type", label: "Type" },
-              {
-                key: "is_active",
-                label: "Status",
-                render: (row) => (
-                  <span
-                    className={`${settingsUi.status} ${row.is_active ? settingsUi.statusOn : ""}`}
-                  >
-                    {row.is_active ? "Active" : "Inactive"}
-                  </span>
-                ),
-              },
-            ]}
-          />
-        )}
-        {mode === "role" && (
-          <ListTable
-            rows={props.roles}
-            columns={[
-              { key: "role_name", label: "Role" },
-              { key: "role_key", label: "Key" },
-              {
-                key: "is_system_role",
-                label: "Type",
-                render: (row) => (row.is_system_role ? "System" : "Custom"),
-              },
-            ]}
-          />
-        )}
-      </Card>
-      <Card title={`Add ${mode}`}>
-        <form className={settingsUi.form} onSubmit={create}>
-          <div className={settingsUi.grid}>
-            {mode === "user" && (
-              <>
-                <Field label="First name">
-                  <input
-                    required
-                    onChange={(e) =>
-                      setForm({ ...form, first_name: e.target.value })
-                    }
-                    value={String(form.first_name ?? "")}
-                  />
-                </Field>
-                <Field label="Last name">
-                  <input
-                    onChange={(e) =>
-                      setForm({ ...form, last_name: e.target.value })
-                    }
-                    value={String(form.last_name ?? "")}
-                  />
-                </Field>
-                <Field label="Username">
-                  <input
-                    required
-                    onChange={(e) =>
-                      setForm({ ...form, username: e.target.value })
-                    }
-                    value={String(form.username ?? "")}
-                  />
-                </Field>
-                <Field label="Email">
-                  <input
-                    required
-                    type="email"
-                    onChange={(e) =>
-                      setForm({ ...form, email: e.target.value })
-                    }
-                    value={String(form.email ?? "")}
-                  />
-                </Field>
-                <Field label="Temporary password">
-                  <input
-                    required
-                    minLength={8}
-                    type="password"
-                    onChange={(e) =>
-                      setForm({ ...form, password: e.target.value })
-                    }
-                    value={String(form.password ?? "")}
-                  />
-                </Field>
-                <Field label="Role">
-                  <select
-                    required
-                    onChange={(e) =>
-                      setForm({ ...form, role_id: e.target.value })
-                    }
-                    value={String(form.role_id ?? "")}
-                  >
-                    <option value="">Select role</option>
-                    {props.roles
-                      .filter((row) => row.is_active !== false)
-                      .map((row) => (
-                        <option
-                          key={String(row.role_id)}
-                          value={String(row.role_id)}
-                        >
-                          {value(row, "role_name")}
-                        </option>
-                      ))}
-                  </select>
-                </Field>
-                <Field label="Team">
-                  <select
-                    onChange={(e) =>
-                      setForm({ ...form, team_id: e.target.value || null })
-                    }
-                    value={String(form.team_id ?? "")}
-                  >
-                    <option value="">No team</option>
-                    {props.teams
-                      .filter((row) => row.is_active !== false)
-                      .map((row) => (
-                        <option
-                          key={String(row.team_id)}
-                          value={String(row.team_id)}
-                        >
-                          {value(row, "name")}
-                        </option>
-                      ))}
-                  </select>
-                </Field>
-              </>
-            )}
-            {mode === "team" && (
-              <>
-                <Field label="Team name">
-                  <input
-                    required
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    value={String(form.name ?? "")}
-                  />
-                </Field>
-                <Field label="Team type">
-                  <input
-                    required
-                    onChange={(e) =>
-                      setForm({ ...form, team_type: e.target.value })
-                    }
-                    placeholder="sales"
-                    value={String(form.team_type ?? "")}
-                  />
-                </Field>
-                <Field label="Description">
-                  <input
-                    onChange={(e) =>
-                      setForm({ ...form, description: e.target.value })
-                    }
-                    value={String(form.description ?? "")}
-                  />
-                </Field>
-              </>
-            )}
-            {mode === "role" && (
-              <>
-                <Field label="Role name">
-                  <input
-                    required
-                    onChange={(e) =>
-                      setForm({ ...form, role_name: e.target.value })
-                    }
-                    value={String(form.role_name ?? "")}
-                  />
-                </Field>
-                <Field label="Role key">
-                  <input
-                    required
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        role_key: e.target.value
-                          .toUpperCase()
-                          .replaceAll(" ", "_"),
-                      })
-                    }
-                    value={String(form.role_key ?? "")}
-                  />
-                </Field>
-                <Field label="Description">
-                  <input
-                    onChange={(e) =>
-                      setForm({ ...form, description: e.target.value })
-                    }
-                    value={String(form.description ?? "")}
-                  />
-                </Field>
-              </>
-            )}
-          </div>
-          <div className={settingsUi.actions}>
-            <SaveButton busy={props.busy}>Create</SaveButton>
-          </div>
-        </form>
-      </Card>
+                    <span className="flex size-7 items-center justify-center rounded-lg bg-white/[0.06] text-[9px] text-[#9da4a1]">
+                      {String(row.email ?? "?")
+                        .slice(0, 1)
+                        .toUpperCase()}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[11px] text-[#d2d6d4]">
+                      {value(row, "email")}
+                    </span>
+                    <span className="text-[10px] text-[#747c79]">
+                      {value(row, "role_name")}
+                    </span>
+                    <span className="text-[10px] text-[#747c79]">
+                      {value(row, "team_name")}
+                    </span>
+                    <span className="text-[9px] text-[#626a67]">
+                      Expires {formatDate(row.expires_at)}
+                    </span>
+                    <span className="rounded-md bg-amber-500/10 px-2 py-1 text-[9px] font-semibold text-amber-300/80">
+                      Pending
+                    </span>
+                    <div className="flex items-center gap-1 border-l border-white/[0.07] pl-2">
+                      {(
+                        [
+                          ["link", Copy, "Generate and copy a fresh link"],
+                          ["resend", Mail, "Resend invitation email"],
+                          ["expire", TimerOff, "Expire invitation now"],
+                          ["revoke", Ban, "Revoke invitation"],
+                        ] as const
+                      ).map(([action, Icon, label]) => {
+                        const actionKey = `${String(row.invitation_id)}:${action}`;
+                        return (
+                          <button
+                            aria-label={label}
+                            className="flex size-7 items-center justify-center rounded-md text-[#79817e] transition hover:bg-white/[0.06] hover:text-[#69c4a4] disabled:opacity-40"
+                            disabled={invitationActionBusy !== null}
+                            key={action}
+                            onClick={() => void invitationAction(String(row.invitation_id), action)}
+                            title={label}
+                            type="button"
+                          >
+                            {invitationActionBusy === actionKey ? (
+                              <LoaderCircle aria-hidden className="size-3.5 animate-spin" />
+                            ) : (
+                              <Icon aria-hidden className="size-3.5" strokeWidth={1.8} />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="px-4 py-7 text-center text-[10px] text-[#626a67]">
+                  No pending invitations.
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {dialogOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4 backdrop-blur-[3px]"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) setDialogOpen(false);
+          }}
+        >
+          <section
+            aria-labelledby="people-dialog-title"
+            aria-modal="true"
+            className="max-h-[calc(100dvh-32px)] w-full max-w-[620px] overflow-y-auto rounded-2xl border border-white/[0.12] bg-[#111513] shadow-[0_30px_100px_rgba(0,0,0,0.65)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            role="dialog"
+          >
+            <header className="flex items-start justify-between gap-4 border-b border-white/[0.08] px-6 py-5">
+              <div>
+                <h2
+                  className="font-[var(--font-bricolage)] text-xl font-medium text-white"
+                  id="people-dialog-title"
+                >
+                  {dialogTitle}
+                </h2>
+                <p className="mt-1 text-[10px] text-[#777f7c]">
+                  {mode === "user"
+                    ? "Choose their role and team. They will complete their profile during onboarding."
+                    : "Configure the workspace access structure."}
+                </p>
+              </div>
+              <button
+                aria-label="Close dialog"
+                className="flex size-8 items-center justify-center rounded-lg text-lg text-[#858c89] transition hover:bg-white/[0.06] hover:text-white"
+                onClick={() => setDialogOpen(false)}
+                type="button"
+              >
+                <X aria-hidden className="size-4" strokeWidth={1.8} />
+              </button>
+            </header>
+            <form onSubmit={create}>
+              <div className="grid grid-cols-2 gap-4 p-6 max-[560px]:grid-cols-1">
+                {mode === "user" && (
+                  <>
+                    <div className="col-span-2 max-[560px]:col-span-1">
+                      <Field label="Email address">
+                        <input
+                          required
+                          className={inputClass}
+                          type="email"
+                          onChange={(e) =>
+                            setForm({ ...form, email: e.target.value })
+                          }
+                          value={String(form.email ?? "")}
+                        />
+                      </Field>
+                    </div>
+                    <Field label="Role">
+                      <select
+                        required
+                        className={inputClass}
+                        onChange={(e) =>
+                          setForm({ ...form, role_id: e.target.value })
+                        }
+                        value={String(form.role_id ?? "")}
+                      >
+                        <option value="">Select role</option>
+                        {props.roles
+                          .filter((row) => row.is_active !== false)
+                          .map((row) => (
+                            <option
+                              key={String(row.role_id)}
+                              value={String(row.role_id)}
+                            >
+                              {value(row, "role_name")}
+                            </option>
+                          ))}
+                      </select>
+                    </Field>
+                    <Field label="Team">
+                      <select
+                        required
+                        className={inputClass}
+                        onChange={(e) =>
+                          setForm({ ...form, team_id: e.target.value || null })
+                        }
+                        value={String(form.team_id ?? "")}
+                      >
+                        <option value="">Select team</option>
+                        {props.teams
+                          .filter((row) => row.is_active !== false)
+                          .map((row) => (
+                            <option
+                              key={String(row.team_id)}
+                              value={String(row.team_id)}
+                            >
+                              {value(row, "name")}
+                            </option>
+                          ))}
+                      </select>
+                    </Field>
+                  </>
+                )}
+                {mode === "team" && (
+                  <>
+                    <Field label="Team name">
+                      <input
+                        required
+                        className={inputClass}
+                        onChange={(e) =>
+                          setForm({ ...form, name: e.target.value })
+                        }
+                        value={String(form.name ?? "")}
+                      />
+                    </Field>
+                    <Field label="Team type">
+                      <input
+                        required
+                        className={inputClass}
+                        onChange={(e) =>
+                          setForm({ ...form, team_type: e.target.value })
+                        }
+                        placeholder="sales"
+                        value={String(form.team_type ?? "")}
+                      />
+                    </Field>
+                    <div className="col-span-2 max-[560px]:col-span-1">
+                      <Field label="Description">
+                        <input
+                          className={inputClass}
+                          onChange={(e) =>
+                            setForm({ ...form, description: e.target.value })
+                          }
+                          value={String(form.description ?? "")}
+                        />
+                      </Field>
+                    </div>
+                  </>
+                )}
+                {mode === "role" && (
+                  <>
+                    <Field label="Role name">
+                      <input
+                        required
+                        className={inputClass}
+                        onChange={(e) =>
+                          setForm({ ...form, role_name: e.target.value })
+                        }
+                        value={String(form.role_name ?? "")}
+                      />
+                    </Field>
+                    <Field label="Role key">
+                      <input
+                        required
+                        className={inputClass}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            role_key: e.target.value
+                              .toUpperCase()
+                              .replaceAll(" ", "_"),
+                          })
+                        }
+                        value={String(form.role_key ?? "")}
+                      />
+                    </Field>
+                    <div className="col-span-2 max-[560px]:col-span-1">
+                      <Field label="Description">
+                        <input
+                          className={inputClass}
+                          onChange={(e) =>
+                            setForm({ ...form, description: e.target.value })
+                          }
+                          value={String(form.description ?? "")}
+                        />
+                      </Field>
+                    </div>
+                  </>
+                )}
+              </div>
+              <footer className="flex items-center justify-end gap-2 border-t border-white/[0.08] bg-black/10 px-6 py-4">
+                <button
+                  className={settingsUi.secondaryButton}
+                  onClick={() => setDialogOpen(false)}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button
+                  className={settingsUi.primaryButton}
+                  disabled={props.busy}
+                  type="submit"
+                >
+                  {props.busy ? "Saving…" : dialogTitle}
+                </button>
+              </footer>
+            </form>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

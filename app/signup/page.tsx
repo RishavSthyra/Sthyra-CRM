@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import {
   AuthField,
@@ -53,6 +53,29 @@ export default function SignupPage() {
   const [data, setData] = useState(initialData);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [googleSignup, setGoogleSignup] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/auth/google/pending", {
+      credentials: "include",
+      cache: "no-store",
+    })
+      .then((response) => response.json())
+      .then((payload: { pending?: { email: string; first_name: string; last_name: string } | null }) => {
+        if (!active || !payload.pending) return;
+        setGoogleSignup(true);
+        setData((current) => ({
+          ...current,
+          email: payload.pending?.email ?? current.email,
+          first_name: payload.pending?.first_name ?? current.first_name,
+          last_name: payload.pending?.last_name ?? current.last_name,
+          company_contact_email: current.company_contact_email || payload.pending?.email || "",
+        }));
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
 
   function update(field: keyof SignupData, value: string) {
     setData((current) => ({ ...current, [field]: value }));
@@ -63,13 +86,13 @@ export default function SignupPage() {
     setError(null);
     if (!validateFormFields(event.currentTarget)) return;
 
-    if (data.password.length < 12) {
+    if (!googleSignup && data.password.length < 12) {
       const message = "Password must contain at least 12 characters.";
       setError(message);
       toast.error(message);
       return;
     }
-    if (data.password !== data.confirm_password) {
+    if (!googleSignup && data.password !== data.confirm_password) {
       const message = "Password and confirmation do not match.";
       setError(message);
       toast.error(message);
@@ -116,11 +139,19 @@ export default function SignupPage() {
       job_role: data.job_role,
     };
     try {
-      const response = await fetch("/api/auth/signup", {
+      const response = await fetch(
+        googleSignup
+          ? "/api/auth/google/complete-signup"
+          : "/api/auth/signup",
+        {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(
+          googleSignup
+            ? { ...payload, password: undefined }
+            : payload,
+        ),
       });
       if (!response.ok) {
         const message = await getApiError(response);
@@ -162,7 +193,7 @@ export default function SignupPage() {
     >
       {step === 1 && (
         <>
-          <SocialButtons />
+          <SocialButtons mode="signup" />
           <OrDivider />
           <form
             className="flex flex-col gap-3.5"
@@ -197,8 +228,9 @@ export default function SignupPage() {
               required
               type="email"
               value={data.email}
+              readOnly={googleSignup}
             />
-            <PasswordField
+            {!googleSignup && <PasswordField
               autoComplete="new-password"
               id="signup-password"
               label="Password"
@@ -207,8 +239,8 @@ export default function SignupPage() {
               placeholder="At least 12 characters"
               required
               value={data.password}
-            />
-            <PasswordField
+            />}
+            {!googleSignup && <PasswordField
               autoComplete="new-password"
               id="confirm-password"
               label="Confirm Password"
@@ -219,7 +251,12 @@ export default function SignupPage() {
               placeholder="Repeat your password"
               required
               value={data.confirm_password}
-            />
+            />}
+            {googleSignup && (
+              <FormMessage tone="success">
+                Google verified {data.email}. Finish your company details—no password is required.
+              </FormMessage>
+            )}
             {error && <FormMessage>{error}</FormMessage>}
             <SubmitButton>Next</SubmitButton>
           </form>

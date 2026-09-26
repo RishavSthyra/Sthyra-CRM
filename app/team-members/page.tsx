@@ -1,10 +1,5 @@
-import { WorkspaceSectionPage } from "@/components/dashboard/WorkspaceSectionPage";
+import { redirect } from "next/navigation";
 
 export default function TeamMembersPage() {
-  return (
-    <WorkspaceSectionPage
-      description="Manage people, roles, teams, and project access."
-      title="Team Members"
-    />
-  );
+  redirect("/settings?section=people");
 }

@@ -39,8 +39,10 @@ export async function GET(request: NextRequest) {
         "scheduled",
         "confirmed",
         "rescheduled",
+        "checked_in",
         "cancelled",
         "completed",
+        "no_show",
       ].includes(status)
     )
       return NextResponse.json(
@@ -62,6 +64,7 @@ export async function GET(request: NextRequest) {
   }
   for (const field of [
     "lead_id",
+    "opportunity_id",
     "contact_id",
     "assigned_to_user_id",
     "assigned_to_team_id",
@@ -109,10 +112,13 @@ export async function GET(request: NextRequest) {
     const result = await pool.query(
       `SELECT ${APPOINTMENT_COLUMNS}, p.project_name, c.first_name, c.last_name,
         u.first_name AS assignee_first_name, u.last_name AS assignee_last_name,
+        organizer.first_name AS organizer_first_name,
+        organizer.last_name AS organizer_last_name,
         team.name AS assigned_team_name
        FROM appointments ap JOIN projects p ON p.project_id=ap.project_id
        LEFT JOIN contacts c ON c.contact_id=ap.contact_id
        LEFT JOIN users u ON u.user_id=ap.assigned_to_user_id
+       LEFT JOIN users organizer ON organizer.user_id=ap.organizer_user_id
        LEFT JOIN teams team ON team.team_id=ap.assigned_to_team_id
        ${where} ORDER BY ap.starts_at, ap.appointment_id
        LIMIT $${listValues.length - 1} OFFSET $${listValues.length}`,
@@ -155,6 +161,11 @@ export async function POST(request: NextRequest) {
       { error: "Validation failed", details: validation.errors },
       { status: 422 },
     );
+  if (validation.data.appointment_type === "site_visit")
+    return NextResponse.json(
+      { error: "Create site visits through POST /api/site-visits" },
+      { status: 409 },
+    );
   if (
     !canAccessProject(
       scope.context.access,
@@ -174,16 +185,25 @@ export async function POST(request: NextRequest) {
       validation.data,
     );
     const result = await client.query(
-      `INSERT INTO appointments (company_id, project_id, lead_id, contact_id,
+      `INSERT INTO appointments (company_id, project_id, lead_id, opportunity_id, contact_id,
        appointment_type, title, description, location, meeting_url, starts_at,
        ends_at, timezone, organizer_user_id, assigned_to_user_id,
        assigned_to_team_id, created_by, updated_by)
-       VALUES ($1,$2,$3,COALESCE($4,(SELECT contact_id FROM leads WHERE lead_id=$3)),
-       $5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16) RETURNING *`,
+       VALUES (
+         $1,$2,
+         COALESCE($3,(SELECT lead_id FROM opportunities WHERE opportunity_id=$4)),
+         $4,
+         COALESCE($5,
+           (SELECT contact_id FROM opportunities WHERE opportunity_id=$4),
+           (SELECT contact_id FROM leads WHERE lead_id=$3)
+         ),
+         $6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17
+       ) RETURNING *`,
       [
         scope.context.access.company.company_id,
         validation.data.project_id,
         validation.data.lead_id ?? null,
+        validation.data.opportunity_id ?? null,
         validation.data.contact_id ?? null,
         validation.data.appointment_type ?? "meeting",
         validation.data.title,

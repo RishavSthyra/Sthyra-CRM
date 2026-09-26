@@ -27,6 +27,50 @@ Password-reset tokens are stored hashed in `password_reset_tokens`. The
 raw token must be delivered by your email provider. For local API testing only,
 set `AUTH_EXPOSE_RESET_TOKEN=true`; this flag is ignored in production.
 
+Workspace invitations are sent over SMTP. Configure these values in
+`.env.local` (or in your deployment environment):
+
+```bash
+APP_URL=http://localhost:3000
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-smtp-user
+SMTP_PASSWORD=your-smtp-password
+SMTP_FROM="Sthyra CRM <no-reply@example.com>"
+```
+
+Invitation tokens expire after seven days and only their SHA-256 hashes are
+stored. Resending or copying a fresh link rotates the token, invalidating the
+previous link.
+
+### Google login and connected email accounts
+
+Copy the OAuth values from `.env.example` into `.env.local`. In Google Cloud,
+create a web OAuth client and register these exact redirect URLs:
+
+```text
+http://localhost:3000/api/auth/google/callback
+http://localhost:3000/api/email-connections/google/callback
+```
+
+Enable the Gmail API. Google login requests only identity scopes; connecting a
+sender from Settings separately requests `gmail.send` and offline access.
+
+For Microsoft 365, create an Entra web app, add the callback below, and grant
+delegated `Mail.Send`, `openid`, `profile`, `email`, and `offline_access`:
+
+```text
+http://localhost:3000/api/email-connections/microsoft/callback
+```
+
+Generate `EMAIL_TOKEN_ENCRYPTION_KEY` with `openssl rand -base64 32`. Mailbox
+access and refresh tokens are AES-256-GCM encrypted in PostgreSQL and are never
+returned to the browser. The CRM records outbound messages in a durable queue;
+invoke `POST /api/email-jobs/process` with `Authorization: Bearer $CRON_SECRET`
+from a scheduler to process retries. SMTP remains reserved for product email
+such as invitations and password resets.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

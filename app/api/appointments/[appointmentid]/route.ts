@@ -28,7 +28,19 @@ export async function GET(request: NextRequest, context: Context) {
     );
   try {
     const result = await pool.query(
-      `SELECT ${APPOINTMENT_COLUMNS}, p.project_name, c.first_name, c.last_name, c.email, c.phone_number, u.first_name AS assignee_first_name, u.last_name AS assignee_last_name, team.name AS assigned_team_name FROM appointments ap JOIN projects p ON p.project_id=ap.project_id LEFT JOIN contacts c ON c.contact_id=ap.contact_id LEFT JOIN users u ON u.user_id=ap.assigned_to_user_id LEFT JOIN teams team ON team.team_id=ap.assigned_to_team_id WHERE ap.appointment_id=$1`,
+      `SELECT ${APPOINTMENT_COLUMNS}, p.project_name, c.first_name, c.last_name,
+        c.email, c.phone_number,
+        u.first_name AS assignee_first_name, u.last_name AS assignee_last_name,
+        organizer.first_name AS organizer_first_name,
+        organizer.last_name AS organizer_last_name,
+        team.name AS assigned_team_name
+       FROM appointments ap
+       JOIN projects p ON p.project_id=ap.project_id
+       LEFT JOIN contacts c ON c.contact_id=ap.contact_id
+       LEFT JOIN users u ON u.user_id=ap.assigned_to_user_id
+       LEFT JOIN users organizer ON organizer.user_id=ap.organizer_user_id
+       LEFT JOIN teams team ON team.team_id=ap.assigned_to_team_id
+       WHERE ap.appointment_id=$1`,
       [appointmentId],
     );
     if (!result.rowCount)
@@ -110,10 +122,20 @@ export async function PATCH(request: NextRequest, context: Context) {
         { status: 403 },
       );
     }
-    if (["cancelled", "completed"].includes(current.status)) {
+    if (
+      current.appointment_type === "site_visit" ||
+      partial.data.appointment_type === "site_visit"
+    ) {
       await client.query("ROLLBACK");
       return NextResponse.json(
-        { error: "Completed or cancelled appointments cannot be edited" },
+        { error: "Update site visits through PATCH /api/site-visits/{visitId}" },
+        { status: 409 },
+      );
+    }
+    if (["cancelled", "completed", "no_show", "checked_in"].includes(current.status)) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { error: "Completed, checked-in, no-show, or cancelled appointments cannot be edited" },
         { status: 409 },
       );
     }
@@ -123,6 +145,10 @@ export async function PATCH(request: NextRequest, context: Context) {
         partial.data.lead_id !== undefined
           ? partial.data.lead_id
           : current.lead_id,
+      opportunity_id:
+        partial.data.opportunity_id !== undefined
+          ? partial.data.opportunity_id
+          : current.opportunity_id,
       contact_id:
         partial.data.contact_id !== undefined
           ? partial.data.contact_id
@@ -186,6 +212,7 @@ export async function PATCH(request: NextRequest, context: Context) {
     const fields: (keyof AppointmentInput)[] = [
       "project_id",
       "lead_id",
+      "opportunity_id",
       "contact_id",
       "appointment_type",
       "title",

@@ -75,6 +75,13 @@ export async function changeAppointmentState(
         { status: 403 },
       );
     }
+    if (current.appointment_type === "site_visit") {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { error: `Use POST /api/site-visits/${appointmentId}/${action} for site visits` },
+        { status: 409 },
+      );
+    }
     const allowed =
       action === "confirm"
         ? ["scheduled", "rescheduled"]
@@ -97,14 +104,14 @@ export async function changeAppointmentState(
           ? "cancelled"
           : "completed";
     const result = await client.query(
-      `UPDATE appointments SET status=$2, updated_by=$3, updated_at=CURRENT_TIMESTAMP,
-       confirmed_at=CASE WHEN $2='confirmed' THEN CURRENT_TIMESTAMP ELSE confirmed_at END,
-       confirmed_by=CASE WHEN $2='confirmed' THEN $3::uuid ELSE confirmed_by END,
-       completed_at=CASE WHEN $2='completed' THEN CURRENT_TIMESTAMP ELSE NULL END,
-       completed_by=CASE WHEN $2='completed' THEN $3::uuid ELSE NULL END,
-       cancelled_at=CASE WHEN $2='cancelled' THEN CURRENT_TIMESTAMP ELSE NULL END,
-       cancelled_by=CASE WHEN $2='cancelled' THEN $3::uuid ELSE NULL END,
-       cancellation_reason=CASE WHEN $2='cancelled' THEN $4 ELSE cancellation_reason END
+      `UPDATE appointments SET status=$2::varchar, updated_by=$3, updated_at=CURRENT_TIMESTAMP,
+       confirmed_at=CASE WHEN $2::varchar='confirmed' THEN CURRENT_TIMESTAMP ELSE confirmed_at END,
+       confirmed_by=CASE WHEN $2::varchar='confirmed' THEN $3::uuid ELSE confirmed_by END,
+       completed_at=CASE WHEN $2::varchar='completed' THEN CURRENT_TIMESTAMP ELSE NULL END,
+       completed_by=CASE WHEN $2::varchar='completed' THEN $3::uuid ELSE NULL END,
+       cancelled_at=CASE WHEN $2::varchar='cancelled' THEN CURRENT_TIMESTAMP ELSE NULL END,
+       cancelled_by=CASE WHEN $2::varchar='cancelled' THEN $3::uuid ELSE NULL END,
+       cancellation_reason=CASE WHEN $2::varchar='cancelled' THEN $4 ELSE cancellation_reason END
        WHERE appointment_id=$1 RETURNING *`,
       [appointmentId, status, scope.context.userId, reason ?? null],
     );
@@ -214,6 +221,13 @@ export async function rescheduleAppointment(
       return NextResponse.json(
         { error: "You do not have access to this appointment" },
         { status: 403 },
+      );
+    }
+    if (current.appointment_type === "site_visit") {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { error: `Use POST /api/site-visits/${appointmentId}/reschedule for site visits` },
+        { status: 409 },
       );
     }
     if (!["scheduled", "confirmed", "rescheduled"].includes(current.status)) {
