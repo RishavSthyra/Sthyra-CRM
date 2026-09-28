@@ -8,6 +8,9 @@ import {
   providerRedirectUri,
 } from "@/lib/email/oauthProviders";
 import { createSignedState, readSignedState } from "@/lib/oauthState";
+import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { linkExistingCrmIdentity } from "@/lib/supabase/workspaceProvisioning";
 
 export const runtime = "nodejs";
 
@@ -35,6 +38,32 @@ function clearState(response: NextResponse) {
 }
 
 export async function GET(request: NextRequest) {
+  if (isSupabaseAuthConfigured()) {
+    const code = request.nextUrl.searchParams.get("code");
+    if (!code) {
+      return NextResponse.redirect(
+        destination(request, "/login?oauth_error=missing_code"),
+      );
+    }
+    try {
+      const supabase = await createSupabaseServerClient();
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+      const email = data.user?.email;
+      if (error || !data.user || !email) {
+        throw error ?? new Error("Google did not provide a verified email");
+      }
+      const crmUser = await linkExistingCrmIdentity(data.user.id, email);
+      return NextResponse.redirect(
+        destination(request, crmUser ? "/dashboard" : "/signup?google=1"),
+      );
+    } catch (error) {
+      console.error("Supabase Google authentication callback failed", error);
+      return NextResponse.redirect(
+        destination(request, "/login?oauth_error=google_failed"),
+      );
+    }
+  }
+
   const returnedState = request.nextUrl.searchParams.get("state");
   const cookieState = request.cookies.get(STATE_COOKIE)?.value;
   const state =

@@ -18,6 +18,10 @@ import {
   canAccessOperationsEntity,
   requireOperationsContext,
 } from "@/lib/operationsAccess";
+import {
+  createNotificationsForUsers,
+  resolveNotificationRecipients,
+} from "@/lib/notifications";
 type Context = { params: Promise<{ unitid: string }> };
 export async function POST(request: NextRequest, context: Context) {
   const scope = await requireOperationsContext(request);
@@ -123,7 +127,9 @@ export async function POST(request: NextRequest, context: Context) {
       );
     }
     const opportunity = await client.query(
-      "SELECT opportunity_id,lead_id FROM opportunities WHERE opportunity_id=$1 AND company_id=$2 AND project_id=$3 AND status='open'",
+      `SELECT opportunity_id,lead_id,current_owner_user_id,current_team_id,opportunity_name
+       FROM opportunities
+       WHERE opportunity_id=$1 AND company_id=$2 AND project_id=$3 AND status='open'`,
       [opportunityId, unit.company_id, unit.project_id],
     );
     if (!opportunity.rowCount) {
@@ -191,6 +197,29 @@ export async function POST(request: NextRequest, context: Context) {
         opportunity_id: opportunityId,
         hold_id: holdId,
       },
+    });
+    const recipients = await resolveNotificationRecipients(client, {
+      companyId: Number(unit.company_id),
+      userIds: [
+        opportunity.rows[0].current_owner_user_id,
+        scope.context.userId,
+      ],
+      teamIds: [opportunity.rows[0].current_team_id],
+    });
+    await createNotificationsForUsers(client, recipients, {
+      companyId: Number(unit.company_id),
+      projectId: Number(unit.project_id),
+      type: "booking.reserved",
+      category: "booking",
+      title: "Inventory reserved",
+      body: `${unit.unit_code} was reserved for ${opportunity.rows[0].opportunity_name}.`,
+      severity: "info",
+      entityType: "reservation",
+      entityId: String(reservation.rows[0].reservation_id),
+      actionUrl: `/opportunities?opportunity_id=${opportunityId}`,
+      eventKey: `reservation:${reservation.rows[0].reservation_id}:created`,
+      metadata: { unit_id: unitId, opportunity_id: opportunityId },
+      channels: ["in_app", "email"],
     });
     await client.query("COMMIT");
     return NextResponse.json(

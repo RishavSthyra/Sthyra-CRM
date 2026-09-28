@@ -27,12 +27,6 @@ export default function ResetPasswordPage() {
       new URLSearchParams(window.location.search).get("token") ?? "";
     const password = String(form.get("password") ?? "");
     const confirmation = String(form.get("confirmation") ?? "");
-    if (!token) {
-      const message = "The password reset link is missing its token.";
-      setError(message);
-      toast.error(message);
-      return;
-    }
     if (password !== confirmation) {
       const message = "Password and confirmation do not match.";
       setError(message);
@@ -84,6 +78,7 @@ export default function ResetPasswordPage() {
           name="password"
           placeholder="At least 12 characters"
           required
+          showRequirements
         />
         <PasswordField
           autoComplete="new-password"

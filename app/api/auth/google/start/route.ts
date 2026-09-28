@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPkcePair, getAuthorizationUrl, providerRedirectUri } from "@/lib/email/oauthProviders";
 import { createSignedState } from "@/lib/oauthState";
+import { getAppUrl } from "@/lib/appUrl";
+import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -8,6 +11,20 @@ const STATE_COOKIE = "sthyra_google_auth_state";
 
 export async function GET(request: NextRequest) {
   try {
+    if (isSupabaseAuthConfigured()) {
+      const supabase = await createSupabaseServerClient();
+      const redirectTo = new URL(
+        "/api/auth/google/callback",
+        getAppUrl(request),
+      ).toString();
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo, skipBrowserRedirect: true },
+      });
+      if (error || !data.url) throw error ?? new Error("Missing OAuth URL");
+      return NextResponse.redirect(data.url);
+    }
+
     const mode = request.nextUrl.searchParams.get("mode") === "signup" ? "signup" : "login";
     const pkce = createPkcePair();
     const state = createSignedState({ purpose: "google-auth" as const, mode, codeVerifier: pkce.verifier });

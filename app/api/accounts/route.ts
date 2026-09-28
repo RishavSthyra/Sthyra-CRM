@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { ACCOUNT_COLUMNS, validateAccountPayload } from "@/lib/accounts";
+import { requireOperationsContext } from "@/lib/operationsAccess";
 import { parsePagination } from "@/utils/parsePagination";
 
 export async function GET(request: NextRequest) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
+
   const pagination = parsePagination(request.nextUrl.searchParams);
   if (!pagination.ok) {
     return NextResponse.json({ error: pagination.error }, { status: 400 });
   }
 
-  const values: unknown[] = [];
-  const filters = ["archived_at IS NULL"];
+  const values: unknown[] = [scope.context.access.company.company_id];
+  const filters = ["company_id = $1", "archived_at IS NULL"];
   const search = request.nextUrl.searchParams.get("search")?.trim();
   if (search) {
     values.push(`%${search}%`);
@@ -58,6 +62,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -77,10 +84,14 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await pool.query(
-      `INSERT INTO accounts (name, account_type)
-       VALUES ($1, $2)
+      `INSERT INTO accounts (company_id, name, account_type)
+       VALUES ($1, $2, $3)
        RETURNING ${ACCOUNT_COLUMNS}`,
-      [validation.data.name, validation.data.account_type],
+      [
+        scope.context.access.company.company_id,
+        validation.data.name,
+        validation.data.account_type,
+      ],
     );
     return NextResponse.json(
       { message: "Account created", account: result.rows[0] },

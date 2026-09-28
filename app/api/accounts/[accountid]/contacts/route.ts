@@ -8,10 +8,14 @@ import {
 } from "@/lib/contacts";
 import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
 import { parsePagination } from "@/utils/parsePagination";
+import { requireOperationsContext } from "@/lib/operationsAccess";
 
 type AccountContext = { params: Promise<{ accountid: string }> };
 
 export async function GET(request: NextRequest, context: AccountContext) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
+
   const accountId = parseAccountId((await context.params).accountid);
   if (!accountId) {
     return NextResponse.json(
@@ -66,6 +70,9 @@ export async function GET(request: NextRequest, context: AccountContext) {
 }
 
 export async function POST(request: NextRequest, context: AccountContext) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
+
   const accountId = parseAccountId((await context.params).accountid);
   if (!accountId) {
     return NextResponse.json(
@@ -115,7 +122,11 @@ export async function POST(request: NextRequest, context: AccountContext) {
       await client.query("ROLLBACK");
       return NextResponse.json({ error: "Account not found" }, { status: 404 });
     }
-    const contact = await createContact(client, validation.data);
+    const contact = await createContact(
+      client,
+      validation.data,
+      scope.context.access.company.company_id,
+    );
     await client.query("COMMIT");
     return NextResponse.json(
       { message: "Contact created", contact },

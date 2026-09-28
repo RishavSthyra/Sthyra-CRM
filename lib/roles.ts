@@ -4,6 +4,7 @@ import { validateText } from "@/utils/validateText";
 
 export const ROLE_COLUMNS = `
   role_id,
+  company_id,
   role_key,
   role_name,
   description,

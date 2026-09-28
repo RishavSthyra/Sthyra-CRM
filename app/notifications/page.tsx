@@ -1,10 +1,5 @@
-import { WorkspaceSectionPage } from "@/components/dashboard/WorkspaceSectionPage";
+import { NotificationWorkspace } from "@/components/notifications/NotificationWorkspace";
 
 export default function NotificationsPage() {
-  return (
-    <WorkspaceSectionPage
-      description="Review alerts, assignments, and important CRM updates."
-      title="Notifications"
-    />
-  );
+  return <NotificationWorkspace />;
 }

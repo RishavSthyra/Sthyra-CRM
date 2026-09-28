@@ -16,6 +16,10 @@ import {
   canAccessOperationsEntity,
   requireOperationsContext,
 } from "@/lib/operationsAccess";
+import {
+  createNotificationsForUsers,
+  resolveNotificationRecipients,
+} from "@/lib/notifications";
 
 type Context = { params: Promise<{ unitid: string }> };
 export async function POST(request: NextRequest, context: Context) {
@@ -99,7 +103,11 @@ export async function POST(request: NextRequest, context: Context) {
     );
     unit = await getInventoryUnit(client, unitId, true);
     const reference = await client.query(
-      `SELECT l.lead_id,o.opportunity_id,COALESCE(o.lead_id,l.lead_id) AS resolved_lead_id,o.lead_id AS opportunity_lead_id FROM (SELECT $1::uuid AS lead_id) input LEFT JOIN leads l ON l.lead_id=input.lead_id AND l.project_id=$3 LEFT JOIN opportunities o ON o.opportunity_id=$2 AND o.project_id=$3 AND o.company_id=$4`,
+      `SELECT l.lead_id,o.opportunity_id,COALESCE(o.lead_id,l.lead_id) AS resolved_lead_id,
+       o.lead_id AS opportunity_lead_id,o.current_owner_user_id,o.current_team_id,o.opportunity_name
+       FROM (SELECT $1::uuid AS lead_id) input
+       LEFT JOIN leads l ON l.lead_id=input.lead_id AND l.project_id=$3
+       LEFT JOIN opportunities o ON o.opportunity_id=$2 AND o.project_id=$3 AND o.company_id=$4`,
       [leadId ?? null, opportunityId ?? null, unit.project_id, unit.company_id],
     );
     if (
@@ -149,6 +157,28 @@ export async function POST(request: NextRequest, context: Context) {
       userId: scope.context.userId,
       reason: reason ?? "Unit placed on hold",
       metadata: { hold_id: hold.rows[0].hold_id, expires_at: expiresIso },
+    });
+    const recipients = await resolveNotificationRecipients(client, {
+      companyId: Number(unit.company_id),
+      userIds: [reference.rows[0]?.current_owner_user_id, scope.context.userId],
+      teamIds: [reference.rows[0]?.current_team_id],
+    });
+    await createNotificationsForUsers(client, recipients, {
+      companyId: Number(unit.company_id),
+      projectId: Number(unit.project_id),
+      type: "booking.hold_created",
+      category: "booking",
+      title: "Inventory placed on hold",
+      body: `${unit.unit_code} is held until ${new Date(expiresIso).toLocaleString("en-IN")}.`,
+      severity: "info",
+      entityType: "inventory_hold",
+      entityId: String(hold.rows[0].hold_id),
+      actionUrl: opportunityId
+        ? `/opportunities?opportunity_id=${opportunityId}`
+        : "/inventory",
+      eventKey: `inventory-hold:${hold.rows[0].hold_id}:created`,
+      metadata: { unit_id: unitId, expires_at: expiresIso },
+      channels: ["in_app", "email"],
     });
     await client.query("COMMIT");
     return NextResponse.json(

@@ -27,11 +27,22 @@ export async function GET(request: NextRequest) {
   )
     return NextResponse.json({ error: "Invalid hold status" }, { status: 400 });
   const values: unknown[] = [projectId];
-  let filter = "";
+  const filters: string[] = [];
   if (status) {
     values.push(status);
-    filter = ` AND hold.status=$2`;
+    filters.push(`hold.status=$${values.length}`);
   }
+  const opportunityId = request.nextUrl.searchParams.get("opportunity_id");
+  if (opportunityId) {
+    if (!/^[0-9a-f-]{36}$/i.test(opportunityId))
+      return NextResponse.json(
+        { error: "opportunity_id must be a valid UUID" },
+        { status: 400 },
+      );
+    values.push(opportunityId);
+    filters.push(`hold.opportunity_id=$${values.length}`);
+  }
+  const filter = filters.length ? ` AND ${filters.join(" AND ")}` : "";
   try {
     const count = await pool.query(
       `SELECT COUNT(*)::integer AS total FROM inventory_holds hold WHERE hold.project_id=$1${filter}`,

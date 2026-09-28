@@ -1,20 +1,15 @@
 import { NextResponse } from "next/server";
-import pool from "@/lib/db";
+import { adminPool } from "@/lib/db";
 
- export async function GET() {
- try {
-     const result = await pool.query("SELECT 1");
-
-     console.log(result);
-
-     if(result.rows.length > 0){
-        return NextResponse.json({status : "all connections ready"},{status : 200})
-     }
-     else { 
-        return NextResponse.json({message : "DATABASE DIDNT RETURN 1 TO THE QUERRY"},{status : 503})
-     }
-    
- } catch (error : unknown) {
-    return NextResponse.json({message : "The system is not yet Ready"},{status : 503 })
- }
+export async function GET() {
+  try {
+    const result = await adminPool.query("SELECT 1 AS ready");
+    if (result.rows[0]?.ready === 1) {
+      return NextResponse.json({ status: "ready" });
+    }
+    return NextResponse.json({ status: "not_ready" }, { status: 503 });
+  } catch (error) {
+    console.error("Database readiness check failed", error);
+    return NextResponse.json({ status: "not_ready" }, { status: 503 });
+  }
 }

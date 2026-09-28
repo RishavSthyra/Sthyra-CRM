@@ -8,6 +8,10 @@ import {
   validateActivityReferences,
   validateAppointmentPayload,
 } from "@/lib/activities";
+import {
+  createNotificationsForUsers,
+  resolveNotificationRecipients,
+} from "@/lib/notifications";
 import { requireOperationsContext } from "@/lib/operationsAccess";
 import { canAccessProject, getAccessibleProjectIds } from "@/lib/projectAccess";
 import { parsePagination } from "@/utils/parsePagination";
@@ -235,6 +239,25 @@ export async function POST(request: NextRequest) {
         },
       },
     );
+    const recipients = await resolveNotificationRecipients(client, {
+      companyId: scope.context.access.company.company_id,
+      userIds: [appointment.assigned_to_user_id, appointment.organizer_user_id],
+      teamIds: [appointment.assigned_to_team_id],
+    });
+    await createNotificationsForUsers(client, recipients, {
+      companyId: scope.context.access.company.company_id,
+      projectId: Number(appointment.project_id),
+      type: "appointment.created",
+      category: "appointment",
+      title: "New appointment",
+      body: `${appointment.title} was scheduled for you.`,
+      entityType: "appointment",
+      entityId: String(appointment.appointment_id),
+      actionUrl: `/calendar?appointment_id=${appointment.appointment_id}`,
+      eventKey: `appointment:${appointment.appointment_id}:created`,
+      metadata: { starts_at: appointment.starts_at },
+      channels: ["in_app", "email"],
+    });
     await client.query("COMMIT");
     return NextResponse.json(
       { message: "Appointment created", appointment },

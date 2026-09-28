@@ -28,11 +28,22 @@ export async function GET(request: NextRequest) {
       { status: 400 },
     );
   const values: unknown[] = [projectId];
-  let filter = "";
+  const filters: string[] = [];
   if (status) {
     values.push(status);
-    filter = ` AND reservation.status=$2`;
+    filters.push(`reservation.status=$${values.length}`);
   }
+  const opportunityId = request.nextUrl.searchParams.get("opportunity_id");
+  if (opportunityId) {
+    if (!/^[0-9a-f-]{36}$/i.test(opportunityId))
+      return NextResponse.json(
+        { error: "opportunity_id must be a valid UUID" },
+        { status: 400 },
+      );
+    values.push(opportunityId);
+    filters.push(`reservation.opportunity_id=$${values.length}`);
+  }
+  const filter = filters.length ? ` AND ${filters.join(" AND ")}` : "";
   try {
     const count = await pool.query(
       `SELECT COUNT(*)::integer AS total FROM inventory_reservations reservation WHERE reservation.project_id=$1${filter}`,

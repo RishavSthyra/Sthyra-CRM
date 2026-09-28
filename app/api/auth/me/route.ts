@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { authenticateRequest, AUTH_USER_COLUMNS } from "@/lib/auth";
 import { ProfileWrite, validateProfilePayload } from "@/lib/authValidation";
+import { getAppUrl } from "@/lib/appUrl";
+import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getUserDatabaseErrorCode } from "@/lib/users";
 
 export async function GET(request: NextRequest) {
@@ -38,13 +41,39 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
+  let emailChangeRequested = false;
+  if (
+    isSupabaseAuthConfigured() &&
+    typeof validation.data.email === "string" &&
+    validation.data.email.toLowerCase() !==
+      String(authentication.auth.user.email).toLowerCase()
+  ) {
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase.auth.updateUser(
+      { email: validation.data.email },
+      {
+        emailRedirectTo: new URL(
+          "/api/auth/callback?next=/settings",
+          getAppUrl(request),
+        ).toString(),
+      },
+    );
+    if (error) {
+      return NextResponse.json(
+        { error: "Unable to start the email change" },
+        { status: 400 },
+      );
+    }
+    emailChangeRequested = true;
+  }
+
   const fields: (keyof ProfileWrite)[] = [
     "username",
     "first_name",
     "last_name",
-    "email",
     "phone",
   ];
+  if (!isSupabaseAuthConfigured()) fields.push("email");
   const updates = fields
     .filter((field) => validation.data[field] !== undefined)
     .map((field) => ({ field, value: validation.data[field] }));
@@ -55,15 +84,25 @@ export async function PATCH(request: NextRequest) {
   values.push(authentication.auth.user.user_id);
 
   try {
-    const result = await pool.query(
-      `UPDATE users u
-       SET ${assignments.join(", ")}, updated_at = CURRENT_TIMESTAMP
-       WHERE u.user_id = $${values.length} AND u.deleted_at IS NULL
-       RETURNING ${AUTH_USER_COLUMNS}`,
-      values,
-    );
+    const result = assignments.length
+      ? await pool.query(
+          `UPDATE users u
+           SET ${assignments.join(", ")}, updated_at = CURRENT_TIMESTAMP
+           WHERE u.user_id = $${values.length} AND u.deleted_at IS NULL
+           RETURNING ${AUTH_USER_COLUMNS}`,
+          values,
+        )
+      : await pool.query(
+          `SELECT ${AUTH_USER_COLUMNS}
+           FROM users u
+           WHERE u.user_id=$1 AND u.deleted_at IS NULL`,
+          [authentication.auth.user.user_id],
+        );
     const response = NextResponse.json({
-      message: "Profile updated",
+      message: emailChangeRequested
+        ? "Profile updated. Confirm your new email address to finish the change."
+        : "Profile updated",
+      email_confirmation_required: emailChangeRequested,
       user: result.rows[0],
     });
     response.headers.set("Cache-Control", "no-store");

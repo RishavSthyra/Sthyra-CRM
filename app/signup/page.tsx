@@ -16,6 +16,7 @@ import {
 import { AuthShell } from "@/components/auth/AuthShell";
 import { getApiError } from "@/lib/clientAuth";
 import { validateFormFields } from "@/utils/validateFormFields";
+import { validatePassword } from "@/utils/validatePassword";
 
 type SignupData = {
   first_name: string;
@@ -86,8 +87,9 @@ export default function SignupPage() {
     setError(null);
     if (!validateFormFields(event.currentTarget)) return;
 
-    if (!googleSignup && data.password.length < 12) {
-      const message = "Password must contain at least 12 characters.";
+    const passwordErrors = googleSignup ? [] : validatePassword(data.password);
+    if (passwordErrors.length) {
+      const message = passwordErrors[0].replace(/^password/, "Password");
       setError(message);
       toast.error(message);
       return;
@@ -157,6 +159,14 @@ export default function SignupPage() {
         const message = await getApiError(response);
         setError(message);
         toast.error(message);
+        return;
+      }
+      const result = (await response.json()) as {
+        requires_email_confirmation?: boolean;
+      };
+      if (result.requires_email_confirmation) {
+        toast.success("Workspace created. Check your email to confirm your account.");
+        router.replace("/login?confirmation=pending");
         return;
       }
       toast.success("Your workspace is ready.");
@@ -230,28 +240,33 @@ export default function SignupPage() {
               value={data.email}
               readOnly={googleSignup}
             />
-            {!googleSignup && <PasswordField
-              autoComplete="new-password"
-              id="signup-password"
-              label="Password"
-              minLength={12}
-              onChange={(event) => update("password", event.target.value)}
-              placeholder="At least 12 characters"
-              required
-              value={data.password}
-            />}
-            {!googleSignup && <PasswordField
-              autoComplete="new-password"
-              id="confirm-password"
-              label="Confirm Password"
-              minLength={12}
-              onChange={(event) =>
-                update("confirm_password", event.target.value)
-              }
-              placeholder="Repeat your password"
-              required
-              value={data.confirm_password}
-            />}
+            {!googleSignup && (
+              <PasswordField
+                autoComplete="new-password"
+                id="signup-password"
+                label="Password"
+                minLength={12}
+                onChange={(event) => update("password", event.target.value)}
+                placeholder="At least 12 characters"
+                required
+                showRequirements
+                value={data.password}
+              />
+            )}
+            {!googleSignup && (
+              <PasswordField
+                autoComplete="new-password"
+                id="confirm-password"
+                label="Confirm Password"
+                minLength={12}
+                onChange={(event) =>
+                  update("confirm_password", event.target.value)
+                }
+                placeholder="Repeat your password"
+                required
+                value={data.confirm_password}
+              />
+            )}
             {googleSignup && (
               <FormMessage tone="success">
                 Google verified {data.email}. Finish your company details—no password is required.

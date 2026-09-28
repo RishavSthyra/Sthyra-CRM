@@ -1,5 +1,9 @@
 import type { PoolClient } from "pg";
 import { addAssignmentHistory, matchesConditions } from "@/lib/operations";
+import {
+  createNotificationsForUsers,
+  resolveNotificationRecipients,
+} from "@/lib/notifications";
 
 export class OperationsReferenceError extends Error {
   constructor(message: string) {
@@ -263,6 +267,25 @@ export async function createAssignment(
     );
   }
   await startSlaInstancesForAssignment(client, assignment, lead);
+  const recipients = await resolveNotificationRecipients(client, {
+    companyId: Number(lead.company_id),
+    userIds: [input.userId],
+    teamIds: [input.teamId],
+  });
+  await createNotificationsForUsers(client, recipients, {
+    companyId: Number(lead.company_id),
+    projectId: Number(lead.project_id),
+    type: "assignment.created",
+    category: "assignment",
+    title: "Lead assigned to you",
+    body: "A lead has been assigned and is ready for follow-up.",
+    entityType: "lead",
+    entityId: String(lead.lead_id),
+    actionUrl: `/leads?lead_id=${lead.lead_id}`,
+    eventKey: `assignment:${assignment.assignment_id}:created`,
+    metadata: { assignment_id: assignment.assignment_id },
+    channels: ["in_app", "email"],
+  });
   return assignment;
 }
 

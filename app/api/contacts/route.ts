@@ -8,15 +8,19 @@ import {
 } from "@/lib/contacts";
 import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
 import { parsePagination } from "@/utils/parsePagination";
+import { requireOperationsContext } from "@/lib/operationsAccess";
 
 export async function GET(request: NextRequest) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
+
   const pagination = parsePagination(request.nextUrl.searchParams);
   if (!pagination.ok) {
     return NextResponse.json({ error: pagination.error }, { status: 400 });
   }
 
-  const values: unknown[] = [];
-  const filters = ["archived_at IS NULL"];
+  const values: unknown[] = [scope.context.access.company.company_id];
+  const filters = ["company_id = $1", "archived_at IS NULL"];
   const accountValue = request.nextUrl.searchParams.get("account_id");
   if (accountValue !== null) {
     const accountId = parseAccountId(accountValue);
@@ -66,6 +70,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -88,8 +95,11 @@ export async function POST(request: NextRequest) {
     await client.query("BEGIN");
     if (validation.data.account_id) {
       const accountResult = await client.query(
-        "SELECT account_id FROM accounts WHERE account_id = $1 AND archived_at IS NULL",
-        [validation.data.account_id],
+        "SELECT account_id FROM accounts WHERE account_id = $1 AND company_id = $2 AND archived_at IS NULL",
+        [
+          validation.data.account_id,
+          scope.context.access.company.company_id,
+        ],
       );
       if (accountResult.rowCount === 0) {
         await client.query("ROLLBACK");
@@ -99,7 +109,11 @@ export async function POST(request: NextRequest) {
         );
       }
     }
-    const contact = await createContact(client, validation.data);
+    const contact = await createContact(
+      client,
+      validation.data,
+      scope.context.access.company.company_id,
+    );
     await client.query("COMMIT");
     return NextResponse.json(
       { message: "Contact created", contact },

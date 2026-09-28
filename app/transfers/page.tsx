@@ -1,10 +1,5 @@
-import { WorkspaceSectionPage } from "@/components/dashboard/WorkspaceSectionPage";
+import { TransferWorkspace } from "@/components/transfers/TransferWorkspace";
 
 export default function TransfersPage() {
-  return (
-    <WorkspaceSectionPage
-      description="Review lead and ownership transfers across the workspace."
-      title="Transfers"
-    />
-  );
+  return <TransferWorkspace />;
 }

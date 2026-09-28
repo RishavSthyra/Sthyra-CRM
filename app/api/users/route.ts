@@ -8,6 +8,7 @@ import {
   USER_COLUMNS,
   validateUserPayload,
 } from "@/lib/users";
+import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 
 export async function GET(request: NextRequest) {
   const parameters = request.nextUrl.searchParams;
@@ -122,6 +123,16 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  if (isSupabaseAuthConfigured()) {
+    return NextResponse.json(
+      {
+        error:
+          "Create workspace members through an invitation so their Supabase identity is linked safely",
+      },
+      { status: 409 },
+    );
+  }
+
   let body: unknown;
   try {
     body = await request.json();

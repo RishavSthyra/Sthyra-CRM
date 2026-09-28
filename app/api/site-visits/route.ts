@@ -9,6 +9,10 @@ import { requireOperationsContext } from "@/lib/operationsAccess";
 import { canAccessProject, getAccessibleProjectIds } from "@/lib/projectAccess";
 import { advanceOpportunityToStage } from "@/lib/opportunities";
 import {
+  createNotificationsForUsers,
+  resolveNotificationRecipients,
+} from "@/lib/notifications";
+import {
   SITE_VISIT_COLUMNS,
   SITE_VISIT_STATUSES,
   addSiteVisitHistory,
@@ -253,6 +257,25 @@ export async function POST(request: NextRequest) {
         },
       },
     );
+    const recipients = await resolveNotificationRecipients(client, {
+      companyId: scope.context.access.company.company_id,
+      userIds: [appointment.assigned_to_user_id, appointment.organizer_user_id],
+      teamIds: [appointment.assigned_to_team_id],
+    });
+    await createNotificationsForUsers(client, recipients, {
+      companyId: scope.context.access.company.company_id,
+      projectId: Number(appointment.project_id),
+      type: "site_visit.created",
+      category: "site_visit",
+      title: "New site visit",
+      body: `${appointment.title} was scheduled for you.`,
+      entityType: "site_visit",
+      entityId: String(appointment.appointment_id),
+      actionUrl: `/calendar?appointment_id=${appointment.appointment_id}`,
+      eventKey: `site-visit:${appointment.appointment_id}:created`,
+      metadata: { starts_at: appointment.starts_at },
+      channels: ["in_app", "email"],
+    });
     await client.query("COMMIT");
     return NextResponse.json(
       {

@@ -18,6 +18,7 @@ import {
 } from "@/lib/operationsAccess";
 import { isObject } from "@/utils/isObject";
 import { validateText } from "@/utils/validateText";
+import { createNotificationsForUsers } from "@/lib/notifications";
 
 type AssignmentAction = "accept" | "reject" | "release";
 
@@ -210,6 +211,30 @@ export async function handleAssignmentAction(
          VALUES ($1,'cancelled',$2,'cancelled',$3,$4)`,
           [sla.sla_id, sla.status, reason ?? null, scope.context.userId],
         );
+    }
+    if (
+      assignment.assigned_by &&
+      assignment.assigned_by !== scope.context.userId
+    ) {
+      await createNotificationsForUsers(
+        client,
+        [String(assignment.assigned_by)],
+        {
+          companyId: Number(assignment.company_id),
+          projectId: Number(assignment.project_id),
+          type: `assignment.${targetStatus}`,
+          category: "assignment",
+          title: `Assignment ${targetStatus}`,
+          body: `A lead assignment was ${targetStatus}.`,
+          severity: targetStatus === "rejected" ? "warning" : "success",
+          entityType: "lead",
+          entityId: String(assignment.lead_id),
+          actionUrl: `/leads?lead_id=${assignment.lead_id}`,
+          eventKey: `assignment:${assignmentId}:${targetStatus}`,
+          metadata: { assignment_id: assignmentId, reason: reason ?? null },
+          channels: ["in_app", "email"],
+        },
+      );
     }
     await client.query("COMMIT");
     return NextResponse.json({

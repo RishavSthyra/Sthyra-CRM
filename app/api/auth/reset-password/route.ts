@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import pool from "@/lib/db";
+import pool, { adminPool } from "@/lib/db";
 import { hashPassword, hashToken } from "@/lib/auth";
 import { validateResetPasswordPayload } from "@/lib/authValidation";
+import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { validatePassword } from "@/utils/validatePassword";
 
 export const runtime = "nodejs";
 
@@ -15,6 +18,50 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
+
+  if (isSupabaseAuthConfigured()) {
+    const source =
+      typeof body === "object" && body !== null && !Array.isArray(body)
+        ? (body as Record<string, unknown>)
+        : {};
+    const errors = validatePassword(source.new_password, "new_password");
+    if (errors.length || typeof source.new_password !== "string") {
+      return NextResponse.json(
+        { error: "Validation failed", details: errors },
+        { status: 422 },
+      );
+    }
+
+    const supabase = await createSupabaseServerClient();
+    const { data: claims } = await supabase.auth.getClaims();
+    const authUserId = claims?.claims?.sub;
+    if (typeof authUserId !== "string") {
+      return NextResponse.json(
+        { error: "Reset session is invalid or expired" },
+        { status: 401 },
+      );
+    }
+    const { error } = await supabase.auth.updateUser({
+      password: source.new_password,
+    });
+    if (error) {
+      return NextResponse.json(
+        { error: "Unable to reset password" },
+        { status: 400 },
+      );
+    }
+    await adminPool.query(
+      `UPDATE users
+       SET password_hash = NULL,
+           password_changed_at = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE auth_user_id = $1`,
+      [authUserId],
+    );
+    await supabase.auth.signOut({ scope: "local" });
+    return NextResponse.json({ message: "Password reset successfully" });
+  }
+
   const validation = validateResetPasswordPayload(body);
   if (!validation.ok) {
     return NextResponse.json(

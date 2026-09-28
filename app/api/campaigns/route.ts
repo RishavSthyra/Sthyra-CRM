@@ -7,14 +7,18 @@ import {
 } from "@/lib/leadAttribution";
 import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
 import { parsePagination } from "@/utils/parsePagination";
+import { requireOperationsContext } from "@/lib/operationsAccess";
 
 export async function GET(request: NextRequest) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
+
   const pagination = parsePagination(request.nextUrl.searchParams);
   if (!pagination.ok) {
     return NextResponse.json({ error: pagination.error }, { status: 400 });
   }
-  const values: unknown[] = [];
-  const filters = ["1 = 1"];
+  const values: unknown[] = [scope.context.access.company.company_id];
+  const filters = ["company_id = $1"];
   const active = request.nextUrl.searchParams.get("is_active");
   if (active !== null) {
     if (!["true", "false"].includes(active)) {
@@ -76,6 +80,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -96,8 +103,8 @@ export async function POST(request: NextRequest) {
   try {
     if (item.source_id) {
       const source = await pool.query(
-        "SELECT source_id FROM lead_sources WHERE source_id = $1 AND is_active = TRUE",
-        [item.source_id],
+        "SELECT source_id FROM lead_sources WHERE source_id = $1 AND company_id = $2 AND is_active = TRUE",
+        [item.source_id, scope.context.access.company.company_id],
       );
       if (!source.rowCount) {
         return NextResponse.json(
@@ -107,9 +114,10 @@ export async function POST(request: NextRequest) {
       }
     }
     const result = await pool.query(
-      `INSERT INTO campaigns (source_id, campaign_name, campaign_code, campaign_type, start_date, end_date, budget)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING ${CAMPAIGN_COLUMNS}`,
+      `INSERT INTO campaigns (company_id, source_id, campaign_name, campaign_code, campaign_type, start_date, end_date, budget)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING ${CAMPAIGN_COLUMNS}`,
       [
+        scope.context.access.company.company_id,
         item.source_id ?? null,
         item.campaign_name,
         item.campaign_code,

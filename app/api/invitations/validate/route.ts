@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import pool from "@/lib/db";
+import pool, { adminPool } from "@/lib/db";
 import { hashToken } from "@/lib/auth";
+import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
+  const database = isSupabaseAuthConfigured() ? adminPool : pool;
   const token = request.nextUrl.searchParams.get("token")?.trim();
   if (!token || token.length > 200) {
     return NextResponse.json({ error: "Invalid invitation link" }, { status: 400 });
   }
   try {
-    const result = await pool.query(
+    const result = await database.query(
       `SELECT wi.invitation_id, wi.email, wi.status, wi.expires_at,
               c.company_name, c.company_code, r.role_name, t.name AS team_name
        FROM workspace_invitations wi
@@ -25,7 +27,7 @@ export async function GET(request: NextRequest) {
     }
     const invitation = result.rows[0];
     if (invitation.status === "pending" && new Date(invitation.expires_at) <= new Date()) {
-      await pool.query(
+      await database.query(
         `UPDATE workspace_invitations SET status='expired', updated_at=CURRENT_TIMESTAMP
          WHERE invitation_id=$1 AND status='pending'`,
         [invitation.invitation_id],

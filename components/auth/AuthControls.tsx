@@ -2,9 +2,16 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import type { InputHTMLAttributes, ReactNode } from "react";
+import type { FocusEventHandler, InputHTMLAttributes, ReactNode } from "react";
 import { useState } from "react";
-import { ArrowRight, ChevronDown, Eye, EyeOff } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  ChevronDown,
+  Eye,
+  EyeOff,
+} from "lucide-react";
+import { getPasswordRequirements } from "@/utils/validatePassword";
 
 type FieldProps = InputHTMLAttributes<HTMLInputElement> & {
   label: string;
@@ -32,9 +39,24 @@ export function PasswordField({
   label,
   id,
   className = "",
+  showRequirements = false,
+  onFocus,
+  onBlur,
   ...props
-}: FieldProps) {
+}: FieldProps & { showRequirements?: boolean }) {
   const [visible, setVisible] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const value = typeof props.value === "string" ? props.value : "";
+  const requirements = getPasswordRequirements(value);
+  const requirementsId = `${id}-requirements`;
+  const handleFocus: FocusEventHandler<HTMLInputElement> = (event) => {
+    setFocused(true);
+    onFocus?.(event);
+  };
+  const handleBlur: FocusEventHandler<HTMLInputElement> = (event) => {
+    setFocused(false);
+    onBlur?.(event);
+  };
   return (
     <label
       className={`flex min-w-0 flex-col gap-1.5 ${className}`}
@@ -45,14 +67,18 @@ export function PasswordField({
       </span>
       <span className="relative block">
         <input
+          aria-describedby={showRequirements ? requirementsId : undefined}
           className="h-12 w-full rounded-[10px] border border-[#342e2e] bg-[#222]/20 px-3 pr-11 text-sm text-white outline-none transition placeholder:text-white/40 focus:border-[#2aa284] focus:ring-2 focus:ring-[#2aa284]/20"
           id={id}
+          onBlur={handleBlur}
+          onFocus={handleFocus}
           type={visible ? "text" : "password"}
           {...props}
         />
         <button
           aria-label={visible ? "Hide password" : "Show password"}
           className="absolute top-1/2 right-2.5 flex size-8 -translate-y-1/2 items-center justify-center rounded-md hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-[#2aa284]"
+          onMouseDown={(event) => event.preventDefault()}
           onClick={() => setVisible((current) => !current)}
           type="button"
         >
@@ -62,6 +88,41 @@ export function PasswordField({
             <Eye aria-hidden className="size-5" strokeWidth={1.8} />
           )}
         </button>
+        {showRequirements && (
+          <span
+            aria-hidden={!focused}
+            className={`absolute top-[calc(100%+8px)] right-0 left-0 z-40 overflow-hidden rounded-xl border bg-[#101311]/[0.98] shadow-[0_18px_55px_rgba(0,0,0,0.58)] backdrop-blur-xl transition-all duration-200 ease-out ${
+              focused
+                ? "visible translate-y-0 border-white/[0.13] opacity-100"
+                : "invisible -translate-y-1 border-transparent opacity-0"
+            }`}
+            id={requirementsId}
+          >
+            <span className="grid gap-2.5 px-4 py-3.5 sm:grid-cols-2">
+              {requirements.map((requirement) => (
+                <span
+                  className={`flex min-w-0 items-center gap-2 text-[11px] leading-4 transition-colors duration-200 ${
+                    requirement.met ? "text-[#83dec4]" : "text-[#929a96]"
+                  }`}
+                  key={requirement.key}
+                >
+                  <span
+                    className={`grid size-4 shrink-0 place-items-center rounded-full border transition-all duration-200 ${
+                      requirement.met
+                        ? "border-[#4cc7a4] bg-[#4cc7a4] text-[#07110e]"
+                        : "border-white/35 bg-transparent text-transparent"
+                    }`}
+                  >
+                    {requirement.met && (
+                      <Check className="size-2.5" strokeWidth={3} />
+                    )}
+                  </span>
+                  <span>{requirement.label}</span>
+                </span>
+              ))}
+            </span>
+          </span>
+        )}
       </span>
     </label>
   );

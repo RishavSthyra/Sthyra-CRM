@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import pool from "@/lib/db";
+import { adminPool } from "@/lib/db";
 import { isUuid } from "@/lib/permissions";
 import { addCallHistory, mapProviderStatus, verifyTelephonyWebhook } from "@/lib/telephony";
 import { isObject } from "@/utils/isObject";
@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
   const eventType = String(body.type ?? body.event_type ?? "").trim();
   const providerCallId = body.provider_call_id ?? body.call_id;
   if (!provider || !eventId || !eventType) return NextResponse.json({ error: "provider, event_id, and type are required" }, { status: 422 });
-  const client = await pool.connect();
+  const client = await adminPool.connect();
   try {
     await client.query("BEGIN");
     const inserted = await client.query(

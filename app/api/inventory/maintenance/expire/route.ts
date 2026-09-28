@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import pool from "@/lib/db";
+import { adminPool } from "@/lib/db";
+import { hasValidBearerSecret } from "@/lib/integrationAuth";
 import {
   expireStaleInventoryHolds,
   expireStaleInventoryReservations,
@@ -7,9 +8,15 @@ import {
 export const runtime = "nodejs";
 export async function POST(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
-  if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`)
+  if (!secret) {
+    return NextResponse.json(
+      { error: "Inventory maintenance is not configured" },
+      { status: 503 },
+    );
+  }
+  if (!hasValidBearerSecret(request, secret))
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const client = await pool.connect();
+  const client = await adminPool.connect();
   try {
     await client.query("BEGIN");
     const expiredHolds = await expireStaleInventoryHolds(client);
@@ -29,4 +36,8 @@ export async function POST(request: NextRequest) {
   } finally {
     client.release();
   }
+}
+
+export async function GET(request: NextRequest) {
+  return POST(request);
 }

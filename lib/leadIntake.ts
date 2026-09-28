@@ -1,4 +1,5 @@
-import pool from "@/lib/db";
+import type { Pool } from "pg";
+import pool, { adminPool } from "@/lib/db";
 import { createContact, validateContactPayload } from "@/lib/contacts";
 import {
   createLead,
@@ -10,7 +11,7 @@ import { isObject } from "@/utils/isObject";
 import { validateText } from "@/utils/validateText";
 
 export const INTAKE_EVENT_COLUMNS = `
-  event_id, idempotency_key, payload, status, lead_id, error_code,
+  event_id, company_id, idempotency_key, payload, status, lead_id, error_code,
   error_message, attempt_count, received_at, last_attempt_at, processed_at,
   resolved_at, resolution_action, resolution_notes, created_at, updated_at
 `;
@@ -25,6 +26,8 @@ type IntakePayload = {
 type IntakeValidation =
   | { ok: true; data: IntakePayload }
   | { ok: false; errors: string[] };
+
+type IntakeDatabase = Pick<Pool, "connect" | "query">;
 
 export function validateIntakeEnvelope(body: unknown): IntakeValidation {
   if (!isObject(body) || Array.isArray(body)) {
@@ -93,33 +96,61 @@ class IntakeDataError extends Error {
 
 export async function createIntakeEvent(
   payload: IntakePayload,
+  companyId: number,
+  database: IntakeDatabase = pool,
 ): Promise<{ event: Record<string, unknown>; created: boolean }> {
-  const inserted = await pool.query(
-    `INSERT INTO lead_intake_events (idempotency_key, payload)
-     VALUES ($1, $2::jsonb)
-     ON CONFLICT (idempotency_key) DO NOTHING
+  const inserted = await database.query(
+    `INSERT INTO lead_intake_events (company_id, idempotency_key, payload)
+     VALUES ($1, $2, $3::jsonb)
+     ON CONFLICT (company_id, idempotency_key) DO NOTHING
      RETURNING ${INTAKE_EVENT_COLUMNS}`,
-    [payload.idempotency_key, JSON.stringify(payload)],
+    [companyId, payload.idempotency_key, JSON.stringify(payload)],
   );
   if (inserted.rowCount) {
     return { event: inserted.rows[0], created: true };
   }
-  const existing = await pool.query(
-    `SELECT ${INTAKE_EVENT_COLUMNS} FROM lead_intake_events WHERE idempotency_key=$1`,
-    [payload.idempotency_key],
+  const existing = await database.query(
+    `SELECT ${INTAKE_EVENT_COLUMNS}
+     FROM lead_intake_events
+     WHERE company_id=$1 AND idempotency_key=$2`,
+    [companyId, payload.idempotency_key],
   );
   return { event: existing.rows[0], created: false };
+}
+
+export async function resolveIntakeCompanyId(
+  payload: IntakePayload,
+): Promise<number> {
+  const projectId = payload.lead.project_id;
+  if (!Number.isSafeInteger(projectId) || Number(projectId) <= 0) {
+    throw new IntakeDataError(
+      "INVALID_PROJECT",
+      "lead.project_id must be a positive integer",
+    );
+  }
+  const result = await adminPool.query(
+    `SELECT company_id
+     FROM projects
+     WHERE project_id=$1 AND is_active=TRUE`,
+    [projectId],
+  );
+  if (!result.rowCount) {
+    throw new IntakeDataError("PROJECT_NOT_FOUND", "Active project not found");
+  }
+  return Number(result.rows[0].company_id);
 }
 
 async function resolveContact(
   client: import("pg").PoolClient,
   envelope: IntakePayload,
+  companyId: number,
 ): Promise<string> {
   if (envelope.contact_id) {
     const result = await client.query(
       `SELECT contact_id FROM contacts
-       WHERE contact_id=$1 AND archived_at IS NULL AND merged_into_contact_id IS NULL`,
-      [envelope.contact_id],
+       WHERE contact_id=$1 AND company_id=$2
+         AND archived_at IS NULL AND merged_into_contact_id IS NULL`,
+      [envelope.contact_id, companyId],
     );
     if (!result.rowCount) {
       throw new IntakeDataError(
@@ -139,27 +170,29 @@ async function resolveContact(
   if (contact.email || contact.phone_number) {
     const existing = await client.query(
       `SELECT contact_id FROM contacts
-       WHERE archived_at IS NULL
+       WHERE company_id=$3
+         AND archived_at IS NULL
          AND merged_into_contact_id IS NULL
          AND (
            ($1::text IS NOT NULL AND LOWER(email)=LOWER($1))
            OR ($2::text IS NOT NULL AND REGEXP_REPLACE(phone_number, '\\D', '', 'g')=REGEXP_REPLACE($2, '\\D', '', 'g'))
          )
        ORDER BY created_at ASC LIMIT 1`,
-      [contact.email ?? null, contact.phone_number ?? null],
+      [contact.email ?? null, contact.phone_number ?? null, companyId],
     );
     if (existing.rowCount) {
       return existing.rows[0].contact_id as string;
     }
   }
-  const created = await createContact(client, contact);
+  const created = await createContact(client, contact, companyId);
   return created.contact_id;
 }
 
 export async function processIntakeEvent(
   eventId: string,
+  database: IntakeDatabase = pool,
 ): Promise<Record<string, unknown>> {
-  const client = await pool.connect();
+  const client = await database.connect();
   try {
     await client.query("BEGIN");
     const eventResult = await client.query(
@@ -184,7 +217,11 @@ export async function processIntakeEvent(
     if (!validation.ok) {
       throw new IntakeDataError("INVALID_EVENT", validation.errors.join("; "));
     }
-    const contactId = await resolveContact(client, validation.data);
+    const contactId = await resolveContact(
+      client,
+      validation.data,
+      Number(event.company_id),
+    );
     const leadValidation = validateLeadPayload(
       { ...validation.data.lead, contact_id: contactId },
       { partial: false },
@@ -195,7 +232,12 @@ export async function processIntakeEvent(
         leadValidation.errors.join("; "),
       );
     }
-    const lead = await createLead(client, leadValidation.data, eventId);
+    const lead = await createLead(
+      client,
+      leadValidation.data,
+      Number(event.company_id),
+      eventId,
+    );
     const updated = await client.query(
       `UPDATE lead_intake_events
        SET status='processed', lead_id=$1, error_code=NULL, error_message=NULL,
@@ -223,7 +265,7 @@ export async function processIntakeEvent(
     if (code === "EVENT_NOT_FOUND") {
       throw error;
     }
-    const updated = await pool.query(
+    const updated = await database.query(
       `UPDATE lead_intake_events
        SET status=$1, error_code=$2, error_message=$3,
            attempt_count=attempt_count+1, last_attempt_at=CURRENT_TIMESTAMP,

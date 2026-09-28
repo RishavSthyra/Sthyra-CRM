@@ -1,3 +1,4 @@
+import type { Pool } from "pg";
 import pool from "@/lib/db";
 import { recordActivity } from "@/lib/activities";
 import type { EmailAttachmentInput } from "@/lib/communications";
@@ -13,6 +14,8 @@ type ClaimedJob = {
   max_attempts: number;
 };
 
+type DeliveryDatabase = Pick<Pool, "connect" | "query">;
+
 export type DeliveryJobResult = {
   jobId: string;
   emailId: string;
@@ -20,8 +23,11 @@ export type DeliveryJobResult = {
   error?: string;
 };
 
-async function claimJob(jobId?: string): Promise<ClaimedJob | null> {
-  const client = await pool.connect();
+async function claimJob(
+  database: DeliveryDatabase,
+  jobId?: string,
+): Promise<ClaimedJob | null> {
+  const client = await database.connect();
   try {
     await client.query("BEGIN");
     const result = await client.query(
@@ -65,11 +71,12 @@ async function claimJob(jobId?: string): Promise<ClaimedJob | null> {
 
 export async function processEmailDeliveryJob(
   requestedJobId?: string,
+  database: DeliveryDatabase = pool,
 ): Promise<DeliveryJobResult | null> {
-  const job = await claimJob(requestedJobId);
+  const job = await claimJob(database, requestedJobId);
   if (!job) return null;
   try {
-    const result = await pool.query(
+    const result = await database.query(
       `SELECT e.*, ec.provider, ec.email_address,
               ec.email_connection_id, ec.display_name,
               ec.access_token_ciphertext, ec.refresh_token_ciphertext,
@@ -84,7 +91,7 @@ export async function processEmailDeliveryJob(
     if (email.connection_status !== "connected") {
       throw new Error("The selected mailbox needs to be reconnected");
     }
-    const attachmentResult = await pool.query(
+    const attachmentResult = await database.query(
       `SELECT file_name, mime_type, size_bytes, content
        FROM email_attachments WHERE email_id=$1 ORDER BY created_at ASC`,
       [job.email_id],
@@ -102,7 +109,7 @@ export async function processEmailDeliveryJob(
       body: email.body,
       attachments,
     });
-    const client = await pool.connect();
+    const client = await database.connect();
     try {
       await client.query("BEGIN");
       const updated = await client.query(
@@ -152,7 +159,7 @@ export async function processEmailDeliveryJob(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Email delivery failed";
     const retry = job.attempts < job.max_attempts && !/reconnect|authorization expired/i.test(message);
-    await pool.query(
+    await database.query(
       `UPDATE email_delivery_jobs
        SET status=$2, next_attempt_at=CURRENT_TIMESTAMP +
              (LEAST(60, POWER(2, attempts)) * INTERVAL '1 minute'),
@@ -160,7 +167,7 @@ export async function processEmailDeliveryJob(
        WHERE email_delivery_job_id=$1`,
       [job.email_delivery_job_id, retry ? "retrying" : "failed", message.slice(0, 4000)],
     );
-    await pool.query(
+    await database.query(
       `UPDATE emails SET status='failed', delivery_error=$2, updated_at=CURRENT_TIMESTAMP
        WHERE email_id=$1`,
       [job.email_id, message.slice(0, 4000)],

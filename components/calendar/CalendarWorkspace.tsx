@@ -38,6 +38,7 @@ import {
   useState,
 } from "react";
 import toast from "react-hot-toast";
+import { SiteVisitDetails } from "@/components/calendar/SiteVisitDetails";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 
@@ -51,7 +52,17 @@ type AppointmentStatus =
   | "cancelled"
   | "completed"
   | "no_show";
-type AppointmentAction = "confirm" | "cancel" | "complete";
+type AppointmentAction =
+  "confirm" | "check-in" | "complete" | "no-show" | "cancel";
+
+type SiteVisitActionData = {
+  reason: string;
+  notes: string;
+  outcome: string;
+  feedback: string;
+  customer_rating: string;
+  next_action: string;
+};
 
 type Project = {
   project_id: number;
@@ -94,6 +105,11 @@ type Appointment = {
   assigned_team_name?: string | null;
   cancellation_reason?: string | null;
   reschedule_reason?: string | null;
+  check_in_at?: string | null;
+  outcome?: string | null;
+  feedback?: string | null;
+  customer_rating?: string | number | null;
+  next_action?: string | null;
 };
 
 type Lead = {
@@ -434,6 +450,14 @@ export function CalendarWorkspace() {
     action: AppointmentAction;
   } | null>(null);
   const [actionReason, setActionReason] = useState("");
+  const [siteVisitAction, setSiteVisitAction] = useState<SiteVisitActionData>({
+    reason: "",
+    notes: "",
+    outcome: "interested",
+    feedback: "",
+    customer_rating: "",
+    next_action: "",
+  });
   const [actionError, setActionError] = useState<string | null>(null);
   const actionInFlightRef = useRef(false);
 
@@ -453,6 +477,43 @@ export function CalendarWorkspace() {
       }
       const requestedOpportunity = params.get("opportunity_id");
       if (requestedOpportunity) setOpportunityFilter(requestedOpportunity);
+      const requestedAppointment = params.get("appointment_id");
+      if (requestedAppointment) {
+        void (async () => {
+          try {
+            const response = await fetchWithSession(
+              `/api/appointments/${requestedAppointment}`,
+              { cache: "no-store" },
+            );
+            if (!response.ok) return;
+            const body = (await response.json()) as {
+              appointment?: Appointment;
+            };
+            let appointment = body.appointment;
+            if (!appointment) return;
+            if (appointment.appointment_type === "site_visit") {
+              const visitResponse = await fetchWithSession(
+                `/api/site-visits/${requestedAppointment}`,
+                { cache: "no-store" },
+              );
+              if (visitResponse.ok) {
+                const visitBody = (await visitResponse.json()) as {
+                  site_visit?: Appointment;
+                };
+                appointment = {
+                  ...appointment,
+                  ...(visitBody.site_visit ?? {}),
+                  appointment_id: requestedAppointment,
+                };
+              }
+            }
+            setCursor(new Date(appointment.starts_at));
+            setSelected(appointment);
+          } catch {
+            // The normal calendar load still remains available if a deep link is stale.
+          }
+        })();
+      }
     }, 0);
     return () => window.clearTimeout(task);
   }, []);
@@ -757,6 +818,7 @@ export function CalendarWorkspace() {
             ? "Appointment rescheduled"
             : "Appointment updated",
       );
+      window.dispatchEvent(new Event("notifications:changed"));
       setComposerMode(null);
       if (savedAppointment) {
         setSelected((current) =>
@@ -778,17 +840,48 @@ export function CalendarWorkspace() {
   async function runAction(
     appointment: Appointment,
     action: AppointmentAction,
-    reason = "",
+    data: SiteVisitActionData,
   ) {
     if (actionInFlightRef.current) return;
-    if (action === "cancel" && !reason.trim()) {
-      setActionError("Add a cancellation reason before continuing.");
+    if (["cancel", "no-show"].includes(action) && !data.reason.trim()) {
+      setActionError(
+        action === "no-show"
+          ? "Add a no-show reason before continuing."
+          : "Add a cancellation reason before continuing.",
+      );
+      return;
+    }
+    if (
+      appointment.appointment_type === "site_visit" &&
+      action === "complete" &&
+      !data.outcome
+    ) {
+      setActionError("Select the visit outcome before continuing.");
       return;
     }
     actionInFlightRef.current = true;
     setActionError(null);
     setSaving(true);
     try {
+      const isSiteVisit = appointment.appointment_type === "site_visit";
+      const payload = isSiteVisit
+        ? action === "complete"
+          ? {
+              outcome: data.outcome,
+              feedback: data.feedback.trim() || null,
+              customer_rating: data.customer_rating
+                ? Number(data.customer_rating)
+                : null,
+              next_action: data.next_action.trim() || null,
+            }
+          : action === "check-in"
+            ? { notes: data.notes.trim() || null }
+            : ["cancel", "no-show"].includes(action)
+              ? { reason: data.reason.trim() }
+              : {}
+        : ["cancel", "no-show"].includes(action)
+          ? { reason: data.reason.trim() }
+          : {};
       const response = await fetchWithSession(
         appointment.appointment_type === "site_visit"
           ? `/api/site-visits/${appointment.appointment_id}/${action}`
@@ -796,7 +889,7 @@ export function CalendarWorkspace() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(reason.trim() ? { reason: reason.trim() } : {}),
+          body: JSON.stringify(payload),
         },
       );
       if (!response.ok) throw new Error(await getApiError(response));
@@ -812,10 +905,17 @@ export function CalendarWorkspace() {
       }
       setPendingAction(null);
       setActionReason("");
-      toast.success(
-        `Appointment ${action === "complete" ? "completed" : `${action}ed`}`,
-        { id: "appointment-action-result" },
-      );
+      const resultLabel: Record<AppointmentAction, string> = {
+        confirm: "confirmed",
+        "check-in": "checked in",
+        complete: "completed",
+        "no-show": "marked as no-show",
+        cancel: "cancelled",
+      };
+      toast.success(`Appointment ${resultLabel[action]}`, {
+        id: "appointment-action-result",
+      });
+      window.dispatchEvent(new Event("notifications:changed"));
       await loadAppointments();
     } catch (cause) {
       setActionError(
@@ -832,6 +932,16 @@ export function CalendarWorkspace() {
   function requestAction(appointment: Appointment, action: AppointmentAction) {
     setPendingAction({ appointment, action });
     setActionReason("");
+    setSiteVisitAction({
+      reason: "",
+      notes: "",
+      outcome: appointment.outcome ?? "interested",
+      feedback: appointment.feedback ?? "",
+      customer_rating: appointment.customer_rating
+        ? String(appointment.customer_rating)
+        : "",
+      next_action: appointment.next_action ?? "",
+    });
     setActionError(null);
   }
 
@@ -1285,6 +1395,7 @@ export function CalendarWorkspace() {
           appointment={selected}
           now={now}
           saving={saving}
+          users={users}
           onAction={requestAction}
           onClose={() => setSelected(null)}
           onEdit={(mode) => openEdit(selected, mode)}
@@ -1298,6 +1409,7 @@ export function CalendarWorkspace() {
           error={actionError}
           reason={actionReason}
           saving={saving}
+          siteVisitData={siteVisitAction}
           onClose={() => {
             if (saving) return;
             setPendingAction(null);
@@ -1305,14 +1417,17 @@ export function CalendarWorkspace() {
             setActionError(null);
           }}
           onConfirm={() =>
-            void runAction(
-              pendingAction.appointment,
-              pendingAction.action,
-              actionReason,
-            )
+            void runAction(pendingAction.appointment, pendingAction.action, {
+              ...siteVisitAction,
+              reason: actionReason,
+            })
           }
           onReasonChange={(reason) => {
             setActionReason(reason);
+            setActionError(null);
+          }}
+          onSiteVisitDataChange={(next) => {
+            setSiteVisitAction(next);
             setActionError(null);
           }}
         />
@@ -1729,6 +1844,7 @@ function AppointmentDrawer({
   appointment,
   now,
   saving,
+  users,
   onAction,
   onClose,
   onEdit,
@@ -1736,6 +1852,7 @@ function AppointmentDrawer({
   appointment: Appointment;
   now: number;
   saving: boolean;
+  users: User[];
   onAction: (appointment: Appointment, action: AppointmentAction) => void;
   onClose: () => void;
   onEdit: (mode: "edit" | "reschedule") => void;
@@ -1860,6 +1977,40 @@ function AppointmentDrawer({
               {appointment.reschedule_reason || appointment.cancellation_reason}
             </div>
           )}
+          {appointment.appointment_type === "site_visit" && (
+            <>
+              {(appointment.outcome ||
+                appointment.feedback ||
+                appointment.next_action) && (
+                <div className="border-t border-white/[0.09] py-5">
+                  <span className="text-[9px] uppercase tracking-[0.12em] text-[#6f7471]">
+                    Visit result
+                  </span>
+                  {appointment.outcome && (
+                    <p className="mt-2 text-xs font-medium capitalize text-[#69d5b5]">
+                      {appointment.outcome.replaceAll("_", " ")}
+                    </p>
+                  )}
+                  {appointment.feedback && (
+                    <p className="mt-2 text-xs leading-5 text-[#b9c0bc]">
+                      {appointment.feedback}
+                    </p>
+                  )}
+                  {appointment.next_action && (
+                    <p className="mt-2 text-[11px] text-[#858d88]">
+                      Next: {appointment.next_action}
+                    </p>
+                  )}
+                </div>
+              )}
+              <SiteVisitDetails
+                projectId={appointment.project_id}
+                status={appointment.status}
+                users={users}
+                visitId={appointment.appointment_id}
+              />
+            </>
+          )}
         </div>
         <div className="border-t border-white/[0.09] bg-[#0d100e] p-4">
           {terminal ? (
@@ -1889,15 +2040,17 @@ function AppointmentDrawer({
               >
                 <Pencil className="size-3.5" /> Edit
               </button>
-              <button
-                className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-white/[0.11] bg-[#181b19] text-xs text-[#d9dcda] transition hover:bg-[#222623] disabled:opacity-40"
-                disabled={saving}
-                onClick={() => onEdit("reschedule")}
-                type="button"
-              >
-                <RotateCcw className="size-3.5" /> Reschedule
-              </button>
-              {appointment.status !== "confirmed" && (
+              {appointment.status !== "checked_in" && (
+                <button
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-white/[0.11] bg-[#181b19] text-xs text-[#d9dcda] transition hover:bg-[#222623] disabled:opacity-40"
+                  disabled={saving}
+                  onClick={() => onEdit("reschedule")}
+                  type="button"
+                >
+                  <RotateCcw className="size-3.5" /> Reschedule
+                </button>
+              )}
+              {["scheduled", "rescheduled"].includes(appointment.status) && (
                 <button
                   className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-[#205b77] text-xs font-semibold text-white transition hover:bg-[#286f90] disabled:opacity-40"
                   disabled={saving}
@@ -1907,14 +2060,44 @@ function AppointmentDrawer({
                   <Check className="size-3.5" /> Confirm
                 </button>
               )}
-              <button
-                className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-[#237e66] text-xs font-semibold text-white transition hover:bg-[#2a9277] disabled:opacity-40"
-                disabled={saving}
-                onClick={() => onAction(appointment, "complete")}
-                type="button"
-              >
-                <CheckCircle2 className="size-3.5" /> Complete
-              </button>
+              {appointment.appointment_type === "site_visit" &&
+                ["scheduled", "confirmed", "rescheduled"].includes(
+                  appointment.status,
+                ) && (
+                  <button
+                    className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-[#2b715f] text-xs font-semibold text-white transition hover:bg-[#35846f] disabled:opacity-40"
+                    disabled={saving}
+                    onClick={() => onAction(appointment, "check-in")}
+                    type="button"
+                  >
+                    <MapPin className="size-3.5" /> Check in
+                  </button>
+                )}
+              {(appointment.appointment_type !== "site_visit" ||
+                appointment.status === "checked_in") && (
+                <button
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-[#237e66] text-xs font-semibold text-white transition hover:bg-[#2a9277] disabled:opacity-40"
+                  disabled={saving}
+                  onClick={() => onAction(appointment, "complete")}
+                  type="button"
+                >
+                  <CheckCircle2 className="size-3.5" /> Complete
+                </button>
+              )}
+              {appointment.appointment_type === "site_visit" &&
+                overdue &&
+                ["scheduled", "confirmed", "rescheduled"].includes(
+                  appointment.status,
+                ) && (
+                  <button
+                    className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-[#6e4d28] bg-[#2a2114] text-xs text-[#eab66c] transition hover:bg-[#392b18] disabled:opacity-40"
+                    disabled={saving}
+                    onClick={() => onAction(appointment, "no-show")}
+                    type="button"
+                  >
+                    <CircleAlert className="size-3.5" /> No-show
+                  </button>
+                )}
               <button
                 className="col-span-2 inline-flex h-9 items-center justify-center gap-2 rounded-md border border-[#6e3028] bg-[#2b1714] text-xs text-[#ef9482] transition hover:bg-[#3a1d19] disabled:opacity-40"
                 disabled={saving}
@@ -1937,20 +2120,34 @@ function AppointmentActionDialog({
   error,
   reason,
   saving,
+  siteVisitData,
   onClose,
   onConfirm,
   onReasonChange,
+  onSiteVisitDataChange,
 }: {
   action: AppointmentAction;
   appointment: Appointment;
   error: string | null;
   reason: string;
   saving: boolean;
+  siteVisitData: SiteVisitActionData;
   onClose: () => void;
   onConfirm: () => void;
   onReasonChange: (reason: string) => void;
+  onSiteVisitDataChange: (data: SiteVisitActionData) => void;
 }) {
-  const content = {
+  const contentMap: Record<
+    AppointmentAction,
+    {
+      title: string;
+      description: string;
+      button: string;
+      buttonClass: string;
+      Icon: LucideIcon;
+      iconClass: string;
+    }
+  > = {
     confirm: {
       title: "Confirm appointment",
       description:
@@ -1961,13 +2158,33 @@ function AppointmentActionDialog({
       iconClass: "bg-[#183244] text-[#8dc8ed]",
     },
     complete: {
-      title: "Complete appointment",
+      title:
+        appointment.appointment_type === "site_visit"
+          ? "Complete site visit"
+          : "Complete appointment",
       description:
         "Mark this appointment as finished. Completed appointments become read-only.",
       button: "Mark as completed",
       buttonClass: "bg-[#237e66] hover:bg-[#2a9277]",
       Icon: CheckCircle2,
       iconClass: "bg-[#17372e] text-[#68d4b6]",
+    },
+    "check-in": {
+      title: "Check in to site visit",
+      description: "Record the customer’s arrival before completing the visit.",
+      button: "Check in",
+      buttonClass: "bg-[#237e66] hover:bg-[#2a9277]",
+      Icon: MapPin,
+      iconClass: "bg-[#17372e] text-[#68d4b6]",
+    },
+    "no-show": {
+      title: "Mark as no-show",
+      description:
+        "Close this visit as a no-show and keep the reason in its history.",
+      button: "Mark no-show",
+      buttonClass: "bg-[#9a652d] hover:bg-[#ad7335]",
+      Icon: CircleAlert,
+      iconClass: "bg-[#382817] text-[#efba74]",
     },
     cancel: {
       title: "Cancel appointment",
@@ -1978,7 +2195,8 @@ function AppointmentActionDialog({
       Icon: XCircle,
       iconClass: "bg-[#3a1e1a] text-[#ef8f7d]",
     },
-  }[action];
+  };
+  const content = contentMap[action];
   const Icon = content.Icon;
 
   return (
@@ -2037,22 +2255,131 @@ function AppointmentActionDialog({
             </p>
           </div>
 
-          {action === "cancel" && (
+          {["cancel", "no-show"].includes(action) && (
             <label className="mt-4 block">
               <span className="mb-1.5 block text-[10px] font-medium text-[#aeb3b0]">
-                Cancellation reason
+                {action === "no-show"
+                  ? "No-show reason"
+                  : "Cancellation reason"}
               </span>
               <textarea
                 autoFocus
                 className="min-h-24 w-full resize-none rounded-lg border border-white/[0.1] bg-[#0b0d0c] px-3 py-2.5 text-xs leading-5 text-white outline-none placeholder:text-[#555b57] focus:border-[#b65b4b] focus:ring-2 focus:ring-[#b65b4b]/10"
                 maxLength={5000}
                 onChange={(event) => onReasonChange(event.target.value)}
-                placeholder="Explain why this appointment is being cancelled"
+                placeholder={
+                  action === "no-show"
+                    ? "Explain why the customer did not attend"
+                    : "Explain why this appointment is being cancelled"
+                }
                 required
                 value={reason}
               />
             </label>
           )}
+
+          {action === "check-in" && (
+            <label className="mt-4 block">
+              <span className="mb-1.5 block text-[10px] font-medium text-[#aeb3b0]">
+                Check-in notes (optional)
+              </span>
+              <textarea
+                className="min-h-20 w-full resize-none rounded-lg border border-white/[0.1] bg-[#0b0d0c] px-3 py-2.5 text-xs leading-5 text-white outline-none focus:border-[#55cdaa]"
+                onChange={(event) =>
+                  onSiteVisitDataChange({
+                    ...siteVisitData,
+                    notes: event.target.value,
+                  })
+                }
+                placeholder="Arrival notes, group size or assistance needed"
+                value={siteVisitData.notes}
+              />
+            </label>
+          )}
+
+          {action === "complete" &&
+            appointment.appointment_type === "site_visit" && (
+              <div className="mt-4 space-y-3">
+                <label className="block">
+                  <span className="mb-1.5 block text-[10px] font-medium text-[#aeb3b0]">
+                    Outcome
+                  </span>
+                  <select
+                    className="h-10 w-full rounded-lg border border-white/[0.1] bg-[#0b0d0c] px-3 text-xs text-white outline-none focus:border-[#55cdaa]"
+                    onChange={(event) =>
+                      onSiteVisitDataChange({
+                        ...siteVisitData,
+                        outcome: event.target.value,
+                      })
+                    }
+                    value={siteVisitData.outcome}
+                  >
+                    <option value="interested">Interested</option>
+                    <option value="follow_up">Follow up</option>
+                    <option value="booking_requested">Booking requested</option>
+                    <option value="needs_time">Needs time</option>
+                    <option value="not_interested">Not interested</option>
+                    <option value="unreachable">Unreachable</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-[10px] font-medium text-[#aeb3b0]">
+                    Feedback
+                  </span>
+                  <textarea
+                    className="min-h-20 w-full resize-none rounded-lg border border-white/[0.1] bg-[#0b0d0c] px-3 py-2.5 text-xs leading-5 text-white outline-none focus:border-[#55cdaa]"
+                    onChange={(event) =>
+                      onSiteVisitDataChange({
+                        ...siteVisitData,
+                        feedback: event.target.value,
+                      })
+                    }
+                    placeholder="What did the customer like or dislike?"
+                    value={siteVisitData.feedback}
+                  />
+                </label>
+                <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-3">
+                  <label>
+                    <span className="mb-1.5 block text-[10px] font-medium text-[#aeb3b0]">
+                      Rating
+                    </span>
+                    <select
+                      className="h-10 w-full rounded-lg border border-white/[0.1] bg-[#0b0d0c] px-3 text-xs text-white outline-none focus:border-[#55cdaa]"
+                      onChange={(event) =>
+                        onSiteVisitDataChange({
+                          ...siteVisitData,
+                          customer_rating: event.target.value,
+                        })
+                      }
+                      value={siteVisitData.customer_rating}
+                    >
+                      <option value="">None</option>
+                      {[1, 2, 3, 4, 5].map((rating) => (
+                        <option key={rating} value={rating}>
+                          {rating} / 5
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span className="mb-1.5 block text-[10px] font-medium text-[#aeb3b0]">
+                      Next action
+                    </span>
+                    <input
+                      className="h-10 w-full rounded-lg border border-white/[0.1] bg-[#0b0d0c] px-3 text-xs text-white outline-none focus:border-[#55cdaa]"
+                      onChange={(event) =>
+                        onSiteVisitDataChange({
+                          ...siteVisitData,
+                          next_action: event.target.value,
+                        })
+                      }
+                      placeholder="Send options tomorrow"
+                      value={siteVisitData.next_action}
+                    />
+                  </label>
+                </div>
+              </div>
+            )}
 
           {error && (
             <div
@@ -2076,7 +2403,10 @@ function AppointmentActionDialog({
           </button>
           <button
             className={`inline-flex h-9 min-w-36 items-center justify-center gap-2 rounded-md px-4 text-xs font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-45 ${content.buttonClass}`}
-            disabled={saving || (action === "cancel" && !reason.trim())}
+            disabled={
+              saving ||
+              (["cancel", "no-show"].includes(action) && !reason.trim())
+            }
             type="submit"
           >
             {saving ? (

@@ -484,7 +484,7 @@ export function SettingsWorkspace() {
         await Promise.all([
           api("/api/auth/me"),
           api("/api/auth/project-context"),
-          api("/api/preferences"),
+          api("/api/notification-preferences"),
           api("/api/auth/sessions"),
         ]);
       const nextContext = contextData as unknown as ContextData;
@@ -1396,19 +1396,23 @@ function NotificationPanel(props: PanelProps) {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const payload = {
-      compact_mode: Boolean(form.compact_mode),
-      email_notifications: Boolean(form.email_notifications),
-      push_notifications: Boolean(form.push_notifications),
-      lead_assignment_notifications: Boolean(
-        form.lead_assignment_notifications,
-      ),
-      task_reminders: Boolean(form.task_reminders),
-      appointment_reminders: Boolean(form.appointment_reminders),
+      in_app_enabled: Boolean(form.in_app_enabled),
+      email_enabled: Boolean(form.email_enabled),
+      push_enabled: Boolean(form.push_enabled),
+      lead_assignment_enabled: Boolean(form.lead_assignment_enabled),
+      task_enabled: Boolean(form.task_enabled),
+      appointment_enabled: Boolean(form.appointment_enabled),
+      site_visit_enabled: Boolean(form.site_visit_enabled),
+      opportunity_enabled: Boolean(form.opportunity_enabled),
+      quotation_enabled: Boolean(form.quotation_enabled),
+      booking_enabled: Boolean(form.booking_enabled),
+      transfer_enabled: Boolean(form.transfer_enabled),
+      follow_up_enabled: Boolean(form.follow_up_enabled),
+      telephony_enabled: Boolean(form.telephony_enabled),
       digest_frequency: form.digest_frequency,
-      default_landing_page: form.default_landing_page,
     };
     const result = await props.save(
-      "/api/preferences",
+      "/api/notification-preferences",
       "PATCH",
       payload,
       "Preferences updated",
@@ -1422,35 +1426,70 @@ function NotificationPanel(props: PanelProps) {
         description="Choose where operational alerts reach you."
       >
         <Toggle
-          checked={Boolean(form.email_notifications)}
+          checked={Boolean(form.email_enabled)}
           description="Receive important CRM updates by email."
           label="Email notifications"
-          onChange={toggle("email_notifications")}
+          onChange={toggle("email_enabled")}
         />
         <Toggle
-          checked={Boolean(form.push_notifications)}
+          checked={Boolean(form.in_app_enabled)}
           description="Show real-time alerts while you work."
           label="In-app notifications"
-          onChange={toggle("push_notifications")}
+          onChange={toggle("in_app_enabled")}
         />
       </Card>
       <Card title="Operational reminders">
         <Toggle
-          checked={Boolean(form.lead_assignment_notifications)}
+          checked={Boolean(form.lead_assignment_enabled)}
           label="New lead assignments"
-          onChange={toggle("lead_assignment_notifications")}
+          onChange={toggle("lead_assignment_enabled")}
         />
         <Toggle
-          checked={Boolean(form.task_reminders)}
+          checked={Boolean(form.task_enabled)}
           label="Task reminders"
-          onChange={toggle("task_reminders")}
+          onChange={toggle("task_enabled")}
         />
         <Toggle
-          checked={Boolean(form.appointment_reminders)}
+          checked={Boolean(form.appointment_enabled)}
           label="Appointment reminders"
-          onChange={toggle("appointment_reminders")}
+          onChange={toggle("appointment_enabled")}
         />
-        <div className={settingsUi.compactGrid}>
+        <Toggle
+          checked={Boolean(form.site_visit_enabled)}
+          label="Site visit updates"
+          onChange={toggle("site_visit_enabled")}
+        />
+        <Toggle
+          checked={Boolean(form.follow_up_enabled)}
+          label="Overdue follow-ups"
+          onChange={toggle("follow_up_enabled")}
+        />
+        <Toggle
+          checked={Boolean(form.opportunity_enabled)}
+          label="Opportunity updates"
+          onChange={toggle("opportunity_enabled")}
+        />
+        <Toggle
+          checked={Boolean(form.quotation_enabled)}
+          label="Quotation updates"
+          onChange={toggle("quotation_enabled")}
+        />
+        <Toggle
+          checked={Boolean(form.booking_enabled)}
+          label="Booking updates"
+          onChange={toggle("booking_enabled")}
+        />
+        <Toggle
+          checked={Boolean(form.transfer_enabled)}
+          label="Transfer updates"
+          onChange={toggle("transfer_enabled")}
+        />
+        <Toggle
+          checked={Boolean(form.telephony_enabled)}
+          label="Call updates"
+          onChange={toggle("telephony_enabled")}
+        />
+        <div className="max-w-[330px]">
           <Field label="Summary digest">
             <select
               onChange={(e) =>
@@ -1459,21 +1498,9 @@ function NotificationPanel(props: PanelProps) {
               value={String(form.digest_frequency ?? "daily")}
             >
               <option value="never">Never</option>
+              <option value="instant">Instant</option>
               <option value="daily">Daily</option>
               <option value="weekly">Weekly</option>
-            </select>
-          </Field>
-          <Field label="Default landing page">
-            <select
-              onChange={(e) =>
-                setForm({ ...form, default_landing_page: e.target.value })
-              }
-              value={String(form.default_landing_page ?? "dashboard")}
-            >
-              <option value="dashboard">Dashboard</option>
-              <option value="leads">Leads</option>
-              <option value="activity">Activity</option>
-              <option value="calendar">Calendar</option>
             </select>
           </Field>
         </div>

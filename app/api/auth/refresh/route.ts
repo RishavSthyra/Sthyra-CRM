@@ -9,10 +9,24 @@ import {
   REFRESH_TOKEN_DAYS,
   setAuthCookies,
 } from "@/lib/auth";
+import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
+  if (isSupabaseAuthConfigured()) {
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase.auth.refreshSession();
+    if (error || !data.session) {
+      return NextResponse.json(
+        { error: "Refresh token is invalid or expired" },
+        { status: 401 },
+      );
+    }
+    return NextResponse.json({ message: "Session refreshed" });
+  }
+
   const currentToken = getRefreshToken(request);
 
   if (!currentToken) {

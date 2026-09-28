@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { authenticateRequest, clearAuthCookies } from "@/lib/auth";
 import { isUuid } from "@/lib/permissions";
+import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type SessionContext = {
   params: Promise<{ sessionid: string }>;
@@ -19,6 +21,21 @@ export async function DELETE(request: NextRequest, context: SessionContext) {
       { error: "sessionId must be a valid UUID" },
       { status: 400 },
     );
+  }
+
+  if (isSupabaseAuthConfigured()) {
+    if (sessionid !== authentication.auth.sessionId) {
+      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    }
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase.auth.signOut({ scope: "local" });
+    if (error) {
+      return NextResponse.json(
+        { error: "Unable to revoke session" },
+        { status: 500 },
+      );
+    }
+    return NextResponse.json({ message: "Session revoked" });
   }
 
   try {

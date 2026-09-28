@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { createOpaqueToken, getRequestIp, hashToken } from "@/lib/auth";
 import { validateForgotPasswordPayload } from "@/lib/authValidation";
+import { getAppUrl } from "@/lib/appUrl";
+import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const GENERIC_MESSAGE =
   "If an active account exists for that email, password reset instructions have been created.";
@@ -22,6 +25,22 @@ export async function POST(request: NextRequest) {
       { error: "Validation failed", details: validation.errors },
       { status: 422 },
     );
+  }
+
+  if (isSupabaseAuthConfigured()) {
+    const supabase = await createSupabaseServerClient();
+    const redirectTo = new URL(
+      "/api/auth/callback?next=/reset-password",
+      getAppUrl(request),
+    ).toString();
+    const { error } = await supabase.auth.resetPasswordForEmail(
+      validation.data.email,
+      { redirectTo },
+    );
+    if (error) {
+      console.error("Failed to request Supabase password reset", error);
+    }
+    return NextResponse.json({ message: GENERIC_MESSAGE });
   }
 
   try {

@@ -2,11 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   createIntakeEvent,
   processIntakeEvent,
+  resolveIntakeCompanyId,
   validateIntakeEnvelope,
 } from "@/lib/leadIntake";
+import { adminPool } from "@/lib/db";
+import { hasValidBearerSecret } from "@/lib/integrationAuth";
 import { isObject } from "@/utils/isObject";
 
 export async function POST(request: NextRequest) {
+  const secret = process.env.LEAD_INTAKE_SECRET;
+  if (!secret) {
+    return NextResponse.json(
+      { error: "Lead intake is not configured" },
+      { status: 503 },
+    );
+  }
+  if (!hasValidBearerSecret(request, secret)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   let body: unknown;
   try {
     body = await request.json();
@@ -37,9 +50,17 @@ export async function POST(request: NextRequest) {
       continue;
     }
     try {
-      const stored = await createIntakeEvent(validation.data);
+      const companyId = await resolveIntakeCompanyId(validation.data);
+      const stored = await createIntakeEvent(
+        validation.data,
+        companyId,
+        adminPool,
+      );
       const event = stored.created
-        ? await processIntakeEvent(stored.event.event_id as string)
+        ? await processIntakeEvent(
+            stored.event.event_id as string,
+            adminPool,
+          )
         : stored.event;
       results.push({ index, duplicate: !stored.created, event });
     } catch (error) {

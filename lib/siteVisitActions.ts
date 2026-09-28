@@ -3,6 +3,10 @@ import pool from "@/lib/db";
 import { advanceOpportunityToStage } from "@/lib/opportunities";
 import { recordActivity } from "@/lib/activities";
 import {
+  createNotificationsForUsers,
+  resolveNotificationRecipients,
+} from "@/lib/notifications";
+import {
   canAccessOperationsEntity,
   requireOperationsContext,
 } from "@/lib/operationsAccess";
@@ -267,6 +271,31 @@ export async function changeSiteVisitState(
       },
     );
     const updated = await getSiteVisit(client, visitId);
+    const recipients = await resolveNotificationRecipients(client, {
+      companyId: Number(visit.company_id),
+      userIds: [visit.assigned_to_user_id, visit.organizer_user_id],
+      teamIds: [visit.assigned_to_team_id],
+      excludeUserIds: [scope.context.userId],
+    });
+    await createNotificationsForUsers(client, recipients, {
+      companyId: Number(visit.company_id),
+      projectId: Number(visit.project_id),
+      type: `site_visit.${nextStatus}`,
+      category: "site_visit",
+      title: `Site visit ${nextStatus.replace("_", " ")}`,
+      body: `${visit.title} was ${nextStatus.replace("_", " ")}.`,
+      severity: ["cancelled", "no_show"].includes(nextStatus)
+        ? "warning"
+        : nextStatus === "completed"
+          ? "success"
+          : "info",
+      entityType: "site_visit",
+      entityId: visitId,
+      actionUrl: `/calendar?appointment_id=${visitId}`,
+      eventKey: `site-visit:${visitId}:${nextStatus}:${appointment.rows[0].updated_at}`,
+      metadata: { status: nextStatus, outcome },
+      channels: ["in_app", "email"],
+    });
     await client.query("COMMIT");
     return NextResponse.json({
       message: `Site visit ${nextStatus.replace("_", " ")}`,
@@ -402,6 +431,26 @@ export async function rescheduleSiteVisit(
         },
       },
     );
+    const recipients = await resolveNotificationRecipients(client, {
+      companyId: Number(visit.company_id),
+      userIds: [visit.assigned_to_user_id, visit.organizer_user_id],
+      teamIds: [visit.assigned_to_team_id],
+      excludeUserIds: [scope.context.userId],
+    });
+    await createNotificationsForUsers(client, recipients, {
+      companyId: Number(visit.company_id),
+      projectId: Number(visit.project_id),
+      type: "site_visit.rescheduled",
+      category: "site_visit",
+      title: "Site visit rescheduled",
+      body: `${visit.title} was moved to a new time.`,
+      entityType: "site_visit",
+      entityId: visitId,
+      actionUrl: `/calendar?appointment_id=${visitId}`,
+      eventKey: `site-visit:${visitId}:rescheduled:${result.rows[0].updated_at}`,
+      metadata: { starts_at: startsAt, ends_at: endsAt },
+      channels: ["in_app", "email"],
+    });
     await client.query("COMMIT");
     return NextResponse.json({
       message: "Site visit rescheduled",

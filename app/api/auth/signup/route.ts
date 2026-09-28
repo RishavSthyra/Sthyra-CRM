@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import pool from "@/lib/db";
+import pool, { adminPool } from "@/lib/db";
 import {
   AUTH_USER_COLUMNS,
   createAuthenticatedSession,
@@ -8,7 +8,12 @@ import {
   setAuthCookies,
 } from "@/lib/auth";
 import { validateSignupPayload } from "@/lib/authValidation";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { provisionWorkspaceForAuthUser } from "@/lib/supabase/workspaceProvisioning";
 import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
+import { getAppUrl } from "@/lib/appUrl";
 
 export const runtime = "nodejs";
 
@@ -38,6 +43,84 @@ export async function POST(request: NextRequest) {
   }
 
   const signup = validation.data;
+  if (isSupabaseAuthConfigured()) {
+    try {
+      const existing = await adminPool.query(
+        `SELECT 1 FROM users
+         WHERE LOWER(email) = LOWER($1) AND deleted_at IS NULL
+         LIMIT 1`,
+        [signup.email],
+      );
+      if (existing.rowCount) {
+        return NextResponse.json(
+          { error: "An account already uses this email address" },
+          { status: 409 },
+        );
+      }
+
+      const supabase = await createSupabaseServerClient();
+      const { data, error } = await supabase.auth.signUp({
+        email: signup.email,
+        password: signup.password,
+        options: {
+          data: {
+            first_name: signup.first_name,
+            last_name: signup.last_name,
+          },
+          emailRedirectTo: new URL(
+            "/api/auth/callback?next=/dashboard",
+            getAppUrl(request),
+          ).toString(),
+        },
+      });
+      if (error || !data.user || data.user.identities?.length === 0) {
+        return NextResponse.json(
+          { error: "Unable to create this authentication account" },
+          { status: error?.status === 422 ? 422 : 409 },
+        );
+      }
+
+      try {
+        const workspace = await provisionWorkspaceForAuthUser(
+          data.user.id,
+          signup,
+        );
+        return NextResponse.json(
+          {
+            message: data.session
+              ? "Account created successfully"
+              : "Account created. Check your email to confirm your address.",
+            requires_email_confirmation: !data.session,
+            ...workspace,
+          },
+          { status: 201 },
+        );
+      } catch (error) {
+        await createSupabaseAdminClient().auth.admin.deleteUser(data.user.id);
+        throw error;
+      }
+    } catch (error) {
+      if (
+        getDatabaseErrorCode(error) === "23505" ||
+        (error instanceof Error &&
+          error.message === "CRM_IDENTITY_ALREADY_EXISTS")
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "An account, company email, or company code already uses these details",
+          },
+          { status: 409 },
+        );
+      }
+      console.error("Failed to sign up with Supabase", error);
+      return NextResponse.json(
+        { error: "Unable to create account" },
+        { status: 500 },
+      );
+    }
+  }
+
   const passwordHash = await hashPassword(signup.password);
   const client = await pool.connect();
   try {
@@ -48,7 +131,7 @@ export async function POST(request: NextRequest) {
        ) VALUES (
          'COMPANY_OWNER', 'Company Owner',
          'Initial owner of a company workspace', TRUE
-       ) ON CONFLICT (role_key) DO NOTHING`,
+       ) ON CONFLICT DO NOTHING`,
     );
     const roleResult = await client.query(
       `SELECT role_id FROM roles

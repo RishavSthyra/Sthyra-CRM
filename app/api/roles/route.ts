@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { requireOperationsContext } from "@/lib/operationsAccess";
 import {
   getRoleDatabaseErrorCode,
   ROLE_COLUMNS,
@@ -9,6 +10,9 @@ import {
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 
 export async function GET(request: NextRequest) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
+
   const page = parsePositiveInteger(request.nextUrl.searchParams.get("page"), 1);
   const limit = parsePositiveInteger(
     request.nextUrl.searchParams.get("limit"),
@@ -34,8 +38,10 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const filters: string[] = [];
-  const values: unknown[] = [];
+  const filters: string[] = [
+    "(is_system_role=TRUE OR company_id=$1)",
+  ];
+  const values: unknown[] = [scope.context.access.company.company_id];
 
   if (includeInactiveValue !== "true") filters.push("is_active = TRUE");
 
@@ -80,6 +86,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -101,10 +110,15 @@ export async function POST(request: NextRequest) {
   const role = validation.data;
   try {
     const result = await pool.query(
-      `INSERT INTO roles (role_key, role_name, description)
-       VALUES ($1, $2, $3)
+      `INSERT INTO roles (company_id, role_key, role_name, description)
+       VALUES ($1, $2, $3, $4)
        RETURNING ${ROLE_COLUMNS}`,
-      [role.role_key, role.role_name, role.description ?? null],
+      [
+        scope.context.access.company.company_id,
+        role.role_key,
+        role.role_name,
+        role.description ?? null,
+      ],
     );
 
     return NextResponse.json(

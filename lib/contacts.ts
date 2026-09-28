@@ -256,9 +256,11 @@ type ContactRow = Record<string, unknown> & { contact_id: string };
 export async function createContact(
   client: PoolClient,
   contact: ContactWrite,
+  companyId: number,
 ): Promise<ContactRow> {
   const result = await client.query(
     `INSERT INTO contacts (
+       company_id,
        account_id,
        first_name,
        last_name,
@@ -273,9 +275,10 @@ export async function createContact(
        anniversary_date,
        address
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
      RETURNING ${CONTACT_COLUMNS}`,
     [
+      companyId,
       contact.account_id ?? null,
       contact.first_name,
       contact.last_name ?? null,

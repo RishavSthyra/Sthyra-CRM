@@ -5,6 +5,10 @@ import {
   type InventoryStatus,
   recordInventoryStatus,
 } from "@/lib/inventory";
+import {
+  createNotificationsForUsers,
+  resolveNotificationRecipients,
+} from "@/lib/notifications";
 
 export class InventoryActionError extends Error {
   constructor(
@@ -82,7 +86,8 @@ export async function expireStaleInventoryHolds(
        AND ($2::integer IS NULL OR hold.project_id=$2)
        AND hold.status='active'
        AND hold.expires_at<=CURRENT_TIMESTAMP
-     RETURNING hold.unit_id`,
+     RETURNING hold.hold_id,hold.unit_id,hold.company_id,hold.project_id,
+       hold.opportunity_id,hold.created_by`,
     [companyId ?? null, projectId ?? null],
   );
   for (const row of result.rows) {
@@ -104,6 +109,35 @@ export async function expireStaleInventoryHolds(
        VALUES ($1,'held','available','Hold expired',$2)`,
       [row.unit_id, { source: "hold_expiry" }],
     );
+    const opportunity = row.opportunity_id
+      ? await client.query(
+          `SELECT current_owner_user_id,current_team_id
+           FROM opportunities WHERE opportunity_id=$1`,
+          [row.opportunity_id],
+        )
+      : null;
+    const recipients = await resolveNotificationRecipients(client, {
+      companyId: Number(row.company_id),
+      userIds: [opportunity?.rows[0]?.current_owner_user_id, row.created_by],
+      teamIds: [opportunity?.rows[0]?.current_team_id],
+    });
+    await createNotificationsForUsers(client, recipients, {
+      companyId: Number(row.company_id),
+      projectId: Number(row.project_id),
+      type: "booking.hold_expired",
+      category: "booking",
+      title: "Inventory hold expired",
+      body: "An inventory hold expired and the unit is available again.",
+      severity: "warning",
+      entityType: "inventory_hold",
+      entityId: String(row.hold_id),
+      actionUrl: row.opportunity_id
+        ? `/opportunities?opportunity_id=${row.opportunity_id}`
+        : "/inventory",
+      eventKey: `inventory-hold:${row.hold_id}:expired`,
+      metadata: { unit_id: row.unit_id },
+      channels: ["in_app", "email"],
+    });
   }
   return result.rowCount ?? 0;
 }
@@ -115,13 +149,15 @@ export async function expireStaleInventoryReservations(
 ) {
   const result = await client.query(
     `UPDATE inventory_reservations reservation
-     SET status='expired', updated_at=CURRENT_TIMESTAMP
+     SET status='expired', booking_status='expired', updated_at=CURRENT_TIMESTAMP
      WHERE ($1::integer IS NULL OR reservation.company_id=$1)
        AND ($2::integer IS NULL OR reservation.project_id=$2)
        AND reservation.status='active'
        AND reservation.expires_at IS NOT NULL
        AND reservation.expires_at<=CURRENT_TIMESTAMP
-     RETURNING reservation.unit_id, reservation.reservation_id`,
+     RETURNING reservation.unit_id,reservation.reservation_id,
+       reservation.company_id,reservation.project_id,
+       reservation.opportunity_id,reservation.created_by`,
     [companyId ?? null, projectId ?? null],
   );
   for (const row of result.rows) {
@@ -141,6 +177,31 @@ export async function expireStaleInventoryReservations(
         { source: "reservation_expiry", reservation_id: row.reservation_id },
       ],
     );
+    const opportunity = await client.query(
+      `SELECT current_owner_user_id,current_team_id
+       FROM opportunities WHERE opportunity_id=$1`,
+      [row.opportunity_id],
+    );
+    const recipients = await resolveNotificationRecipients(client, {
+      companyId: Number(row.company_id),
+      userIds: [opportunity.rows[0]?.current_owner_user_id, row.created_by],
+      teamIds: [opportunity.rows[0]?.current_team_id],
+    });
+    await createNotificationsForUsers(client, recipients, {
+      companyId: Number(row.company_id),
+      projectId: Number(row.project_id),
+      type: "booking.reservation_expired",
+      category: "booking",
+      title: "Inventory reservation expired",
+      body: "An inventory reservation expired and the unit is available again.",
+      severity: "warning",
+      entityType: "reservation",
+      entityId: String(row.reservation_id),
+      actionUrl: `/opportunities?opportunity_id=${row.opportunity_id}`,
+      eventKey: `reservation:${row.reservation_id}:expired`,
+      metadata: { unit_id: row.unit_id },
+      channels: ["in_app", "email"],
+    });
   }
   return result.rowCount ?? 0;
 }

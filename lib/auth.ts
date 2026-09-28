@@ -10,6 +10,8 @@ import type { ScryptOptions } from "node:crypto";
 import type { PoolClient } from "pg";
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 function scrypt(
   password: string,
@@ -313,6 +315,53 @@ export async function authenticateRequest(
   request: NextRequest,
 ): Promise<AuthenticationResult> {
   try {
+    if (isSupabaseAuthConfigured()) {
+      const supabase = await createSupabaseServerClient();
+      const { data, error } = await supabase.auth.getClaims();
+      const authUserId = !error ? data?.claims?.sub : null;
+      if (typeof authUserId !== "string") {
+        return {
+          ok: false,
+          response: NextResponse.json(
+            { error: "Authentication required" },
+            { status: 401 },
+          ),
+        };
+      }
+
+      const result = await pool.query(
+        `SELECT ${AUTH_USER_COLUMNS}
+         FROM users u
+         JOIN workspace_memberships membership
+           ON membership.crm_user_id = u.user_id
+          AND membership.auth_user_id = $1
+          AND membership.is_active = TRUE
+         WHERE u.auth_user_id = $1
+           AND u.is_active = TRUE
+           AND u.deleted_at IS NULL
+         LIMIT 1`,
+        [authUserId],
+      );
+      if (result.rowCount === 0) {
+        return {
+          ok: false,
+          response: NextResponse.json(
+            { error: "Your account is not connected to an active workspace" },
+            { status: 403 },
+          ),
+        };
+      }
+
+      const sessionId =
+        typeof data?.claims?.session_id === "string"
+          ? data.claims.session_id
+          : authUserId;
+      return {
+        ok: true,
+        auth: { sessionId, user: result.rows[0] },
+      };
+    }
+
     const token = getAccessToken(request);
     const payload = token ? verifyAccessToken(token) : null;
     if (!payload) {

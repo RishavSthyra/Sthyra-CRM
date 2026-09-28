@@ -3,8 +3,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import {
   ArrowRightLeft,
+  Bell,
   CalendarDays,
   ChartNoAxesColumnIncreasing,
   ClipboardCheck,
@@ -15,6 +17,7 @@ import {
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
+import { fetchWithSession } from "@/lib/clientAuth";
 
 const primaryItems = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
@@ -34,11 +37,13 @@ function NavItem({
   href,
   icon: Icon,
   label,
+  badge,
 }: {
   active?: boolean;
   href: string;
   icon: LucideIcon;
   label: string;
+  badge?: number;
 }) {
   return (
     <Link
@@ -50,11 +55,16 @@ function NavItem({
       title={label}
     >
       <span
-        className={`flex size-8 items-center justify-center rounded-lg transition-colors group-hover/item:bg-white/[0.07] ${
+        className={`relative flex size-8 items-center justify-center rounded-lg transition-colors group-hover/item:bg-white/[0.07] ${
           active ? "bg-white/[0.12]" : "bg-transparent"
         }`}
       >
         <Icon aria-hidden className="size-[15px]" strokeWidth={1.8} />
+        {Boolean(badge) && (
+          <span className="absolute -top-1 -right-1 flex min-w-4 items-center justify-center rounded-full bg-[#55d6b2] px-1 text-[8px] leading-4 font-bold text-[#07100d]">
+            {badge && badge > 99 ? "99+" : badge}
+          </span>
+        )}
       </span>
       <span className="max-w-full text-[9px] leading-[11px] font-medium whitespace-normal">
         {label}
@@ -65,6 +75,41 @@ function NavItem({
 
 export function DashboardSidebar() {
   const pathname = usePathname();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const loadUnreadCount = useCallback(async () => {
+    try {
+      const response = await fetchWithSession(
+        "/api/notifications/unread-count",
+        {
+          cache: "no-store",
+        },
+      );
+      if (!response.ok) return;
+      const body = (await response.json()) as { unread_count?: number };
+      setUnreadCount(Number(body.unread_count ?? 0));
+    } catch {
+      // Navigation remains usable when the count endpoint is unavailable.
+    }
+  }, []);
+
+  useEffect(() => {
+    const initial = window.setTimeout(() => void loadUnreadCount(), 0);
+    const interval = window.setInterval(() => void loadUnreadCount(), 30_000);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void loadUnreadCount();
+    };
+    window.addEventListener("notifications:changed", loadUnreadCount);
+    window.addEventListener("focus", loadUnreadCount);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(interval);
+      window.removeEventListener("notifications:changed", loadUnreadCount);
+      window.removeEventListener("focus", loadUnreadCount);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [loadUnreadCount]);
 
   function isActive(href: string) {
     return pathname === href || pathname.startsWith(`${href}/`);
@@ -112,6 +157,13 @@ export function DashboardSidebar() {
               label={item.label}
             />
           ))}
+          <NavItem
+            active={isActive("/notifications")}
+            badge={unreadCount}
+            href="/notifications"
+            icon={Bell}
+            label="Notifications"
+          />
           <div className="my-1.5 h-px w-8 bg-white/[0.12]" />
           <NavItem
             active={isActive("/settings") || isActive("/preferences")}

@@ -9,6 +9,11 @@ import {
   canAccessOperationsEntity,
   requireOperationsContext,
 } from "@/lib/operationsAccess";
+import {
+  createNotificationsForUsers,
+  resolveNotificationRecipients,
+} from "@/lib/notifications";
+import { advanceOpportunityToStage } from "@/lib/opportunities";
 type Context = { params: Promise<{ reservationid: string }> };
 export async function POST(request: NextRequest, context: Context) {
   const scope = await requireOperationsContext(request);
@@ -54,9 +59,16 @@ export async function POST(request: NextRequest, context: Context) {
         { status: 409 },
       );
     }
-    await client.query(
-      "UPDATE inventory_reservations SET status='converted',updated_at=CURRENT_TIMESTAMP WHERE reservation_id=$1",
-      [id],
+    const bookingReference = `BK-${Date.now().toString(36).toUpperCase()}-${id.slice(0, 6).toUpperCase()}`;
+    const converted = await client.query(
+      `UPDATE inventory_reservations
+       SET status='converted', booking_status='confirmed',
+           booking_reference=COALESCE(booking_reference,$2),
+           booked_at=CURRENT_TIMESTAMP, booked_by=$3,
+           updated_at=CURRENT_TIMESTAMP
+       WHERE reservation_id=$1
+       RETURNING *`,
+      [id, bookingReference, scope.context.userId],
     );
     await changeInventoryUnitStatus(client, {
       unitId: reservation.unit_id,
@@ -70,9 +82,48 @@ export async function POST(request: NextRequest, context: Context) {
         opportunity_id: reservation.opportunity_id,
       },
     });
+    const opportunity = await client.query(
+      `SELECT current_owner_user_id, current_team_id, opportunity_name
+       FROM opportunities WHERE opportunity_id=$1`,
+      [reservation.opportunity_id],
+    );
+    await advanceOpportunityToStage(
+      client,
+      { opportunityId: reservation.opportunity_id },
+      "booking",
+      "inventory_booked",
+      scope.context.userId,
+    );
+    const recipients = await resolveNotificationRecipients(client, {
+      companyId: Number(reservation.company_id),
+      userIds: [
+        opportunity.rows[0]?.current_owner_user_id,
+        reservation.created_by,
+      ],
+      teamIds: [opportunity.rows[0]?.current_team_id],
+    });
+    await createNotificationsForUsers(client, recipients, {
+      companyId: Number(reservation.company_id),
+      projectId: Number(reservation.project_id),
+      type: "booking.created",
+      category: "booking",
+      title: "Inventory booked",
+      body: `A reservation was converted to a booking for ${opportunity.rows[0]?.opportunity_name ?? "an opportunity"}.`,
+      severity: "success",
+      entityType: "reservation",
+      entityId: id,
+      actionUrl: `/opportunities?opportunity_id=${reservation.opportunity_id}`,
+      eventKey: `reservation:${id}:converted`,
+      metadata: {
+        unit_id: reservation.unit_id,
+        opportunity_id: reservation.opportunity_id,
+      },
+      channels: ["in_app", "email"],
+    });
     await client.query("COMMIT");
     return NextResponse.json({
       message: "Reservation converted; inventory unit is booked",
+      booking: converted.rows[0],
     });
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);

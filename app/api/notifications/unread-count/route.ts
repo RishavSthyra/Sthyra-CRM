@@ -11,9 +11,14 @@ export async function GET(request: NextRequest) {
        WHERE user_id=$1 AND is_read=FALSE AND (expires_at IS NULL OR expires_at>CURRENT_TIMESTAMP)`,
       [scope.context.userId],
     );
-    return NextResponse.json({ unread_count: Number(result.rows[0]?.unread_count ?? 0) });
+    return NextResponse.json({
+      unread_count: Number(result.rows[0]?.unread_count ?? 0),
+    });
   } catch (error) {
     console.error("Failed to count unread notifications", error);
-    return NextResponse.json({ error: "Unable to retrieve unread count" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Unable to retrieve unread count" },
+      { status: 500 },
+    );
   }
 }

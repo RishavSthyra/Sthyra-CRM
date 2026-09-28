@@ -9,6 +9,10 @@ import {
   canAccessOperationsEntity,
   requireOperationsContext,
 } from "@/lib/operationsAccess";
+import {
+  createNotificationsForUsers,
+  resolveNotificationRecipients,
+} from "@/lib/notifications";
 type Context = { params: Promise<{ reservationid: string }> };
 export async function POST(request: NextRequest, context: Context) {
   const scope = await requireOperationsContext(request);
@@ -79,7 +83,7 @@ export async function POST(request: NextRequest, context: Context) {
       );
     }
     await client.query(
-      `UPDATE inventory_reservations SET status='cancelled',notes=CASE WHEN notes IS NULL THEN $2 ELSE notes || E'\n' || $2 END,cancelled_at=CURRENT_TIMESTAMP,cancelled_by=$3,updated_at=CURRENT_TIMESTAMP WHERE reservation_id=$1`,
+      `UPDATE inventory_reservations SET status='cancelled',booking_status='cancelled',notes=CASE WHEN notes IS NULL THEN $2 ELSE notes || E'\n' || $2 END,cancelled_at=CURRENT_TIMESTAMP,cancelled_by=$3,updated_at=CURRENT_TIMESTAMP WHERE reservation_id=$1`,
       [id, reason, scope.context.userId],
     );
     await changeInventoryUnitStatus(client, {
@@ -90,6 +94,34 @@ export async function POST(request: NextRequest, context: Context) {
       userId: scope.context.userId,
       reason: reason!,
       metadata: { reservation_id: id, action: "cancel" },
+    });
+    const opportunity = await client.query(
+      `SELECT current_owner_user_id,current_team_id,opportunity_name
+       FROM opportunities WHERE opportunity_id=$1`,
+      [reservation.opportunity_id],
+    );
+    const recipients = await resolveNotificationRecipients(client, {
+      companyId: Number(reservation.company_id),
+      userIds: [
+        opportunity.rows[0]?.current_owner_user_id,
+        reservation.created_by,
+      ],
+      teamIds: [opportunity.rows[0]?.current_team_id],
+    });
+    await createNotificationsForUsers(client, recipients, {
+      companyId: Number(reservation.company_id),
+      projectId: Number(reservation.project_id),
+      type: "booking.reservation_cancelled",
+      category: "booking",
+      title: "Reservation cancelled",
+      body: `The inventory reservation for ${opportunity.rows[0]?.opportunity_name ?? "an opportunity"} was cancelled.`,
+      severity: "warning",
+      entityType: "reservation",
+      entityId: id,
+      actionUrl: `/opportunities?opportunity_id=${reservation.opportunity_id}`,
+      eventKey: `reservation:${id}:cancelled`,
+      metadata: { unit_id: reservation.unit_id, reason },
+      channels: ["in_app", "email"],
     });
     await client.query("COMMIT");
     return NextResponse.json({ message: "Inventory reservation cancelled" });

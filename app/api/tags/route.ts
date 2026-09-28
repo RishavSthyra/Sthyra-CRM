@@ -3,15 +3,19 @@ import pool from "@/lib/db";
 import { TAG_COLUMNS, validateTagPayload } from "@/lib/leadAttribution";
 import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
 import { parsePagination } from "@/utils/parsePagination";
+import { requireOperationsContext } from "@/lib/operationsAccess";
 
 export async function GET(request: NextRequest) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
+
   const pagination = parsePagination(request.nextUrl.searchParams);
   if (!pagination.ok) {
     return NextResponse.json({ error: pagination.error }, { status: 400 });
   }
   const search = request.nextUrl.searchParams.get("search")?.trim();
-  const values: unknown[] = [];
-  let filter = "archived_at IS NULL";
+  const values: unknown[] = [scope.context.access.company.company_id];
+  let filter = "company_id = $1 AND archived_at IS NULL";
   if (search) {
     values.push(`%${search}%`);
     filter += ` AND tag_name ILIKE $${values.length}`;
@@ -46,6 +50,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -64,8 +71,10 @@ export async function POST(request: NextRequest) {
   }
   try {
     const result = await pool.query(
-      `INSERT INTO tags (tag_name, description, color) VALUES ($1, $2, $3) RETURNING ${TAG_COLUMNS}`,
+      `INSERT INTO tags (company_id, tag_name, description, color)
+       VALUES ($1, $2, $3, $4) RETURNING ${TAG_COLUMNS}`,
       [
+        scope.context.access.company.company_id,
         validation.data.tag_name,
         validation.data.description ?? null,
         validation.data.color ?? null,

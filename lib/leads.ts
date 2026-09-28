@@ -263,26 +263,29 @@ export async function addLeadHistory(
 async function ensureReferences(
   client: PoolClient,
   lead: LeadWrite,
+  companyId: number,
 ): Promise<string> {
   const project = await client.query(
-    "SELECT project_id FROM projects WHERE project_id=$1 AND is_active=TRUE",
-    [lead.project_id],
+    `SELECT project_id FROM projects
+     WHERE project_id=$1 AND company_id=$2 AND is_active=TRUE`,
+    [lead.project_id, companyId],
   );
   if (!project.rowCount) {
     throw new LeadReferenceError("Active project not found");
   }
   const contact = await client.query(
-    `SELECT contact_id FROM contacts
+    `SELECT contact_id, company_id FROM contacts
      WHERE contact_id=$1 AND archived_at IS NULL AND merged_into_contact_id IS NULL`,
     [lead.contact_id],
   );
-  if (!contact.rowCount) {
+  if (!contact.rowCount || Number(contact.rows[0].company_id) !== companyId) {
     throw new LeadReferenceError("Active contact not found");
   }
   if (lead.source_id) {
     const source = await client.query(
-      "SELECT source_id FROM lead_sources WHERE source_id=$1 AND is_active=TRUE",
-      [lead.source_id],
+      `SELECT source_id FROM lead_sources
+       WHERE source_id=$1 AND company_id=$2 AND is_active=TRUE`,
+      [lead.source_id, companyId],
     );
     if (!source.rowCount) {
       throw new LeadReferenceError("Active lead source not found");
@@ -290,8 +293,9 @@ async function ensureReferences(
   }
   if (lead.campaign_id) {
     const campaign = await client.query(
-      "SELECT source_id FROM campaigns WHERE campaign_id=$1 AND is_active=TRUE",
-      [lead.campaign_id],
+      `SELECT source_id FROM campaigns
+       WHERE campaign_id=$1 AND company_id=$2 AND is_active=TRUE`,
+      [lead.campaign_id, companyId],
     );
     if (!campaign.rowCount) {
       throw new LeadReferenceError("Active campaign not found");
@@ -308,8 +312,14 @@ async function ensureReferences(
   }
   if (lead.current_owner_user_id) {
     const user = await client.query(
-      "SELECT user_id FROM users WHERE user_id=$1 AND is_active=TRUE AND deleted_at IS NULL",
-      [lead.current_owner_user_id],
+      `SELECT user_record.user_id
+       FROM users AS user_record
+       JOIN teams AS team ON team.team_id=user_record.team_id
+       WHERE user_record.user_id=$1
+         AND team.company_id=$2
+         AND user_record.is_active=TRUE
+         AND user_record.deleted_at IS NULL`,
+      [lead.current_owner_user_id, companyId],
     );
     if (!user.rowCount) {
       throw new LeadReferenceError("Active lead owner not found");
@@ -317,8 +327,9 @@ async function ensureReferences(
   }
   if (lead.current_team_id) {
     const team = await client.query(
-      "SELECT team_id FROM teams WHERE team_id=$1 AND is_active=TRUE",
-      [lead.current_team_id],
+      `SELECT team_id FROM teams
+       WHERE team_id=$1 AND company_id=$2 AND is_active=TRUE`,
+      [lead.current_team_id, companyId],
     );
     if (!team.rowCount) {
       throw new LeadReferenceError("Active lead team not found");
@@ -326,8 +337,11 @@ async function ensureReferences(
   }
   if (lead.tag_ids?.length) {
     const tags = await client.query(
-      "SELECT tag_id FROM tags WHERE tag_id=ANY($1::uuid[]) AND archived_at IS NULL",
-      [lead.tag_ids],
+      `SELECT tag_id FROM tags
+       WHERE tag_id=ANY($1::uuid[])
+         AND company_id=$2
+         AND archived_at IS NULL`,
+      [lead.tag_ids, companyId],
     );
     if (tags.rowCount !== lead.tag_ids.length) {
       throw new LeadReferenceError("One or more active tags were not found");
@@ -381,20 +395,22 @@ export async function replaceLeadTags(
 export async function createLead(
   client: PoolClient,
   lead: LeadWrite,
+  companyId: number,
   intakeEventId: string | null = null,
 ): Promise<Record<string, unknown>> {
-  const stageId = await ensureReferences(client, lead);
+  const stageId = await ensureReferences(client, lead, companyId);
   const result = await client.query(
     `INSERT INTO leads (
-       contact_id, project_id, source_id, campaign_id, intake_event_id, stage_id,
+       company_id, contact_id, project_id, source_id, campaign_id, intake_event_id, stage_id,
        sub_source, temperature, customer_type, current_owner_user_id,
        current_team_id, preferred_location, preferred_config, preferred_facing,
        preferred_floor, preferred_view, budget, buying_reason, qualification_data,
        assigned_at
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19::jsonb,
-       CASE WHEN $10::uuid IS NULL AND $11::uuid IS NULL THEN NULL ELSE CURRENT_TIMESTAMP END)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20::jsonb,
+       CASE WHEN $11::uuid IS NULL AND $12::uuid IS NULL THEN NULL ELSE CURRENT_TIMESTAMP END)
      RETURNING ${LEAD_COLUMNS}`,
     [
+      companyId,
       lead.contact_id,
       lead.project_id,
       lead.source_id ?? null,

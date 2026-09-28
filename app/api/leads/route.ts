@@ -286,7 +286,11 @@ export async function POST(request: NextRequest) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const lead = await createLead(client, validation.data);
+    const lead = await createLead(
+      client,
+      validation.data,
+      projectAccess.company.company_id,
+    );
     await client.query("COMMIT");
     return NextResponse.json(
       { message: "Lead created", lead },

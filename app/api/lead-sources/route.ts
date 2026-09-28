@@ -6,8 +6,12 @@ import {
 } from "@/lib/leadAttribution";
 import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
 import { parsePagination } from "@/utils/parsePagination";
+import { requireOperationsContext } from "@/lib/operationsAccess";
 
 export async function GET(request: NextRequest) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
+
   const pagination = parsePagination(request.nextUrl.searchParams);
   if (!pagination.ok) {
     return NextResponse.json({ error: pagination.error }, { status: 400 });
@@ -19,8 +23,8 @@ export async function GET(request: NextRequest) {
       { status: 400 },
     );
   }
-  const values: unknown[] = [];
-  const filters = ["1 = 1"];
+  const values: unknown[] = [scope.context.access.company.company_id];
+  const filters = ["company_id = $1"];
   if (activeValue !== null) {
     values.push(activeValue === "true");
     filters.push(`is_active = $${values.length}`);
@@ -64,6 +68,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -82,9 +89,10 @@ export async function POST(request: NextRequest) {
   }
   try {
     const result = await pool.query(
-      `INSERT INTO lead_sources (source_name, source_type, code)
-       VALUES ($1, $2, $3) RETURNING ${LEAD_SOURCE_COLUMNS}`,
+      `INSERT INTO lead_sources (company_id, source_name, source_type, code)
+       VALUES ($1, $2, $3, $4) RETURNING ${LEAD_SOURCE_COLUMNS}`,
       [
+        scope.context.access.company.company_id,
         validation.data.source_name,
         validation.data.source_type,
         validation.data.code,

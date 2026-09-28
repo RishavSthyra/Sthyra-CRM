@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import pool from "@/lib/db";
+import { adminPool } from "@/lib/db";
 import { recordActivity } from "@/lib/activities";
 import { createNotification } from "@/lib/notifications";
 import { addCallHistory, verifyTelephonyWebhook } from "@/lib/telephony";
@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
   const providerCallId = String(body.provider_call_id ?? body.call_id ?? "").trim();
   const from = String(body.from ?? "").trim(); const to = String(body.to ?? "").trim();
   if (!providerCallId || !from || !to) return NextResponse.json({ error: "provider_call_id, from, and to are required" }, { status: 422 });
-  const client = await pool.connect();
+  const client = await adminPool.connect();
   try {
     await client.query("BEGIN");
     const number = await client.query(`SELECT * FROM telephony_phone_numbers WHERE provider=$1 AND regexp_replace(phone_number,'[^0-9]','','g')=regexp_replace($2,'[^0-9]','','g') AND is_active=TRUE FOR UPDATE`, [provider, to]);

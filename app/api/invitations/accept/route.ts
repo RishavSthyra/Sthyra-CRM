@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import pool from "@/lib/db";
+import pool, { adminPool } from "@/lib/db";
 import {
   AUTH_USER_COLUMNS,
   createAuthenticatedSession,
@@ -11,6 +11,9 @@ import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
 import { isObject } from "@/utils/isObject";
 import { validatePassword } from "@/utils/validatePassword";
 import { validateText } from "@/utils/validateText";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -68,8 +71,10 @@ export async function POST(request: NextRequest) {
   }
 
   const tokenHash = hashToken(token);
+  const useSupabase = isSupabaseAuthConfigured();
+  const database = useSupabase ? adminPool : pool;
   try {
-    const preflight = await pool.query(
+    const preflight = await database.query(
       `SELECT status, expires_at FROM workspace_invitations WHERE token_hash=$1`,
       [tokenHash],
     );
@@ -86,7 +91,7 @@ export async function POST(request: NextRequest) {
       );
     }
     if (new Date(preflight.rows[0].expires_at) <= new Date()) {
-      await pool.query(
+      await database.query(
         `UPDATE workspace_invitations SET status='expired', updated_at=CURRENT_TIMESTAMP
          WHERE token_hash=$1 AND status='pending'`,
         [tokenHash],
@@ -103,8 +108,9 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
-  const passwordHash = await hashPassword(body.password);
-  const client = await pool.connect();
+  const passwordHash = useSupabase ? null : await hashPassword(body.password);
+  const client = await database.connect();
+  let createdAuthUserId: string | null = null;
   try {
     await client.query("BEGIN");
     const invitationResult = await client.query(
@@ -141,24 +147,63 @@ export async function POST(request: NextRequest) {
         { status: 410 },
       );
     }
-    const userResult = await client.query(
-      `INSERT INTO users (
-         team_id, role_id, username, first_name, last_name, email, phone,
-         password_hash, is_active, password_changed_at, created_by
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,CURRENT_TIMESTAMP,$9)
-       RETURNING user_id`,
-      [
-        invitation.team_id,
-        invitation.role_id,
-        username.toLowerCase(),
-        firstName,
-        lastName ?? null,
-        invitation.email,
-        phone ?? null,
-        passwordHash,
-        invitation.invited_by,
-      ],
-    );
+    if (useSupabase) {
+      const created = await createSupabaseAdminClient().auth.admin.createUser({
+        email: invitation.email,
+        password: body.password,
+        email_confirm: true,
+        user_metadata: {
+          first_name: firstName,
+          last_name: lastName ?? null,
+        },
+      });
+      if (created.error || !created.data.user) {
+        await client.query("ROLLBACK");
+        return NextResponse.json(
+          { error: "Unable to create the invited authentication account" },
+          { status: created.error?.status === 422 ? 422 : 409 },
+        );
+      }
+      createdAuthUserId = created.data.user.id;
+    }
+
+    const userResult = useSupabase
+      ? await client.query(
+          `INSERT INTO users (
+             auth_user_id, team_id, role_id, username, first_name, last_name,
+             email, phone, password_hash, is_active, password_changed_at, created_by
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULL,TRUE,CURRENT_TIMESTAMP,$9)
+           RETURNING user_id`,
+          [
+            createdAuthUserId,
+            invitation.team_id,
+            invitation.role_id,
+            username.toLowerCase(),
+            firstName,
+            lastName ?? null,
+            invitation.email,
+            phone ?? null,
+            invitation.invited_by,
+          ],
+        )
+      : await client.query(
+          `INSERT INTO users (
+             team_id, role_id, username, first_name, last_name, email, phone,
+             password_hash, is_active, password_changed_at, created_by
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,CURRENT_TIMESTAMP,$9)
+           RETURNING user_id`,
+          [
+            invitation.team_id,
+            invitation.role_id,
+            username.toLowerCase(),
+            firstName,
+            lastName ?? null,
+            invitation.email,
+            phone ?? null,
+            passwordHash,
+            invitation.invited_by,
+          ],
+        );
     const userId = String(userResult.rows[0].user_id);
     await client.query(
       `UPDATE workspace_invitations
@@ -167,7 +212,9 @@ export async function POST(request: NextRequest) {
        WHERE invitation_id=$1`,
       [invitation.invitation_id, userId],
     );
-    const tokens = await createAuthenticatedSession(client, request, userId);
+    const tokens = useSupabase
+      ? null
+      : await createAuthenticatedSession(client, request, userId);
     const user = await client.query(
       `SELECT ${AUTH_USER_COLUMNS} FROM users u WHERE u.user_id=$1`,
       [userId],
@@ -185,10 +232,27 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
     response.headers.set("Cache-Control", "no-store");
-    setAuthCookies(response, tokens.accessToken, tokens.refreshToken);
+    if (useSupabase) {
+      const supabase = await createSupabaseServerClient();
+      const signIn = await supabase.auth.signInWithPassword({
+        email: invitation.email,
+        password: body.password,
+      });
+      if (signIn.error) {
+        return NextResponse.json(
+          { message: "Invitation accepted. Please log in." },
+          { status: 201 },
+        );
+      }
+    } else if (tokens) {
+      setAuthCookies(response, tokens.accessToken, tokens.refreshToken);
+    }
     return response;
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
+    if (createdAuthUserId) {
+      await createSupabaseAdminClient().auth.admin.deleteUser(createdAuthUserId);
+    }
     if (getDatabaseErrorCode(error) === "23505") {
       return NextResponse.json(
         { error: "That username or email is already in use" },

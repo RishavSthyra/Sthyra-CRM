@@ -3,6 +3,10 @@ import pool from "@/lib/db";
 import { requireOpportunity } from "@/lib/opportunityAccess";
 import { advanceOpportunityToStage } from "@/lib/opportunities";
 import { parseUuid } from "@/lib/operations";
+import {
+  createNotificationsForUsers,
+  resolveNotificationRecipients,
+} from "@/lib/notifications";
 import { isObject } from "@/utils/isObject";
 import { parsePagination } from "@/utils/parsePagination";
 
@@ -180,6 +184,28 @@ export async function POST(request: NextRequest, context: Context) {
       "quotation_created",
       access.context.userId,
     );
+    const recipients = await resolveNotificationRecipients(client, {
+      companyId: Number(access.opportunity.company_id),
+      userIds: [access.opportunity.current_owner_user_id as string | null],
+      teamIds: [access.opportunity.current_team_id as string | null],
+    });
+    await createNotificationsForUsers(client, recipients, {
+      companyId: Number(access.opportunity.company_id),
+      projectId: Number(access.opportunity.project_id),
+      type: "quotation.created",
+      category: "quotation",
+      title: "Quotation created",
+      body: `${quotationNumber} is ready for ${access.opportunity.opportunity_name}.`,
+      entityType: "quotation",
+      entityId: String(result.rows[0].quotation_id),
+      actionUrl: `/opportunities?opportunity_id=${access.opportunityId}`,
+      eventKey: `quotation:${result.rows[0].quotation_id}:created`,
+      metadata: {
+        opportunity_id: access.opportunityId,
+        total_amount: subtotal + taxAmount,
+      },
+      channels: ["in_app", "email"],
+    });
     await client.query("COMMIT");
     return NextResponse.json(
       { message: "Quotation created", quotation: result.rows[0] },

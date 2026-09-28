@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import pool from "@/lib/db";
+import pool, { adminPool } from "@/lib/db";
 import {
   authenticateRequest,
   clearAuthCookies,
@@ -7,6 +7,8 @@ import {
   verifyPassword,
 } from "@/lib/auth";
 import { validateChangePasswordPayload } from "@/lib/authValidation";
+import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -31,6 +33,49 @@ export async function POST(request: NextRequest) {
       { error: "Validation failed", details: validation.errors },
       { status: 422 },
     );
+  }
+
+  if (isSupabaseAuthConfigured()) {
+    const supabase = await createSupabaseServerClient();
+    const { data: authUser, error: userError } = await supabase.auth.getUser();
+    const email = authUser.user?.email;
+    if (userError || !email) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 },
+      );
+    }
+    const verification = await supabase.auth.signInWithPassword({
+      email,
+      password: validation.data.currentPassword,
+    });
+    if (verification.error) {
+      return NextResponse.json(
+        { error: "Current password is incorrect" },
+        { status: 401 },
+      );
+    }
+    const updated = await supabase.auth.updateUser({
+      password: validation.data.newPassword,
+    });
+    if (updated.error) {
+      return NextResponse.json(
+        { error: "Unable to change password" },
+        { status: 400 },
+      );
+    }
+    await adminPool.query(
+      `UPDATE users
+       SET password_hash = NULL,
+           password_changed_at = CURRENT_TIMESTAMP,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE auth_user_id = $1`,
+      [authUser.user.id],
+    );
+    await supabase.auth.signOut({ scope: "global" });
+    return NextResponse.json({
+      message: "Password changed. Please log in again.",
+    });
   }
 
   const client = await pool.connect();

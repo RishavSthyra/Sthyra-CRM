@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { parseActivityUuid, recordActivity } from "@/lib/activities";
 import {
+  createNotificationsForUsers,
+  resolveNotificationRecipients,
+} from "@/lib/notifications";
+import {
   canAccessOperationsEntity,
   requireOperationsContext,
 } from "@/lib/operationsAccess";
@@ -78,7 +82,9 @@ export async function changeAppointmentState(
     if (current.appointment_type === "site_visit") {
       await client.query("ROLLBACK");
       return NextResponse.json(
-        { error: `Use POST /api/site-visits/${appointmentId}/${action} for site visits` },
+        {
+          error: `Use POST /api/site-visits/${appointmentId}/${action} for site visits`,
+        },
         { status: 409 },
       );
     }
@@ -131,6 +137,32 @@ export async function changeAppointmentState(
       scope.context.userId,
       { description: reason },
     );
+    const recipients = await resolveNotificationRecipients(client, {
+      companyId: Number(appointment.company_id),
+      userIds: [appointment.assigned_to_user_id, appointment.organizer_user_id],
+      teamIds: [appointment.assigned_to_team_id],
+      excludeUserIds: [scope.context.userId],
+    });
+    await createNotificationsForUsers(client, recipients, {
+      companyId: Number(appointment.company_id),
+      projectId: Number(appointment.project_id),
+      type: `appointment.${past}`,
+      category: "appointment",
+      title: `Appointment ${past}`,
+      body: `${appointment.title} was ${past}.`,
+      severity:
+        action === "cancel"
+          ? "warning"
+          : action === "complete"
+            ? "success"
+            : "info",
+      entityType: "appointment",
+      entityId: appointmentId,
+      actionUrl: `/calendar?appointment_id=${appointmentId}`,
+      eventKey: `appointment:${appointmentId}:${past}:${appointment.updated_at}`,
+      metadata: { status },
+      channels: ["in_app", "email"],
+    });
     await client.query("COMMIT");
     return NextResponse.json({ message: `Appointment ${past}`, appointment });
   } catch (error) {
@@ -226,7 +258,9 @@ export async function rescheduleAppointment(
     if (current.appointment_type === "site_visit") {
       await client.query("ROLLBACK");
       return NextResponse.json(
-        { error: `Use POST /api/site-visits/${appointmentId}/reschedule for site visits` },
+        {
+          error: `Use POST /api/site-visits/${appointmentId}/reschedule for site visits`,
+        },
         { status: 409 },
       );
     }
@@ -261,6 +295,27 @@ export async function rescheduleAppointment(
         },
       },
     );
+    const recipients = await resolveNotificationRecipients(client, {
+      companyId: Number(appointment.company_id),
+      userIds: [appointment.assigned_to_user_id, appointment.organizer_user_id],
+      teamIds: [appointment.assigned_to_team_id],
+      excludeUserIds: [scope.context.userId],
+    });
+    await createNotificationsForUsers(client, recipients, {
+      companyId: Number(appointment.company_id),
+      projectId: Number(appointment.project_id),
+      type: "appointment.rescheduled",
+      category: "appointment",
+      title: "Appointment rescheduled",
+      body: `${appointment.title} was moved to a new time.`,
+      severity: "info",
+      entityType: "appointment",
+      entityId: appointmentId,
+      actionUrl: `/calendar?appointment_id=${appointmentId}`,
+      eventKey: `appointment:${appointmentId}:rescheduled:${appointment.updated_at}`,
+      metadata: { starts_at: startsAt, ends_at: endsAt },
+      channels: ["in_app", "email"],
+    });
     await client.query("COMMIT");
     return NextResponse.json({
       message: "Appointment rescheduled",

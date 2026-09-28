@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { parseUuid } from "@/lib/operations";
 import {
+  createNotificationsForUsers,
+  resolveNotificationRecipients,
+} from "@/lib/notifications";
+import {
   canAccessOperationsEntity,
   requireOperationsContext,
 } from "@/lib/operationsAccess";
@@ -53,17 +57,27 @@ export async function handleTransferAction(
   if (!scope.ok) return scope.response;
   const transferId = parseUuid(rawTransferId);
   if (!transferId)
-    return NextResponse.json({ error: "transferId must be a valid UUID" }, { status: 400 });
+    return NextResponse.json(
+      { error: "transferId must be a valid UUID" },
+      { status: 400 },
+    );
   const body = await optionalBody(request);
   if (!body)
-    return NextResponse.json({ error: "Request body must contain a valid JSON object" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Request body must contain a valid JSON object" },
+      { status: 400 },
+    );
   const errors: string[] = [];
   const unknown = Object.keys(body).filter((key) => key !== "reason");
   unknown.forEach((key) => errors.push(`Unknown field: ${key}`));
   const reason = validateText(body.reason, "reason", 5000, true, errors);
-  if (action === "reject" && !reason) errors.push("reason is required when rejecting a transfer");
+  if (action === "reject" && !reason)
+    errors.push("reason is required when rejecting a transfer");
   if (errors.length)
-    return NextResponse.json({ error: "Validation failed", details: errors }, { status: 422 });
+    return NextResponse.json(
+      { error: "Validation failed", details: errors },
+      { status: 422 },
+    );
 
   const client = await pool.connect();
   try {
@@ -71,17 +85,32 @@ export async function handleTransferAction(
     const transfer = await getTransfer(client, transferId, true);
     if (!transfer) {
       await client.query("ROLLBACK");
-      return NextResponse.json({ error: "Transfer not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Transfer not found" },
+        { status: 404 },
+      );
     }
-    if (!canAccessOperationsEntity(scope.context.access, Number(transfer.company_id), Number(transfer.project_id))) {
+    if (
+      !canAccessOperationsEntity(
+        scope.context.access,
+        Number(transfer.company_id),
+        Number(transfer.project_id),
+      )
+    ) {
       await client.query("ROLLBACK");
-      return NextResponse.json({ error: "You do not have access to this transfer" }, { status: 403 });
+      return NextResponse.json(
+        { error: "You do not have access to this transfer" },
+        { status: 403 },
+      );
     }
     const admin = scope.context.access.canViewAllProjects;
     const requester = transfer.requested_by === scope.context.userId;
     const targetUser = transfer.to_owner_user_id === scope.context.userId;
     const targetTeam = transfer.to_team_id
-      ? await userBelongsToTeam(scope.context.userId, transfer.to_team_id as string)
+      ? await userBelongsToTeam(
+          scope.context.userId,
+          transfer.to_team_id as string,
+        )
       : false;
     const recipient = targetUser || targetTeam;
     const currentStatus = String(transfer.status);
@@ -89,13 +118,25 @@ export async function handleTransferAction(
     if (action === "validate") {
       if (!["draft", "validated"].includes(currentStatus)) {
         await client.query("ROLLBACK");
-        return NextResponse.json({ error: `Cannot validate a ${currentStatus} transfer` }, { status: 409 });
+        return NextResponse.json(
+          { error: `Cannot validate a ${currentStatus} transfer` },
+          { status: 409 },
+        );
       }
       if (!requester && !admin) {
         await client.query("ROLLBACK");
-        return NextResponse.json({ error: "Only the requester or an administrator can validate this transfer" }, { status: 403 });
+        return NextResponse.json(
+          {
+            error:
+              "Only the requester or an administrator can validate this transfer",
+          },
+          { status: 403 },
+        );
       }
-      const validationErrors = await getTransferValidationErrors(client, transfer);
+      const validationErrors = await getTransferValidationErrors(
+        client,
+        transfer,
+      );
       if (validationErrors.length) {
         await client.query(
           `UPDATE transfers SET status='draft', validation_errors=$1::jsonb,
@@ -105,7 +146,11 @@ export async function handleTransferAction(
         );
         await client.query("COMMIT");
         return NextResponse.json(
-          { error: "Transfer validation failed", details: validationErrors, valid: false },
+          {
+            error: "Transfer validation failed",
+            details: validationErrors,
+            valid: false,
+          },
           { status: 422 },
         );
       }
@@ -115,9 +160,19 @@ export async function handleTransferAction(
          updated_at=CURRENT_TIMESTAMP WHERE transfer_id=$2 RETURNING *`,
         [scope.context.userId, transferId],
       );
-      await addTransferHistory(client, transfer, "validated", "validated", scope.context.userId);
+      await addTransferHistory(
+        client,
+        transfer,
+        "validated",
+        "validated",
+        scope.context.userId,
+      );
       await client.query("COMMIT");
-      return NextResponse.json({ message: "Transfer is valid", valid: true, transfer: updated.rows[0] });
+      return NextResponse.json({
+        message: "Transfer is valid",
+        valid: true,
+        transfer: updated.rows[0],
+      });
     }
 
     const allowed: Record<Exclude<TransferAction, "validate">, string[]> = {
@@ -130,24 +185,50 @@ export async function handleTransferAction(
     };
     if (!allowed[action].includes(currentStatus)) {
       await client.query("ROLLBACK");
-      return NextResponse.json({ error: `Cannot ${action.replaceAll("_", " ")} a ${currentStatus} transfer` }, { status: 409 });
+      return NextResponse.json(
+        {
+          error: `Cannot ${action.replaceAll("_", " ")} a ${currentStatus} transfer`,
+        },
+        { status: 409 },
+      );
     }
 
     if (action === "submit" && !requester && !admin) {
       await client.query("ROLLBACK");
-      return NextResponse.json({ error: "Only the requester or an administrator can submit this transfer" }, { status: 403 });
+      return NextResponse.json(
+        {
+          error:
+            "Only the requester or an administrator can submit this transfer",
+        },
+        { status: 403 },
+      );
     }
     if (["accept", "reject"].includes(action) && !recipient && !admin) {
       await client.query("ROLLBACK");
-      return NextResponse.json({ error: "Only the recipient or an administrator can decide this transfer" }, { status: 403 });
+      return NextResponse.json(
+        {
+          error:
+            "Only the recipient or an administrator can decide this transfer",
+        },
+        { status: 403 },
+      );
     }
     if (action === "cancel" && !requester && !admin) {
       await client.query("ROLLBACK");
-      return NextResponse.json({ error: "Only the requester or an administrator can cancel this transfer" }, { status: 403 });
+      return NextResponse.json(
+        {
+          error:
+            "Only the requester or an administrator can cancel this transfer",
+        },
+        { status: 403 },
+      );
     }
     if (["expire", "force_assign"].includes(action) && !admin) {
       await client.query("ROLLBACK");
-      return NextResponse.json({ error: "Administrator access is required" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Administrator access is required" },
+        { status: 403 },
+      );
     }
     if (
       action === "expire" &&
@@ -155,20 +236,35 @@ export async function handleTransferAction(
       new Date(transfer.expires_at as string | Date).getTime() > Date.now()
     ) {
       await client.query("ROLLBACK");
-      return NextResponse.json({ error: "Transfer has not reached its expiry time" }, { status: 409 });
+      return NextResponse.json(
+        { error: "Transfer has not reached its expiry time" },
+        { status: 409 },
+      );
     }
 
     if (["submit", "accept"].includes(action)) {
-      const validationErrors = await getTransferValidationErrors(client, transfer);
+      const validationErrors = await getTransferValidationErrors(
+        client,
+        transfer,
+      );
       if (validationErrors.length) {
         await client.query("ROLLBACK");
-        return NextResponse.json({ error: "Transfer validation failed", details: validationErrors }, { status: 422 });
+        return NextResponse.json(
+          { error: "Transfer validation failed", details: validationErrors },
+          { status: 422 },
+        );
       }
-      const incomplete = await incompleteRequiredChecklistCount(client, transferId);
+      const incomplete = await incompleteRequiredChecklistCount(
+        client,
+        transferId,
+      );
       if (incomplete > 0) {
         await client.query("ROLLBACK");
         return NextResponse.json(
-          { error: "Required checklist items must be completed", incomplete_required_items: incomplete },
+          {
+            error: "Required checklist items must be completed",
+            incomplete_required_items: incomplete,
+          },
           { status: 409 },
         );
       }
@@ -187,7 +283,10 @@ export async function handleTransferAction(
       if (referenceErrors.length) {
         await client.query("ROLLBACK");
         return NextResponse.json(
-          { error: "Transfer recipient is no longer eligible", details: referenceErrors },
+          {
+            error: "Transfer recipient is no longer eligible",
+            details: referenceErrors,
+          },
           { status: 422 },
         );
       }
@@ -234,6 +333,40 @@ export async function handleTransferAction(
       scope.context.userId,
       { reason: reason ?? null },
     );
+    const notifyRecipient = action === "submit";
+    const recipients = await resolveNotificationRecipients(client, {
+      companyId: Number(transfer.company_id),
+      userIds: notifyRecipient
+        ? [transfer.to_owner_user_id as string | null]
+        : [transfer.requested_by as string],
+      teamIds: notifyRecipient ? [transfer.to_team_id as string | null] : [],
+      excludeUserIds: [scope.context.userId],
+    });
+    const subjectLabel =
+      transfer.subject_type === "lead" ? "Lead" : "Opportunity";
+    await createNotificationsForUsers(client, recipients, {
+      companyId: Number(transfer.company_id),
+      projectId: Number(transfer.project_id),
+      type: `transfer.${targetStatus}`,
+      category: "transfer",
+      title:
+        action === "submit"
+          ? `${subjectLabel} transfer awaiting decision`
+          : `Transfer ${targetStatus.replaceAll("_", " ")}`,
+      body:
+        action === "submit"
+          ? `A ${String(transfer.subject_type)} transfer was sent to you.`
+          : `The ${String(transfer.subject_type)} transfer was ${targetStatus.replaceAll("_", " ")}.`,
+      severity: ["rejected", "cancelled", "expired"].includes(targetStatus)
+        ? "warning"
+        : "success",
+      entityType: "transfer",
+      entityId: transferId,
+      actionUrl: `/transfers?transfer_id=${transferId}`,
+      eventKey: `transfer:${transferId}:${targetStatus}`,
+      metadata: { subject_type: transfer.subject_type, status: targetStatus },
+      channels: ["in_app", "email"],
+    });
     await client.query("COMMIT");
     return NextResponse.json({
       message: `Transfer ${targetStatus.replaceAll("_", " ")}`,
@@ -242,7 +375,10 @@ export async function handleTransferAction(
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     console.error(`Failed to ${action} transfer`, error);
-    return NextResponse.json({ error: `Unable to ${action.replaceAll("_", " ")} transfer` }, { status: 500 });
+    return NextResponse.json(
+      { error: `Unable to ${action.replaceAll("_", " ")} transfer` },
+      { status: 500 },
+    );
   } finally {
     client.release();
   }

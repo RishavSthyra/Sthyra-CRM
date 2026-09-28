@@ -9,6 +9,9 @@ import {
 import { validateSignupPayload } from "@/lib/authValidation";
 import { readSignedState } from "@/lib/oauthState";
 import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
+import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { provisionWorkspaceForAuthUser } from "@/lib/supabase/workspaceProvisioning";
 
 export const runtime = "nodejs";
 
@@ -25,6 +28,69 @@ function createUsername(email: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  if (isSupabaseAuthConfigured()) {
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user?.email) {
+      return NextResponse.json(
+        { error: "Your Google signup session expired. Please continue with Google again." },
+        { status: 401 },
+      );
+    }
+
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "Request body must contain valid JSON" },
+        { status: 400 },
+      );
+    }
+    const source =
+      typeof body === "object" && body !== null && !Array.isArray(body)
+        ? (body as Record<string, unknown>)
+        : {};
+    const validation = validateSignupPayload({
+      ...source,
+      email: data.user.email,
+      password: `${randomBytes(24).toString("base64url")}Aa1!`,
+    });
+    if (!validation.ok) {
+      return NextResponse.json(
+        { error: "Validation failed", details: validation.errors },
+        { status: 422 },
+      );
+    }
+
+    try {
+      const workspace = await provisionWorkspaceForAuthUser(
+        data.user.id,
+        validation.data,
+      );
+      return NextResponse.json(
+        { message: "Workspace created with Google", ...workspace },
+        { status: 201 },
+      );
+    } catch (error) {
+      if (
+        getDatabaseErrorCode(error) === "23505" ||
+        (error instanceof Error &&
+          error.message === "CRM_IDENTITY_ALREADY_EXISTS")
+      ) {
+        return NextResponse.json(
+          { error: "This Google account, company email, or company code is already in use" },
+          { status: 409 },
+        );
+      }
+      console.error("Unable to complete Supabase Google signup", error);
+      return NextResponse.json(
+        { error: "Unable to create workspace" },
+        { status: 500 },
+      );
+    }
+  }
+
   const pending = readSignedState<PendingGoogleSignup>(
     request.cookies.get("sthyra_google_signup_pending")?.value,
   );
@@ -61,7 +127,7 @@ export async function POST(request: NextRequest) {
     await client.query(
       `INSERT INTO roles (role_key, role_name, description, is_system_role)
        VALUES ('COMPANY_OWNER', 'Company Owner', 'Initial owner of a company workspace', TRUE)
-       ON CONFLICT (role_key) DO NOTHING`,
+       ON CONFLICT DO NOTHING`,
     );
     const role = await client.query(
       "SELECT role_id FROM roles WHERE role_key='COMPANY_OWNER' AND is_active=TRUE",
