@@ -5,7 +5,6 @@ import {
   expireStaleInventoryHolds,
   expireStaleInventoryReservations,
 } from "@/lib/inventoryActions";
-export const runtime = "nodejs";
 export async function POST(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (!secret) {

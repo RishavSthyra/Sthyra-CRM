@@ -8,8 +8,6 @@ import {
 import { requireOperationsContext } from "@/lib/operationsAccess";
 import { createSignedState } from "@/lib/oauthState";
 
-export const runtime = "nodejs";
-
 const STATE_COOKIE = "sthyra_mailbox_oauth_state";
 
 export async function GET(

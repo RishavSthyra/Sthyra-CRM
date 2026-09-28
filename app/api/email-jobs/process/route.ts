@@ -3,8 +3,6 @@ import { adminPool } from "@/lib/db";
 import { processEmailDeliveryJob } from "@/lib/email/deliveryJobs";
 import { hasValidBearerSecret } from "@/lib/integrationAuth";
 
-export const runtime = "nodejs";
-
 export async function POST(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (!secret) {

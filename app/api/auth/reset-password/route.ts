@@ -6,8 +6,6 @@ import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { validatePassword } from "@/utils/validatePassword";
 
-export const runtime = "nodejs";
-
 export async function POST(request: NextRequest) {
   let body: unknown;
   try {

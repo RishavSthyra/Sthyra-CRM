@@ -23,6 +23,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import toast from "react-hot-toast";
@@ -658,6 +659,7 @@ function ActionDialog({
 
 export function TransferWorkspace() {
   const router = useRouter();
+  const lastLoadedTransfersQueryRef = useRef<string | null>(null);
   const [context, setContext] = useState<WorkspaceContext | null>(null);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [projectFilter, setProjectFilter] = useState("");
@@ -744,19 +746,23 @@ export function TransferWorkspace() {
   const loadTransfers = useCallback(
     async (quiet = false) => {
       if (!projectFilter) return;
-      if (quiet) setRefreshing(true);
+      const params = new URLSearchParams({ limit: "100" });
+      if (projectFilter !== "all") params.set("project_id", projectFilter);
+      if (typeFilter !== "all") params.set("subject_type", typeFilter);
+      if (statusFilter !== "all" && statusFilter !== "active")
+        params.set("status", statusFilter);
+      const queryKey = params.toString();
+      const background =
+        quiet || lastLoadedTransfersQueryRef.current === queryKey;
+      if (background) setRefreshing(true);
       else setLoading(true);
       setError(null);
       try {
-        const params = new URLSearchParams({ limit: "100" });
-        if (projectFilter !== "all") params.set("project_id", projectFilter);
-        if (typeFilter !== "all") params.set("subject_type", typeFilter);
-        if (statusFilter !== "all" && statusFilter !== "active")
-          params.set("status", statusFilter);
         const payload = await api<{ transfers?: Transfer[] }>(
           `/api/transfers?${params.toString()}`,
         );
         const rows = payload.transfers ?? [];
+        lastLoadedTransfersQueryRef.current = queryKey;
         setTransfers(
           statusFilter === "active"
             ? rows.filter((item) => ACTIVE_STATUSES.includes(item.status))
@@ -776,8 +782,8 @@ export function TransferWorkspace() {
 
   useEffect(() => {
     // Data fetching is intentionally triggered when the server-side filters change.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadTransfers();
+    const task = window.setTimeout(() => void loadTransfers(), 0);
+    return () => window.clearTimeout(task);
   }, [loadTransfers]);
 
   const loadLeads = useCallback(

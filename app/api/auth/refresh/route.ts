@@ -12,8 +12,6 @@ import {
 import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export const runtime = "nodejs";
-
 export async function POST(request: NextRequest) {
   if (isSupabaseAuthConfigured()) {
     const supabase = await createSupabaseServerClient();

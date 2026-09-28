@@ -12,8 +12,6 @@ import {
 } from "@/lib/invitations";
 
 type Context = { params: Promise<{ invitationid: string }> };
-export const runtime = "nodejs";
-
 export async function POST(request: NextRequest, context: Context) {
   const access = await requireInvitationAdmin(
     request,

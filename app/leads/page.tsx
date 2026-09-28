@@ -238,6 +238,7 @@ export default function LeadsPage() {
   const [openTool, setOpenTool] = useState<"filter" | "sort" | null>(null);
   const leadToolsRef = useRef<HTMLDivElement>(null);
   const requestedLeadOpenedRef = useRef(false);
+  const lastLoadedLeadsQueryRef = useRef<string | null>(null);
   const [page, setPage] = useState(1);
   const [data, setData] = useState<LeadResponse>({ leads: [] });
   const [loading, setLoading] = useState(true);
@@ -397,7 +398,6 @@ export default function LeadsPage() {
   const loadLeads = useCallback(async () => {
     if (!selectedProjectId) return;
     await Promise.resolve();
-    setLoading(true);
     const params = new URLSearchParams({ page: String(page), limit: "10" });
     params.set("project_id", selectedProjectId);
     if (search.trim()) params.set("search", search.trim());
@@ -406,6 +406,8 @@ export default function LeadsPage() {
     if (temperature !== "all") params.set("temperature", temperature);
     if (assignment !== "all") params.set("assignment", assignment);
     params.set("sort", sort);
+    const queryKey = params.toString();
+    setLoading(lastLoadedLeadsQueryRef.current !== queryKey);
     try {
       const response = await fetchWithSession(
         `/api/leads?${params.toString()}`,
@@ -421,6 +423,7 @@ export default function LeadsPage() {
       if (!response.ok)
         throw new Error(body.error || "Unable to retrieve leads");
       setData(body);
+      lastLoadedLeadsQueryRef.current = queryKey;
       setError(null);
     } catch (cause) {
       setError(

@@ -13,8 +13,6 @@ import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { provisionWorkspaceForAuthUser } from "@/lib/supabase/workspaceProvisioning";
 
-export const runtime = "nodejs";
-
 type PendingGoogleSignup = {
   purpose: "google-signup";
   subject: string;

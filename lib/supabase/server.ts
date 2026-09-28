@@ -1,8 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { connection } from "next/server";
 import { getSupabasePublicConfig } from "@/lib/supabase/config";
 
 export async function createSupabaseServerClient() {
+  // Authentication is request-specific and must never be evaluated while
+  // Next.js is building a static shell for a route handler.
+  await connection();
   const cookieStore = await cookies();
   const { publishableKey, url } = getSupabasePublicConfig();
 

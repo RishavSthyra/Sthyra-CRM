@@ -33,6 +33,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import toast from "react-hot-toast";
@@ -1010,6 +1011,7 @@ function OpportunityCard({
 
 export function OpportunityWorkspace() {
   const router = useRouter();
+  const lastLoadedOpportunitiesQueryRef = useRef<string | null>(null);
   const [context, setContext] = useState<ProjectContext | null>(null);
   const [projectFilter, setProjectFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("open");
@@ -1094,20 +1096,24 @@ export function OpportunityWorkspace() {
   const loadOpportunities = useCallback(
     async (quiet = false) => {
       if (!projectFilter) return;
-      if (quiet) setRefreshing(true);
+      const params = new URLSearchParams({ limit: "100" });
+      if (projectFilter !== "all") params.set("project_id", projectFilter);
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (requestedLeadId) params.set("lead_id", requestedLeadId);
+      if (query.trim()) params.set("search", query.trim());
+      const queryKey = params.toString();
+      const background =
+        quiet || lastLoadedOpportunitiesQueryRef.current === queryKey;
+      if (background) setRefreshing(true);
       else setLoading(true);
       setError(null);
       try {
-        const params = new URLSearchParams({ limit: "100" });
-        if (projectFilter !== "all") params.set("project_id", projectFilter);
-        if (statusFilter !== "all") params.set("status", statusFilter);
-        if (requestedLeadId) params.set("lead_id", requestedLeadId);
-        if (query.trim()) params.set("search", query.trim());
         const payload = await api<{
           opportunities?: Opportunity[];
           stages?: OpportunityStageApi[];
         }>(`/api/opportunities?${params.toString()}`);
         setOpportunities(payload.opportunities ?? []);
+        lastLoadedOpportunitiesQueryRef.current = queryKey;
         if (payload.stages?.length) {
           setStages(
             payload.stages.map((stage) => ({

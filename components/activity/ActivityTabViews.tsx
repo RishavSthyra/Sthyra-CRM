@@ -241,13 +241,14 @@ function plainText(value: string) {
 
 export function CallsView({ projectId, sort }: ViewProps) {
   const router = useRouter();
+  const lastLoadedProjectRef = useRef<string | null>(null);
   const [calls, setCalls] = useState<CallRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!projectId) return;
-    setLoading(true);
+    setLoading(lastLoadedProjectRef.current !== projectId);
     try {
       const response = await fetchWithSession(endpoint("/api/calls", projectId), {
         cache: "no-store",
@@ -256,6 +257,7 @@ export function CallsView({ projectId, sort }: ViewProps) {
       if (!response.ok) throw new Error(await getApiError(response));
       const body = (await response.json()) as { calls?: CallRecord[] };
       setCalls(body.calls ?? []);
+      lastLoadedProjectRef.current = projectId;
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to retrieve calls.");
@@ -458,6 +460,7 @@ export function EmailView({
 }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const lastLoadedProjectRef = useRef<string | null>(null);
   const [emails, setEmails] = useState<EmailRecord[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
@@ -477,7 +480,7 @@ export function EmailView({
 
   const load = useCallback(async () => {
     if (!projectId) return;
-    setLoading(true);
+    setLoading(lastLoadedProjectRef.current !== projectId);
     try {
       const response = await fetchWithSession(endpoint("/api/emails", projectId), {
         cache: "no-store",
@@ -487,6 +490,7 @@ export function EmailView({
       const payload = (await response.json()) as { emails?: EmailRecord[] };
       const next = payload.emails ?? [];
       setEmails(next);
+      lastLoadedProjectRef.current = projectId;
       setSelectedId((current) => current && next.some((item) => item.email_id === current) ? current : next[0]?.email_id ?? null);
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "Unable to retrieve emails.");
@@ -839,6 +843,7 @@ const taskColumns = [
 
 export function TasksView({ projectId, creationProjectId, sort }: ViewProps) {
   const router = useRouter();
+  const lastLoadedProjectRef = useRef<string | null>(null);
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -854,13 +859,14 @@ export function TasksView({ projectId, creationProjectId, sort }: ViewProps) {
 
   const load = useCallback(async () => {
     if (!projectId) return;
-    setLoading(true);
+    setLoading(lastLoadedProjectRef.current !== projectId);
     try {
       const response = await fetchWithSession(endpoint("/api/tasks", projectId), { cache: "no-store" });
       if (response.status === 401) return router.replace("/login");
       if (!response.ok) throw new Error(await getApiError(response));
       const payload = (await response.json()) as { tasks?: TaskRecord[] };
       setTasks(payload.tasks ?? []);
+      lastLoadedProjectRef.current = projectId;
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "Unable to retrieve tasks.");
     } finally {
@@ -1093,6 +1099,7 @@ export function TasksView({ projectId, creationProjectId, sort }: ViewProps) {
 
 export function NotesView({ projectId, creationProjectId, sort }: ViewProps) {
   const router = useRouter();
+  const lastLoadedProjectRef = useRef<string | null>(null);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -1108,13 +1115,14 @@ export function NotesView({ projectId, creationProjectId, sort }: ViewProps) {
 
   const load = useCallback(async () => {
     if (!projectId) return;
-    setLoading(true);
+    setLoading(lastLoadedProjectRef.current !== projectId);
     try {
       const response = await fetchWithSession(endpoint("/api/notes", projectId), { cache: "no-store" });
       if (response.status === 401) return router.replace("/login");
       if (!response.ok) throw new Error(await getApiError(response));
       const payload = (await response.json()) as { notes?: NoteRecord[] };
       setNotes(payload.notes ?? []);
+      lastLoadedProjectRef.current = projectId;
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "Unable to retrieve notes.");
     } finally { setLoading(false); }

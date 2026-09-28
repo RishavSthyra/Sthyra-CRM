@@ -126,13 +126,15 @@ export function NotificationWorkspace() {
     useState<NotificationPreferences | null>(null);
   const [preferenceBusy, setPreferenceBusy] = useState<string | null>(null);
   const hasSynced = useRef(false);
+  const lastLoadedNotificationsQueryRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
     setError(null);
     const query = new URLSearchParams({ limit: "100" });
     if (filter !== "all") query.set("category", filter);
     if (unreadOnly) query.set("unread", "true");
+    const queryKey = query.toString();
+    setLoading(lastLoadedNotificationsQueryRef.current !== queryKey);
     try {
       if (!hasSynced.current) {
         const syncResponse = await fetchWithSession("/api/notifications/sync", {
@@ -149,6 +151,7 @@ export function NotificationWorkspace() {
       if (!response.ok) throw new Error(await getApiError(response));
       const body = (await response.json()) as { notifications: Notification[] };
       setItems(body.notifications);
+      lastLoadedNotificationsQueryRef.current = queryKey;
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "Unable to load notifications",

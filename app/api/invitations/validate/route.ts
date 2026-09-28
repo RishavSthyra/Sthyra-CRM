@@ -3,8 +3,6 @@ import pool, { adminPool } from "@/lib/db";
 import { hashToken } from "@/lib/auth";
 import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 
-export const runtime = "nodejs";
-
 export async function GET(request: NextRequest) {
   const database = isSupabaseAuthConfigured() ? adminPool : pool;
   const token = request.nextUrl.searchParams.get("token")?.trim();

@@ -10,8 +10,6 @@ import { validateChangePasswordPayload } from "@/lib/authValidation";
 import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export const runtime = "nodejs";
-
 export async function POST(request: NextRequest) {
   const authentication = await authenticateRequest(request);
   if (!authentication.ok) {

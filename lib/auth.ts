@@ -8,7 +8,7 @@ import {
 import { isIP } from "node:net";
 import type { ScryptOptions } from "node:crypto";
 import type { PoolClient } from "pg";
-import { NextRequest, NextResponse } from "next/server";
+import { connection, NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -314,6 +314,9 @@ function getAccessToken(request: NextRequest): string | null {
 export async function authenticateRequest(
   request: NextRequest,
 ): Promise<AuthenticationResult> {
+  // Authenticated API responses are request-specific. Keep this outside the
+  // error boundary so Cache Components can defer the handler to request time.
+  await connection();
   try {
     if (isSupabaseAuthConfigured()) {
       const supabase = await createSupabaseServerClient();

@@ -12,8 +12,6 @@ import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { linkExistingCrmIdentity } from "@/lib/supabase/workspaceProvisioning";
 
-export const runtime = "nodejs";
-
 const STATE_COOKIE = "sthyra_google_auth_state";
 const PENDING_COOKIE = "sthyra_google_signup_pending";
 

@@ -10,8 +10,6 @@ import { isUuid } from "@/lib/permissions";
 import { isObject } from "@/utils/isObject";
 import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
 
-export const runtime = "nodejs";
-
 const INVITATION_COLUMNS = `
   wi.invitation_id,
   wi.company_id,

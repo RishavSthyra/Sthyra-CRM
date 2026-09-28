@@ -15,8 +15,6 @@ import { provisionWorkspaceForAuthUser } from "@/lib/supabase/workspaceProvision
 import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
 import { getAppUrl } from "@/lib/appUrl";
 
-export const runtime = "nodejs";
-
 function createUsername(email: string): string {
   const localPart = email.split("@")[0].replace(/[^a-zA-Z0-9._-]/g, "");
   const base = localPart.slice(0, 180) || "user";

@@ -474,6 +474,7 @@ function MenuOption({
 export default function ActivityPage() {
   const router = useRouter();
   const toolsRef = useRef<HTMLDivElement>(null);
+  const lastLoadedActivitiesQueryRef = useRef<string | null>(null);
   const [projectContext, setProjectContext] = useState<ProjectContext | null>(
     null,
   );
@@ -494,6 +495,14 @@ export default function ActivityPage() {
   const [loading, setLoading] = useState(true);
   const [contextLoading, setContextLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [calendarReference, setCalendarReference] = useState<number | null>(
+    null,
+  );
+
+  useEffect(() => {
+    const task = window.setTimeout(() => setCalendarReference(Date.now()), 0);
+    return () => window.clearTimeout(task);
+  }, []);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -596,23 +605,24 @@ export default function ActivityPage() {
 
   const loadActivities = useCallback(async () => {
     if (!selectedProjectId) return;
-    setLoading(true);
+    const params = new URLSearchParams({ limit: "100" });
+    if (selectedProjectId !== "all") {
+      params.set("project_id", selectedProjectId);
+    }
+    if (dateRange !== "all") {
+      const now = new Date();
+      const from =
+        dateRange === "today"
+          ? startOfDay(now)
+          : new Date(
+              now.getTime() -
+                (dateRange === "week" ? 7 : 30) * 24 * 60 * 60 * 1000,
+            );
+      params.set("from", from.toISOString());
+    }
+    const queryKey = `${selectedProjectId}:${dateRange}`;
+    setLoading(lastLoadedActivitiesQueryRef.current !== queryKey);
     try {
-      const params = new URLSearchParams({ limit: "100" });
-      if (selectedProjectId !== "all") {
-        params.set("project_id", selectedProjectId);
-      }
-      if (dateRange !== "all") {
-        const now = new Date();
-        const from =
-          dateRange === "today"
-            ? startOfDay(now)
-            : new Date(
-                now.getTime() -
-                  (dateRange === "week" ? 7 : 30) * 24 * 60 * 60 * 1000,
-              );
-        params.set("from", from.toISOString());
-      }
       const response = await fetchWithSession(
         `/api/activities/timeline?${params.toString()}`,
         { cache: "no-store" },
@@ -625,6 +635,7 @@ export default function ActivityPage() {
       const body = (await response.json()) as TimelineResponse;
       setActivities(body.timeline ?? []);
       setTotal(body.pagination?.total ?? body.timeline?.length ?? 0);
+      lastLoadedActivitiesQueryRef.current = queryKey;
       setError(null);
     } catch (cause) {
       setError(
@@ -679,7 +690,8 @@ export default function ActivityPage() {
   }, [activities, filter, sort, tab]);
 
   const groups = useMemo(() => {
-    const now = new Date();
+    if (calendarReference === null) return [];
+    const now = new Date(calendarReference);
     const today = startOfDay(now).getTime();
     const week = startOfWeek(now).getTime();
     const month = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
@@ -705,7 +717,7 @@ export default function ActivityPage() {
       ([, records]) => records.length > 0,
     );
     return sort === "newest" ? ordered : ordered.reverse();
-  }, [filteredActivities, sort]);
+  }, [calendarReference, filteredActivities, sort]);
 
   const projects = projectContext?.projects ?? [];
   const activeFilterCount = Number(filter !== "all");

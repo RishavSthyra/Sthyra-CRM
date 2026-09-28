@@ -31,6 +31,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from "react";
@@ -988,6 +989,7 @@ export function InventoryWorkspace() {
   const [status, setStatus] = useState<InventoryStatus | "all">("all");
   const [loading, setLoading] = useState(true);
   const [unitsLoading, setUnitsLoading] = useState(false);
+  const lastLoadedUnitsQueryRef = useRef<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [dialog, setDialog] = useState<InventoryDialogKind | null>(null);
@@ -1055,21 +1057,23 @@ export function InventoryWorkspace() {
 
   const loadUnits = useCallback(async () => {
     if (!selectedProjectId) return;
-    setUnitsLoading(true);
+    const params = new URLSearchParams({
+      project_id: String(selectedProjectId),
+      page: String(page),
+      limit: "25",
+    });
+    if (debouncedSearch) params.set("search", debouncedSearch);
+    if (status !== "all") params.set("status", status);
+    const queryKey = params.toString();
+    setUnitsLoading(lastLoadedUnitsQueryRef.current !== queryKey);
     try {
-      const params = new URLSearchParams({
-        project_id: String(selectedProjectId),
-        page: String(page),
-        limit: "25",
-      });
-      if (debouncedSearch) params.set("search", debouncedSearch);
-      if (status !== "all") params.set("status", status);
       const data = await fetchJson<{
         units: InventoryUnit[];
         pagination: typeof pagination;
       }>(`/api/inventory/units?${params}`);
       setUnits(data.units);
       setPagination(data.pagination);
+      lastLoadedUnitsQueryRef.current = queryKey;
     } catch (loadError) {
       toast.error(
         loadError instanceof Error ? loadError.message : "Unable to load units",

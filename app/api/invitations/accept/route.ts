@@ -15,8 +15,6 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export const runtime = "nodejs";
-
 export async function POST(request: NextRequest) {
   let body: unknown;
   try {

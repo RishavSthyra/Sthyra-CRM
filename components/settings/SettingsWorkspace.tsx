@@ -6,6 +6,7 @@ import {
   isValidElement,
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import Link from "next/link";
@@ -392,6 +393,7 @@ function SettingsSectionIcon({ section }: { section: Section }) {
 
 export function SettingsWorkspace() {
   const router = useRouter();
+  const hasLoadedSettingsRef = useRef(false);
   const searchParams = useSearchParams();
   const requestedSection = searchParams.get("section") as Section | null;
   const [section, setSection] = useState<Section>(
@@ -478,7 +480,7 @@ export function SettingsWorkspace() {
   );
 
   const loadAll = useCallback(async () => {
-    setLoading(true);
+    setLoading(!hasLoadedSettingsRef.current);
     try {
       const [meData, contextData, preferenceData, sessionData] =
         await Promise.all([
@@ -597,6 +599,7 @@ export function SettingsWorkspace() {
         error instanceof Error ? error.message : "Unable to load settings",
       );
     } finally {
+      hasLoadedSettingsRef.current = true;
       setLoading(false);
     }
   }, [api, loadProject]);

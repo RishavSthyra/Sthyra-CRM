@@ -420,10 +420,11 @@ function CalendarEvent({
 export function CalendarWorkspace() {
   const router = useRouter();
   const filterRef = useRef<HTMLDivElement>(null);
+  const lastLoadedAppointmentsQueryRef = useRef<string | null>(null);
   const [context, setContext] = useState<ProjectContext | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [view, setView] = useState<CalendarView>("week");
-  const [cursor, setCursor] = useState(() => new Date());
+  const [cursor, setCursor] = useState(() => new Date(0));
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -442,9 +443,11 @@ export function CalendarWorkspace() {
   const [composerMode, setComposerMode] = useState<
     "create" | "edit" | "reschedule" | null
   >(null);
-  const [draft, setDraft] = useState<AppointmentDraft>(() => blankDraft(""));
+  const [draft, setDraft] = useState<AppointmentDraft>(() =>
+    blankDraft("", new Date(0)),
+  );
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(0);
   const [pendingAction, setPendingAction] = useState<{
     appointment: Appointment;
     action: AppointmentAction;
@@ -466,6 +469,8 @@ export function CalendarWorkspace() {
 
   useEffect(() => {
     const task = window.setTimeout(() => {
+      const currentTime = Date.now();
+      setNow(currentTime);
       const params = new URLSearchParams(window.location.search);
       const requestedView = params.get("view");
       if (["day", "week", "month", "year"].includes(requestedView ?? ""))
@@ -474,6 +479,8 @@ export function CalendarWorkspace() {
       if (requestedDate) {
         const date = new Date(`${requestedDate}T12:00:00`);
         if (!Number.isNaN(date.getTime())) setCursor(date);
+      } else {
+        setCursor(new Date(currentTime));
       }
       const requestedOpportunity = params.get("opportunity_id");
       if (requestedOpportunity) setOpportunityFilter(requestedOpportunity);
@@ -567,16 +574,17 @@ export function CalendarWorkspace() {
 
   const loadAppointments = useCallback(async () => {
     if (!selectedProjectId) return;
-    setLoading(true);
+    const params = new URLSearchParams({
+      limit: "100",
+      from: range.from.toISOString(),
+      to: range.to.toISOString(),
+    });
+    if (selectedProjectId !== "all")
+      params.set("project_id", selectedProjectId);
+    if (opportunityFilter) params.set("opportunity_id", opportunityFilter);
+    const queryKey = params.toString();
+    setLoading(lastLoadedAppointmentsQueryRef.current !== queryKey);
     try {
-      const params = new URLSearchParams({
-        limit: "100",
-        from: range.from.toISOString(),
-        to: range.to.toISOString(),
-      });
-      if (selectedProjectId !== "all")
-        params.set("project_id", selectedProjectId);
-      if (opportunityFilter) params.set("opportunity_id", opportunityFilter);
       const response = await fetchWithSession(
         `/api/appointments?${params.toString()}`,
         {
@@ -590,6 +598,7 @@ export function CalendarWorkspace() {
       if (!response.ok) throw new Error(await getApiError(response));
       const body = (await response.json()) as { appointments?: Appointment[] };
       setAppointments(body.appointments ?? []);
+      lastLoadedAppointmentsQueryRef.current = queryKey;
       setError(null);
     } catch (cause) {
       setError(
@@ -1068,14 +1077,14 @@ export function CalendarWorkspace() {
           ? "This month"
           : "This year";
   const yearOptions = useMemo(() => {
-    const presentYear = new Date().getFullYear();
+    const presentYear = new Date(now).getFullYear();
     return Array.from(
       new Set([
         ...Array.from({ length: 13 }, (_, index) => presentYear - 6 + index),
         cursor.getFullYear(),
       ]),
     ).sort((left, right) => left - right);
-  }, [cursor]);
+  }, [cursor, now]);
 
   return (
     <main className="h-dvh overflow-hidden bg-black text-[#f5f5f5]">
@@ -1362,6 +1371,7 @@ export function CalendarWorkspace() {
                 appointments={visibleAppointments}
                 cursor={cursor}
                 draggingId={draggingId}
+                now={now}
                 onCreate={openCreate}
                 onDrag={setDraggingId}
                 onDrop={dropOnDay}
@@ -1371,6 +1381,7 @@ export function CalendarWorkspace() {
               <YearView
                 appointments={visibleAppointments}
                 cursor={cursor}
+                now={now}
                 onCreate={openCreate}
                 onOpen={setSelected}
               />
@@ -1380,6 +1391,7 @@ export function CalendarWorkspace() {
                 cursor={cursor}
                 days={view === "day" ? 1 : 7}
                 draggingId={draggingId}
+                now={now}
                 onCreate={openCreate}
                 onDrag={setDraggingId}
                 onDrop={dropOnDay}
@@ -1485,6 +1497,7 @@ function MonthView({
   appointments,
   cursor,
   draggingId,
+  now,
   onCreate,
   onDrag,
   onDrop,
@@ -1493,6 +1506,7 @@ function MonthView({
   appointments: Appointment[];
   cursor: Date;
   draggingId: string | null;
+  now: number;
   onCreate: (date: Date) => void;
   onDrag: (id: string | null) => void;
   onDrop: (event: DragEvent, date: Date) => void;
@@ -1525,7 +1539,7 @@ function MonthView({
         <div className="grid grid-cols-7">
           {days.map((day) => {
             const records = byDay.get(toDateKey(day)) ?? [];
-            const today = sameDay(day, new Date());
+            const today = sameDay(day, new Date(now));
             const outside = day.getMonth() !== cursor.getMonth();
             return (
               <div
@@ -1596,11 +1610,13 @@ function MonthView({
 function YearView({
   appointments,
   cursor,
+  now,
   onCreate,
   onOpen,
 }: {
   appointments: Appointment[];
   cursor: Date;
+  now: number;
   onCreate: (date: Date) => void;
   onOpen: (appointment: Appointment) => void;
 }) {
@@ -1649,7 +1665,7 @@ function YearView({
                 {days.map((day) => {
                   const records = byDay.get(toDateKey(day)) ?? [];
                   const inMonth = day.getMonth() === month.getMonth();
-                  const today = inMonth && sameDay(day, new Date());
+                  const today = inMonth && sameDay(day, new Date(now));
                   return (
                     <button
                       aria-label={`${formatDate(day)}${records.length ? `, ${records.length} appointment${records.length === 1 ? "" : "s"}` : ""}`}
@@ -1700,6 +1716,7 @@ function TimeGrid({
   cursor,
   days,
   draggingId,
+  now,
   onCreate,
   onDrag,
   onDrop,
@@ -1709,6 +1726,7 @@ function TimeGrid({
   cursor: Date;
   days: 1 | 7;
   draggingId: string | null;
+  now: number;
   onCreate: (date: Date) => void;
   onDrag: (id: string | null) => void;
   onDrop: (event: DragEvent, date: Date, hour?: number) => void;
@@ -1718,9 +1736,10 @@ function TimeGrid({
   const dates = Array.from({ length: days }, (_, index) =>
     addDays(first, index),
   );
-  const now = new Date();
+  const currentTime = new Date(now);
   const nowTop =
-    ((now.getHours() * 60 + now.getMinutes() - START_HOUR * 60) / 60) *
+    ((currentTime.getHours() * 60 + currentTime.getMinutes() - START_HOUR * 60) /
+      60) *
     HOUR_HEIGHT;
   return (
     <div className="min-h-0 flex-1 overflow-auto [scrollbar-width:thin] [scrollbar-color:#303432_transparent]">
@@ -1733,7 +1752,7 @@ function TimeGrid({
         >
           <div className="border-r border-white/[0.07]" />
           {dates.map((date) => {
-            const today = sameDay(date, now);
+            const today = sameDay(date, currentTime);
             return (
               <div
                 className="border-r border-white/[0.07] px-2 py-2 text-center"
@@ -1820,7 +1839,7 @@ function TimeGrid({
                     </div>
                   );
                 })}
-                {sameDay(date, now) &&
+                {sameDay(date, currentTime) &&
                   nowTop >= 0 &&
                   nowTop <= HOURS.length * HOUR_HEIGHT && (
                     <div

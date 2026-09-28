@@ -11,8 +11,6 @@ import { encryptEmailToken } from "@/lib/email/tokenEncryption";
 import { readSignedState } from "@/lib/oauthState";
 import { getUserProjectAccess } from "@/lib/projectAccess";
 
-export const runtime = "nodejs";
-
 const STATE_COOKIE = "sthyra_mailbox_oauth_state";
 type MailboxState = {
   purpose: "mailbox-oauth";

@@ -1,15 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
+import { connection, NextRequest, NextResponse } from "next/server";
 import { createPkcePair, getAuthorizationUrl, providerRedirectUri } from "@/lib/email/oauthProviders";
 import { createSignedState } from "@/lib/oauthState";
 import { getAppUrl } from "@/lib/appUrl";
 import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export const runtime = "nodejs";
-
 const STATE_COOKIE = "sthyra_google_auth_state";
 
 export async function GET(request: NextRequest) {
+  await connection();
   try {
     if (isSupabaseAuthConfigured()) {
       const supabase = await createSupabaseServerClient();

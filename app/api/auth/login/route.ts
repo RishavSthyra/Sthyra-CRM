@@ -12,8 +12,6 @@ import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { linkExistingCrmIdentity } from "@/lib/supabase/workspaceProvisioning";
 
-export const runtime = "nodejs";
-
 export async function POST(request: NextRequest) {
   let body: unknown;
   try {
