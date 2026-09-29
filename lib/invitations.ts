@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import { createOpaqueToken, hashToken } from "@/lib/auth";
+import { getSmtpConfig } from "@/lib/smtp";
 
 export const INVITATION_LIFETIME_DAYS = 7;
 
@@ -39,31 +40,20 @@ function escapeHtml(value: string) {
 }
 
 export async function sendInvitationEmail(data: InvitationEmailData) {
-  const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT || 587);
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASSWORD;
-  const from = process.env.SMTP_FROM;
-  if (
-    !host ||
-    !user ||
-    !pass ||
-    !from ||
-    !Number.isInteger(port) ||
-    port < 1 ||
-    port > 65_535
-  ) {
+  const smtp = getSmtpConfig();
+  if (!smtp) {
     return {
       sent: false as const,
-      error: "SMTP is not configured. Add SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD and SMTP_FROM.",
+      error:
+        "SMTP is not configured. Add the SMTP variables or EMAIL_USER and GOOGLE_APP_PASSWORD.",
     };
   }
 
   const transporter = nodemailer.createTransport({
-    host,
-    port,
-    secure: process.env.SMTP_SECURE === "true" || port === 465,
-    auth: { user, pass },
+    host: smtp.host,
+    port: smtp.port,
+    secure: smtp.secure,
+    auth: { user: smtp.user, pass: smtp.pass },
   });
   const company = escapeHtml(data.companyName);
   const role = escapeHtml(data.roleName);
@@ -80,7 +70,7 @@ export async function sendInvitationEmail(data: InvitationEmailData) {
 
   try {
     await transporter.sendMail({
-      from,
+      from: smtp.from,
       to: data.email,
       subject: `Join ${data.companyName} on Sthyra CRM`,
       text: `${data.inviterName || "A workspace administrator"} invited you to join ${data.companyName} as ${data.roleName} in ${data.teamName}. Accept before ${expiry}: ${data.invitationUrl}`,

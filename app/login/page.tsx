@@ -53,6 +53,20 @@ export default function LoginPage() {
         }),
       });
       if (!response.ok) {
+        const details = (await response
+          .clone()
+          .json()
+          .catch(() => ({}))) as {
+          requires_email_confirmation?: boolean;
+          email?: string;
+        };
+        if (details.requires_email_confirmation && details.email) {
+          toast("Enter the verification code sent to your email.");
+          router.replace(
+            `/verify-email?email=${encodeURIComponent(details.email)}`,
+          );
+          return;
+        }
         const message = await getApiError(response);
         setError(message);
         toast.error(message);

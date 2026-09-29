@@ -60,7 +60,12 @@ export function InvitationOnboarding({ token }: { token: string }) {
         setForm((current) => ({ ...current, username: suggested }));
       })
       .catch((cause: unknown) => {
-        if (active) setError(cause instanceof Error ? cause.message : "Unable to validate invitation");
+        if (active)
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : "Unable to validate invitation",
+          );
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -105,11 +110,30 @@ export function InvitationOnboarding({ token }: { token: string }) {
         }),
       });
       if (!response.ok) throw new Error(await getApiError(response));
+      const result = (await response.json()) as {
+        requires_email_confirmation?: boolean;
+        email?: string;
+        otp_length?: number;
+      };
+      if (result.requires_email_confirmation) {
+        toast.success("Account created. Enter the code sent to your email.");
+        const otpLength =
+          Number.isInteger(result.otp_length) &&
+          Number(result.otp_length) >= 6 &&
+          Number(result.otp_length) <= 10
+            ? Number(result.otp_length)
+            : 8;
+        router.replace(
+          `/verify-email?email=${encodeURIComponent(result.email ?? invitation?.email ?? "")}&length=${otpLength}`,
+        );
+        return;
+      }
       toast.success("Welcome to your workspace.");
       router.replace("/dashboard");
       router.refresh();
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : "Unable to accept invitation";
+      const message =
+        cause instanceof Error ? cause.message : "Unable to accept invitation";
       setError(message);
       toast.error(message);
     } finally {
@@ -120,20 +144,28 @@ export function InvitationOnboarding({ token }: { token: string }) {
   return (
     <AuthShell
       activeStep={1}
-      title={invitation ? `Join ${invitation.company_name}` : "Workspace invitation"}
+      title={
+        invitation ? `Join ${invitation.company_name}` : "Workspace invitation"
+      }
       description="Create your profile to securely activate your workspace access."
       stepLabels={["Review your invitation", "Enter your workspace"]}
     >
       {loading && (
         <div className="flex min-h-52 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.025]">
-          <LoaderCircle className="size-6 animate-spin text-[#58bc99]" aria-label="Validating invitation" />
+          <LoaderCircle
+            className="size-6 animate-spin text-[#58bc99]"
+            aria-label="Validating invitation"
+          />
         </div>
       )}
       {!loading && !invitation && (
         <div className="rounded-2xl border border-red-400/20 bg-red-400/[0.06] p-6">
           <h2 className="text-lg font-medium">This link cannot be used</h2>
           <p className="mt-2 text-sm leading-6 text-white/60">{error}</p>
-          <Link className="mt-5 inline-flex rounded-lg bg-[#236f5a] px-4 py-2.5 text-sm font-medium hover:bg-[#2a8068]" href="/login">
+          <Link
+            className="mt-5 inline-flex rounded-lg bg-[#236f5a] px-4 py-2.5 text-sm font-medium hover:bg-[#2a8068]"
+            href="/login"
+          >
             Go to login
           </Link>
         </div>
@@ -148,29 +180,107 @@ export function InvitationOnboarding({ token }: { token: string }) {
             ].map(([Icon, label, value], index) => {
               const ItemIcon = Icon as typeof Building2;
               return (
-                <div className={`p-4 ${index ? "border-l border-white/10 max-[520px]:border-t max-[520px]:border-l-0" : ""}`} key={String(label)}>
-                  <ItemIcon className="mb-3 size-4 text-[#58bc99]" strokeWidth={1.8} />
-                  <span className="block text-[11px] text-white/40">{String(label)}</span>
-                  <strong className="mt-1 block truncate text-sm font-medium text-white/85">{String(value)}</strong>
+                <div
+                  className={`p-4 ${index ? "border-l border-white/10 max-[520px]:border-t max-[520px]:border-l-0" : ""}`}
+                  key={String(label)}
+                >
+                  <ItemIcon
+                    className="mb-3 size-4 text-[#58bc99]"
+                    strokeWidth={1.8}
+                  />
+                  <span className="block text-[11px] text-white/40">
+                    {String(label)}
+                  </span>
+                  <strong className="mt-1 block truncate text-sm font-medium text-white/85">
+                    {String(value)}
+                  </strong>
                 </div>
               );
             })}
           </div>
-          <form className="grid grid-cols-2 gap-3.5 max-[520px]:grid-cols-1" noValidate onSubmit={accept}>
-            <AuthField id="first_name" label="First name" required maxLength={200} value={form.first_name} onChange={(e) => update("first_name", e.target.value)} />
-            <AuthField id="last_name" label="Last name" maxLength={200} value={form.last_name} onChange={(e) => update("last_name", e.target.value)} />
-            <AuthField className="col-span-2 max-[520px]:col-span-1" id="email" label="Email" readOnly value={invitation.email} />
-            <AuthField id="username" label="Username" required minLength={3} maxLength={200} pattern="[A-Za-z0-9._-]+" value={form.username} onChange={(e) => update("username", e.target.value)} />
-            <AuthField id="phone" label="Phone (optional)" inputMode="tel" maxLength={20} placeholder="+919876543210" value={form.phone} onChange={(e) => update("phone", e.target.value)} />
-            <PasswordField id="password" label="Password" required minLength={12} maxLength={128} autoComplete="new-password" value={form.password} onChange={(e) => update("password", e.target.value)} />
-            <PasswordField id="confirm_password" label="Confirm password" required minLength={12} maxLength={128} autoComplete="new-password" value={form.confirm_password} onChange={(e) => update("confirm_password", e.target.value)} />
-            {error && <div className="col-span-2 max-[520px]:col-span-1"><FormMessage>{error}</FormMessage></div>}
+          <form
+            className="grid grid-cols-2 gap-3.5 max-[520px]:grid-cols-1"
+            noValidate
+            onSubmit={accept}
+          >
+            <AuthField
+              id="first_name"
+              label="First name"
+              required
+              maxLength={200}
+              value={form.first_name}
+              onChange={(e) => update("first_name", e.target.value)}
+            />
+            <AuthField
+              id="last_name"
+              label="Last name"
+              maxLength={200}
+              value={form.last_name}
+              onChange={(e) => update("last_name", e.target.value)}
+            />
+            <AuthField
+              className="col-span-2 max-[520px]:col-span-1"
+              id="email"
+              label="Email"
+              readOnly
+              value={invitation.email}
+            />
+            <AuthField
+              id="username"
+              label="Username"
+              required
+              minLength={3}
+              maxLength={200}
+              pattern="[A-Za-z0-9._-]+"
+              value={form.username}
+              onChange={(e) => update("username", e.target.value)}
+            />
+            <AuthField
+              id="phone"
+              label="Phone (optional)"
+              inputMode="tel"
+              maxLength={20}
+              placeholder="+919876543210"
+              value={form.phone}
+              onChange={(e) => update("phone", e.target.value)}
+            />
+            <PasswordField
+              id="password"
+              label="Password"
+              required
+              minLength={12}
+              maxLength={128}
+              autoComplete="new-password"
+              showRequirements
+              value={form.password}
+              onChange={(e) => update("password", e.target.value)}
+            />
+            <PasswordField
+              id="confirm_password"
+              label="Confirm password"
+              required
+              minLength={12}
+              maxLength={128}
+              autoComplete="new-password"
+              value={form.confirm_password}
+              onChange={(e) => update("confirm_password", e.target.value)}
+            />
+            {error && (
+              <div className="col-span-2 max-[520px]:col-span-1">
+                <FormMessage>{error}</FormMessage>
+              </div>
+            )}
             <div className="col-span-2 mt-1 max-[520px]:col-span-1">
               <SubmitButton pending={pending}>Accept invitation</SubmitButton>
             </div>
           </form>
           <p className="mt-4 text-center text-xs text-white/40">
-            This link expires {new Date(invitation.expires_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}.
+            This link expires{" "}
+            {new Date(invitation.expires_at).toLocaleString("en-IN", {
+              dateStyle: "medium",
+              timeStyle: "short",
+            })}
+            .
           </p>
         </>
       )}

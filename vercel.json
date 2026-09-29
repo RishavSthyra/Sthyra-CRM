@@ -9,6 +9,10 @@
     {
       "path": "/api/inventory/maintenance/expire",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/marketing/conversion-jobs/process",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

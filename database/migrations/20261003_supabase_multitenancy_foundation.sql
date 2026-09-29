@@ -397,6 +397,7 @@ CREATE OR REPLACE FUNCTION private.is_trusted_app_request()
 RETURNS BOOLEAN
 LANGUAGE sql
 STABLE
+SECURITY DEFINER
 SET search_path = auth, pg_temp
 AS $$
   SELECT COALESCE((SELECT auth.jwt() ->> 'app_server') = 'true', FALSE)
@@ -685,7 +686,9 @@ BEGIN
       ('inventory_units', 'private.is_company_member(company_id) AND private.can_access_project(project_id)'),
       ('notification_templates', 'private.is_company_member(company_id) AND (project_id IS NULL OR private.can_access_project(project_id))'),
       ('notifications', 'private.is_company_member(company_id) AND private.can_access_user(user_id)'),
+      ('notes', 'private.is_company_member(company_id) AND private.can_access_project(project_id)'),
       ('opportunities', 'private.is_company_member(company_id) AND private.can_access_project(project_id)'),
+      ('project_inventory_nodes', 'private.is_company_member(company_id) AND private.can_access_project(project_id)'),
       ('queues', 'private.is_company_member(company_id) AND (project_id IS NULL OR private.can_access_project(project_id))'),
       ('routing_rules', 'private.is_company_member(company_id) AND (project_id IS NULL OR private.can_access_project(project_id))'),
       ('site_visit_availability_rules', 'private.is_company_member(company_id) AND private.can_access_project(project_id)'),

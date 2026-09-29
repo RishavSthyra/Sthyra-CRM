@@ -8,12 +8,14 @@ import {
   setAuthCookies,
 } from "@/lib/auth";
 import { validateSignupPayload } from "@/lib/authValidation";
+import {
+  AuthEmailConfigurationError,
+  sendSignupVerificationCode,
+} from "@/lib/authVerificationEmail";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { provisionWorkspaceForAuthUser } from "@/lib/supabase/workspaceProvisioning";
 import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
-import { getAppUrl } from "@/lib/appUrl";
 
 function createUsername(email: string): string {
   const localPart = email.split("@")[0].replace(/[^a-zA-Z0-9._-]/g, "");
@@ -56,8 +58,9 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const supabase = await createSupabaseServerClient();
-      const { data, error } = await supabase.auth.signUp({
+      const admin = createSupabaseAdminClient();
+      const { data, error } = await admin.auth.admin.generateLink({
+        type: "signup",
         email: signup.email,
         password: signup.password,
         options: {
@@ -65,13 +68,9 @@ export async function POST(request: NextRequest) {
             first_name: signup.first_name,
             last_name: signup.last_name,
           },
-          emailRedirectTo: new URL(
-            "/api/auth/callback?next=/dashboard",
-            getAppUrl(request),
-          ).toString(),
         },
       });
-      if (error || !data.user || data.user.identities?.length === 0) {
+      if (error || !data.user || !data.properties?.email_otp) {
         return NextResponse.json(
           { error: "Unable to create this authentication account" },
           { status: error?.status === 422 ? 422 : 409 },
@@ -79,22 +78,25 @@ export async function POST(request: NextRequest) {
       }
 
       try {
+        await sendSignupVerificationCode({
+          email: signup.email,
+          code: data.properties.email_otp,
+        });
         const workspace = await provisionWorkspaceForAuthUser(
           data.user.id,
           signup,
         );
         return NextResponse.json(
           {
-            message: data.session
-              ? "Account created successfully"
-              : "Account created. Check your email to confirm your address.",
-            requires_email_confirmation: !data.session,
+            message: "Account created. Enter the code sent to your email.",
+            requires_email_confirmation: true,
+            otp_length: data.properties.email_otp.length,
             ...workspace,
           },
           { status: 201 },
         );
       } catch (error) {
-        await createSupabaseAdminClient().auth.admin.deleteUser(data.user.id);
+        await admin.auth.admin.deleteUser(data.user.id);
         throw error;
       }
     } catch (error) {
@@ -112,8 +114,19 @@ export async function POST(request: NextRequest) {
         );
       }
       console.error("Failed to sign up with Supabase", error);
+      if (error instanceof AuthEmailConfigurationError) {
+        return NextResponse.json(
+          { error: "Signup email is not configured on the server" },
+          { status: 503 },
+        );
+      }
       return NextResponse.json(
-        { error: "Unable to create account" },
+        {
+          error:
+            error instanceof Error && /email|smtp/i.test(error.message)
+              ? "Unable to send the verification code"
+              : "Unable to create account",
+        },
         { status: 500 },
       );
     }

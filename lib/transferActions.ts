@@ -319,9 +319,9 @@ export async function handleTransferAction(
                 ? "rejected_at"
                 : "expired_at";
     const updated = await client.query(
-      `UPDATE transfers SET status=$1, ${timeColumn}=CURRENT_TIMESTAMP,
-       decided_by=CASE WHEN $1 IN ('accepted','rejected','force_assigned') THEN $2 ELSE decided_by END,
-       rejection_reason=CASE WHEN $1='rejected' THEN $3 ELSE rejection_reason END,
+      `UPDATE transfers SET status=$1::varchar, ${timeColumn}=CURRENT_TIMESTAMP,
+       decided_by=CASE WHEN $1::varchar IN ('accepted','rejected','force_assigned') THEN $2 ELSE decided_by END,
+       rejection_reason=CASE WHEN $1::varchar='rejected' THEN $3 ELSE rejection_reason END,
        updated_at=CURRENT_TIMESTAMP WHERE transfer_id=$4 RETURNING *`,
       [targetStatus, scope.context.userId, reason ?? null, transferId],
     );

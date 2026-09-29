@@ -63,19 +63,30 @@ export default function SignupPage() {
       cache: "no-store",
     })
       .then((response) => response.json())
-      .then((payload: { pending?: { email: string; first_name: string; last_name: string } | null }) => {
-        if (!active || !payload.pending) return;
-        setGoogleSignup(true);
-        setData((current) => ({
-          ...current,
-          email: payload.pending?.email ?? current.email,
-          first_name: payload.pending?.first_name ?? current.first_name,
-          last_name: payload.pending?.last_name ?? current.last_name,
-          company_contact_email: current.company_contact_email || payload.pending?.email || "",
-        }));
-      })
+      .then(
+        (payload: {
+          pending?: {
+            email: string;
+            first_name: string;
+            last_name: string;
+          } | null;
+        }) => {
+          if (!active || !payload.pending) return;
+          setGoogleSignup(true);
+          setData((current) => ({
+            ...current,
+            email: payload.pending?.email ?? current.email,
+            first_name: payload.pending?.first_name ?? current.first_name,
+            last_name: payload.pending?.last_name ?? current.last_name,
+            company_contact_email:
+              current.company_contact_email || payload.pending?.email || "",
+          }));
+        },
+      )
       .catch(() => undefined);
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, []);
 
   function update(field: keyof SignupData, value: string) {
@@ -142,19 +153,16 @@ export default function SignupPage() {
     };
     try {
       const response = await fetch(
-        googleSignup
-          ? "/api/auth/google/complete-signup"
-          : "/api/auth/signup",
+        googleSignup ? "/api/auth/google/complete-signup" : "/api/auth/signup",
         {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          googleSignup
-            ? { ...payload, password: undefined }
-            : payload,
-        ),
-      });
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            googleSignup ? { ...payload, password: undefined } : payload,
+          ),
+        },
+      );
       if (!response.ok) {
         const message = await getApiError(response);
         setError(message);
@@ -163,10 +171,19 @@ export default function SignupPage() {
       }
       const result = (await response.json()) as {
         requires_email_confirmation?: boolean;
+        otp_length?: number;
       };
       if (result.requires_email_confirmation) {
-        toast.success("Workspace created. Check your email to confirm your account.");
-        router.replace("/login?confirmation=pending");
+        toast.success("Workspace created. Enter the code sent to your email.");
+        const otpLength =
+          Number.isInteger(result.otp_length) &&
+          Number(result.otp_length) >= 6 &&
+          Number(result.otp_length) <= 10
+            ? Number(result.otp_length)
+            : 8;
+        router.replace(
+          `/verify-email?email=${encodeURIComponent(data.email.trim().toLowerCase())}&length=${otpLength}`,
+        );
         return;
       }
       toast.success("Your workspace is ready.");
@@ -206,11 +223,11 @@ export default function SignupPage() {
           <SocialButtons mode="signup" />
           <OrDivider />
           <form
-            className="flex flex-col gap-3.5"
+            className="flex flex-col gap-2.5"
             noValidate
             onSubmit={continueFromAccount}
           >
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-2.5 sm:grid-cols-2">
               <AuthField
                 autoComplete="given-name"
                 id="first-name"
@@ -269,13 +286,14 @@ export default function SignupPage() {
             )}
             {googleSignup && (
               <FormMessage tone="success">
-                Google verified {data.email}. Finish your company details—no password is required.
+                Google verified {data.email}. Finish your company details—no
+                password is required.
               </FormMessage>
             )}
             {error && <FormMessage>{error}</FormMessage>}
             <SubmitButton>Next</SubmitButton>
           </form>
-          <p className="mt-3 text-center text-sm text-white/80">
+          <p className="mt-2.5 text-center text-xs text-white/80">
             Have an account?{" "}
             <Link className="text-[#06aa81] hover:text-[#63d4b6]" href="/login">
               Login

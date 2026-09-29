@@ -95,12 +95,12 @@ export async function changeTaskState(
           ? "cancelled"
           : "open";
     const result = await client.query(
-      `UPDATE tasks SET status=$2, updated_by=$3, updated_at=CURRENT_TIMESTAMP,
-       completed_at=CASE WHEN $2='completed' THEN CURRENT_TIMESTAMP ELSE NULL END,
-       completed_by=CASE WHEN $2='completed' THEN $3::uuid ELSE NULL END,
-       cancelled_at=CASE WHEN $2='cancelled' THEN CURRENT_TIMESTAMP ELSE NULL END,
-       cancelled_by=CASE WHEN $2='cancelled' THEN $3::uuid ELSE NULL END,
-       cancellation_reason=CASE WHEN $2='cancelled' THEN $4 ELSE NULL END
+      `UPDATE tasks SET status=$2::varchar, updated_by=$3, updated_at=CURRENT_TIMESTAMP,
+       completed_at=CASE WHEN $2::varchar='completed' THEN CURRENT_TIMESTAMP ELSE NULL END,
+       completed_by=CASE WHEN $2::varchar='completed' THEN $3::uuid ELSE NULL END,
+       cancelled_at=CASE WHEN $2::varchar='cancelled' THEN CURRENT_TIMESTAMP ELSE NULL END,
+       cancelled_by=CASE WHEN $2::varchar='cancelled' THEN $3::uuid ELSE NULL END,
+       cancellation_reason=CASE WHEN $2::varchar='cancelled' THEN $4 ELSE NULL END
        WHERE task_id=$1 RETURNING *`,
       [taskId, status, scope.context.userId, reason ?? null],
     );

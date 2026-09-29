@@ -12,6 +12,7 @@ import {
 } from "@/lib/operationsAccess";
 import { isObject } from "@/utils/isObject";
 import { validateText } from "@/utils/validateText";
+import { queueMarketingConversion } from "@/lib/marketing";
 
 async function jsonObject(
   request: NextRequest,
@@ -273,6 +274,20 @@ export async function closeOpportunity(
         opportunityId,
       ],
     );
+    if (outcome === "won") {
+      await queueMarketingConversion(client, {
+        companyId: Number(opportunity.company_id),
+        projectId: Number(opportunity.project_id),
+        eventName: "opportunity_won",
+        transactionId: `opportunity-won:${opportunityId}`,
+        leadId: (opportunity.lead_id as string | null) ?? null,
+        opportunityId,
+        value:
+          amount ??
+          (opportunity.amount === null ? null : Number(opportunity.amount)),
+        currency: "INR",
+      });
+    }
     await client.query("COMMIT");
     return NextResponse.json({
       message: `Opportunity closed as ${outcome}`,

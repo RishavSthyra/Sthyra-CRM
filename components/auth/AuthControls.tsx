@@ -4,13 +4,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { FocusEventHandler, InputHTMLAttributes, ReactNode } from "react";
 import { useState } from "react";
-import {
-  ArrowRight,
-  Check,
-  ChevronDown,
-  Eye,
-  EyeOff,
-} from "lucide-react";
+import { ArrowRight, Check, ChevronDown, Eye, EyeOff } from "lucide-react";
 import { getPasswordRequirements } from "@/utils/validatePassword";
 
 type FieldProps = InputHTMLAttributes<HTMLInputElement> & {
@@ -88,26 +82,32 @@ export function PasswordField({
             <Eye aria-hidden className="size-5" strokeWidth={1.8} />
           )}
         </button>
-        {showRequirements && (
-          <span
-            aria-hidden={!focused}
-            className={`absolute top-[calc(100%+8px)] right-0 left-0 z-40 overflow-hidden rounded-xl border bg-[#101311]/[0.98] shadow-[0_18px_55px_rgba(0,0,0,0.58)] backdrop-blur-xl transition-all duration-200 ease-out ${
-              focused
-                ? "visible translate-y-0 border-white/[0.13] opacity-100"
-                : "invisible -translate-y-1 border-transparent opacity-0"
-            }`}
-            id={requirementsId}
-          >
-            <span className="grid gap-2.5 px-4 py-3.5 sm:grid-cols-2">
+      </span>
+      {showRequirements && (
+        <span
+          aria-hidden={!focused}
+          className={`grid transition-[grid-template-rows,opacity,margin] duration-200 ease-out ${
+            focused
+              ? "grid-rows-[1fr] opacity-100"
+              : "-mt-1.5 grid-rows-[0fr] opacity-0"
+          }`}
+          id={requirementsId}
+        >
+          <span className="min-h-0 overflow-hidden">
+            <span
+              className={`grid gap-1 transition-transform duration-200 ease-out ${
+                focused ? "translate-y-0" : "-translate-y-1"
+              }`}
+            >
               {requirements.map((requirement) => (
                 <span
-                  className={`flex min-w-0 items-center gap-2 text-[11px] leading-4 transition-colors duration-200 ${
+                  className={`flex min-w-0 items-center gap-2 text-[11px] leading-[15px] transition-colors duration-200 ${
                     requirement.met ? "text-[#83dec4]" : "text-[#929a96]"
                   }`}
                   key={requirement.key}
                 >
                   <span
-                    className={`grid size-4 shrink-0 place-items-center rounded-full border transition-all duration-200 ${
+                    className={`grid size-3.5 shrink-0 place-items-center rounded-full border transition-all duration-200 ${
                       requirement.met
                         ? "border-[#4cc7a4] bg-[#4cc7a4] text-[#07110e]"
                         : "border-white/35 bg-transparent text-transparent"
@@ -122,8 +122,8 @@ export function PasswordField({
               ))}
             </span>
           </span>
-        )}
-      </span>
+        </span>
+      )}
     </label>
   );
 }
@@ -192,7 +192,11 @@ export function SubmitButton({
   );
 }
 
-export function SocialButtons({ mode = "login" }: { mode?: "login" | "signup" }) {
+export function SocialButtons({
+  mode = "login",
+}: {
+  mode?: "login" | "signup";
+}) {
   const router = useRouter();
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

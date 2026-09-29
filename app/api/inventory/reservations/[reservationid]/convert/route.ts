@@ -14,6 +14,7 @@ import {
   resolveNotificationRecipients,
 } from "@/lib/notifications";
 import { advanceOpportunityToStage } from "@/lib/opportunities";
+import { queueMarketingConversion } from "@/lib/marketing";
 type Context = { params: Promise<{ reservationid: string }> };
 export async function POST(request: NextRequest, context: Context) {
   const scope = await requireOperationsContext(request);
@@ -83,7 +84,8 @@ export async function POST(request: NextRequest, context: Context) {
       },
     });
     const opportunity = await client.query(
-      `SELECT current_owner_user_id, current_team_id, opportunity_name
+      `SELECT current_owner_user_id, current_team_id, opportunity_name, lead_id,
+              amount
        FROM opportunities WHERE opportunity_id=$1`,
       [reservation.opportunity_id],
     );
@@ -94,6 +96,18 @@ export async function POST(request: NextRequest, context: Context) {
       "inventory_booked",
       scope.context.userId,
     );
+    await queueMarketingConversion(client, {
+      companyId: Number(reservation.company_id),
+      projectId: Number(reservation.project_id),
+      eventName: "booking_confirmed",
+      transactionId: `booking-confirmed:${id}`,
+      leadId: opportunity.rows[0]?.lead_id ?? null,
+      opportunityId: reservation.opportunity_id,
+      value: opportunity.rows[0]?.amount === null
+        ? null
+        : Number(opportunity.rows[0]?.amount),
+      currency: reservation.currency ?? null,
+    });
     const recipients = await resolveNotificationRecipients(client, {
       companyId: Number(reservation.company_id),
       userIds: [

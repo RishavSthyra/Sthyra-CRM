@@ -1053,7 +1053,7 @@ export default function LeadsPage() {
           </header>
           <div
             aria-busy={loading}
-            className={`relative overflow-x-auto overflow-y-visible [&_table]:w-full [&_table]:min-w-[920px] [&_table]:border-collapse [&_table]:transition-all [&_th]:h-10 [&_th]:bg-[#080808] [&_th]:px-3 [&_th]:text-left [&_th]:text-[11px] [&_th]:font-medium [&_th]:text-[#8a8d93] [&_th:first-child]:pl-[17px] [&_td]:h-[72px] [&_td]:whitespace-nowrap [&_td]:border-t [&_td]:border-[#2c2c2c] [&_td]:px-3 [&_td]:text-xs [&_td]:text-[#b4b4b4] [&_td:first-child]:flex [&_td:first-child]:items-center [&_td:first-child]:gap-3 [&_td:first-child]:pl-[17px] ${loading && data.leads.length ? "[&_table]:translate-y-0.5 [&_table]:opacity-45" : ""}`}
+            className={`relative overflow-x-auto [&_table]:w-full [&_table]:min-w-[920px] [&_table]:border-collapse [&_table]:transition-opacity [&_th]:h-10 [&_th]:bg-[#080808] [&_th]:px-3 [&_th]:text-left [&_th]:text-[11px] [&_th]:font-medium [&_th]:text-[#8a8d93] [&_th:first-child]:pl-[17px] [&_td]:h-[72px] [&_td]:whitespace-nowrap [&_td]:border-t [&_td]:border-[#2c2c2c] [&_td]:px-3 [&_td]:text-xs [&_td]:text-[#b4b4b4] [&_td:first-child]:flex [&_td:first-child]:items-center [&_td:first-child]:gap-3 [&_td:first-child]:pl-[17px] ${loading && data.leads.length ? "overflow-y-hidden [&_table]:opacity-45" : "overflow-y-visible"}`}
           >
             <table>
               <thead>
@@ -1240,7 +1240,7 @@ export default function LeadsPage() {
             </span>
             <div>
               <button
-                disabled={page <= 1}
+                disabled={loading || page <= 1}
                 onClick={() => setPage((value) => value - 1)}
                 type="button"
               >
@@ -1254,9 +1254,10 @@ export default function LeadsPage() {
               </span>
               <button
                 disabled={
-                  data.pagination?.totalPages
+                  loading ||
+                  (data.pagination?.totalPages
                     ? page >= data.pagination.totalPages
-                    : data.leads.length < 10
+                    : data.leads.length < 10)
                 }
                 onClick={() => setPage((value) => value + 1)}
                 type="button"

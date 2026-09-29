@@ -11,6 +11,7 @@ import {
   canAccessOperationsEntity,
   requireOperationsContext,
 } from "@/lib/operationsAccess";
+import { queueMarketingConversion } from "@/lib/marketing";
 import { isObject } from "@/utils/isObject";
 
 type Context = { params: Promise<{ leadid: string }> };
@@ -166,6 +167,14 @@ export async function POST(request: NextRequest, context: Context) {
         opportunity.stage_key,
       ],
     );
+    await queueMarketingConversion(client, {
+      companyId: Number(project.rows[0].company_id),
+      projectId: Number(lead.project_id),
+      eventName: "lead_qualified",
+      transactionId: `lead-qualified:${leadId}`,
+      leadId,
+      opportunityId: String(opportunity.opportunity_id),
+    });
     await client.query("COMMIT");
     return NextResponse.json({
       message: "Lead qualified and opportunity created",

@@ -17,6 +17,7 @@ import {
 } from "@/lib/siteVisits";
 import { isObject } from "@/utils/isObject";
 import { validateText } from "@/utils/validateText";
+import { queueMarketingConversion } from "@/lib/marketing";
 
 type SiteVisitAction =
   "confirm" | "check-in" | "complete" | "no-show" | "cancel";
@@ -238,7 +239,7 @@ export async function changeSiteVisitState(
         "UPDATE site_visit_participants SET attendance_status='absent', updated_at=CURRENT_TIMESTAMP WHERE visit_id=$1 AND attendance_status IN ('expected','confirmed')",
         [visitId],
       );
-    if (nextStatus === "completed")
+    if (nextStatus === "completed") {
       await advanceOpportunityToStage(
         client,
         {
@@ -249,6 +250,15 @@ export async function changeSiteVisitState(
         "site_visit_completed",
         scope.context.userId,
       );
+      await queueMarketingConversion(client, {
+        companyId: Number(visit.company_id),
+        projectId: Number(visit.project_id),
+        eventName: "site_visit_completed",
+        transactionId: `site-visit-completed:${visitId}`,
+        leadId: (visit.lead_id as string | null) ?? null,
+        opportunityId: (visit.opportunity_id as string | null) ?? null,
+      });
+    }
     await addSiteVisitHistory(
       client,
       visitId,

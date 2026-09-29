@@ -43,9 +43,13 @@ export async function POST(request: NextRequest) {
         [identifier],
       );
       const legacyUser = legacyResult.rows[0];
-      const email = typeof legacyUser?.email === "string" ? legacyUser.email : identifier;
+      const email =
+        typeof legacyUser?.email === "string" ? legacyUser.email : identifier;
       const supabase = await createSupabaseServerClient();
-      let authResult = await supabase.auth.signInWithPassword({ email, password });
+      let authResult = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
       if (
         authResult.error &&
@@ -78,9 +82,22 @@ export async function POST(request: NextRequest) {
         }
 
         await linkExistingCrmIdentity(authUserId, email);
-        authResult = await supabase.auth.signInWithPassword({ email, password });
+        authResult = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
       }
 
+      if (authResult.error?.code === "email_not_confirmed") {
+        return NextResponse.json(
+          {
+            error: "Verify your email before logging in",
+            requires_email_confirmation: true,
+            email,
+          },
+          { status: 403 },
+        );
+      }
       if (authResult.error || !authResult.data.user) {
         return NextResponse.json(
           { error: "Invalid username/email or password" },

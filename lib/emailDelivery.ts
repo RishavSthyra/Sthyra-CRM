@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import type { EmailAttachmentInput } from "@/lib/communications";
+import { getSmtpConfig } from "@/lib/smtp";
 
 function plainText(value: string) {
   return value
@@ -22,32 +23,20 @@ export async function deliverCrmEmail(data: {
   body: string;
   attachments: EmailAttachmentInput[];
 }) {
-  const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT || 587);
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASSWORD;
-  const configuredFrom = process.env.SMTP_FROM;
-  if (
-    !host ||
-    !user ||
-    !pass ||
-    !configuredFrom ||
-    !Number.isInteger(port) ||
-    port < 1 ||
-    port > 65_535
-  ) {
+  const smtp = getSmtpConfig();
+  if (!smtp) {
     return { configured: false as const, sent: false as const };
   }
 
   const transporter = nodemailer.createTransport({
-    host,
-    port,
-    secure: process.env.SMTP_SECURE === "true" || port === 465,
-    auth: { user, pass },
+    host: smtp.host,
+    port: smtp.port,
+    secure: smtp.secure,
+    auth: { user: smtp.user, pass: smtp.pass },
   });
   try {
     const result = await transporter.sendMail({
-      from: configuredFrom,
+      from: smtp.from,
       replyTo: data.fromAddress,
       to: data.to,
       cc: data.cc.length ? data.cc : undefined,

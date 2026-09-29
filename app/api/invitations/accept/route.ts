@@ -11,9 +11,9 @@ import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
 import { isObject } from "@/utils/isObject";
 import { validatePassword } from "@/utils/validatePassword";
 import { validateText } from "@/utils/validateText";
+import { sendSignupVerificationCode } from "@/lib/authVerificationEmail";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function POST(request: NextRequest) {
   let body: unknown;
@@ -84,7 +84,9 @@ export async function POST(request: NextRequest) {
     }
     if (preflight.rows[0].status !== "pending") {
       return NextResponse.json(
-        { error: `This invitation has already been ${preflight.rows[0].status}` },
+        {
+          error: `This invitation has already been ${preflight.rows[0].status}`,
+        },
         { status: 410 },
       );
     }
@@ -109,6 +111,8 @@ export async function POST(request: NextRequest) {
   const passwordHash = useSupabase ? null : await hashPassword(body.password);
   const client = await database.connect();
   let createdAuthUserId: string | null = null;
+  let requiresEmailConfirmation = false;
+  let otpLength: number | null = null;
   try {
     await client.query("BEGIN");
     const invitationResult = await client.query(
@@ -146,16 +150,23 @@ export async function POST(request: NextRequest) {
       );
     }
     if (useSupabase) {
-      const created = await createSupabaseAdminClient().auth.admin.createUser({
+      const admin = createSupabaseAdminClient();
+      const created = await admin.auth.admin.generateLink({
+        type: "signup",
         email: invitation.email,
         password: body.password,
-        email_confirm: true,
-        user_metadata: {
-          first_name: firstName,
-          last_name: lastName ?? null,
+        options: {
+          data: {
+            first_name: firstName,
+            last_name: lastName ?? null,
+          },
         },
       });
-      if (created.error || !created.data.user) {
+      if (
+        created.error ||
+        !created.data.user ||
+        !created.data.properties?.email_otp
+      ) {
         await client.query("ROLLBACK");
         return NextResponse.json(
           { error: "Unable to create the invited authentication account" },
@@ -163,6 +174,12 @@ export async function POST(request: NextRequest) {
         );
       }
       createdAuthUserId = created.data.user.id;
+      requiresEmailConfirmation = true;
+      otpLength = created.data.properties.email_otp.length;
+      await sendSignupVerificationCode({
+        email: invitation.email,
+        code: created.data.properties.email_otp,
+      });
     }
 
     const userResult = useSupabase
@@ -226,30 +243,23 @@ export async function POST(request: NextRequest) {
           company_id: invitation.company_id,
           company_name: invitation.company_name,
         },
+        email: invitation.email,
+        requires_email_confirmation: requiresEmailConfirmation,
+        otp_length: otpLength ?? undefined,
       },
       { status: 201 },
     );
     response.headers.set("Cache-Control", "no-store");
-    if (useSupabase) {
-      const supabase = await createSupabaseServerClient();
-      const signIn = await supabase.auth.signInWithPassword({
-        email: invitation.email,
-        password: body.password,
-      });
-      if (signIn.error) {
-        return NextResponse.json(
-          { message: "Invitation accepted. Please log in." },
-          { status: 201 },
-        );
-      }
-    } else if (tokens) {
+    if (!useSupabase && tokens) {
       setAuthCookies(response, tokens.accessToken, tokens.refreshToken);
     }
     return response;
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     if (createdAuthUserId) {
-      await createSupabaseAdminClient().auth.admin.deleteUser(createdAuthUserId);
+      await createSupabaseAdminClient().auth.admin.deleteUser(
+        createdAuthUserId,
+      );
     }
     if (getDatabaseErrorCode(error) === "23505") {
       return NextResponse.json(

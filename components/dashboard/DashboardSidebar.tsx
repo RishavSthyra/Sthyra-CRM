@@ -2,8 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import {
   ArrowRightLeft,
   Bell,
@@ -11,13 +12,16 @@ import {
   ChartNoAxesColumnIncreasing,
   ClipboardCheck,
   LayoutDashboard,
+  LoaderCircle,
+  LogOut,
+  Megaphone,
   Settings,
   Target,
   UserRoundPlus,
   UsersRound,
   type LucideIcon,
 } from "lucide-react";
-import { fetchWithSession } from "@/lib/clientAuth";
+import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 
 const primaryItems = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
@@ -26,6 +30,7 @@ const primaryItems = [
   { href: "/activity", icon: ChartNoAxesColumnIncreasing, label: "Activity" },
   { href: "/calendar", icon: CalendarDays, label: "Calendar" },
   { href: "/inventory", icon: ClipboardCheck, label: "Inventory" },
+  { href: "/marketing", icon: Megaphone, label: "Marketing" },
 ];
 const secondaryItems = [
   { href: "/transfers", icon: ArrowRightLeft, label: "Transfers" },
@@ -75,7 +80,9 @@ function NavItem({
 
 export function DashboardSidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [unreadCount, setUnreadCount] = useState(0);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const loadUnreadCount = useCallback(async () => {
     try {
@@ -113,6 +120,23 @@ export function DashboardSidebar() {
 
   function isActive(href: string) {
     return pathname === href || pathname.startsWith(`${href}/`);
+  }
+
+  async function logout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      const response = await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error(await getApiError(response));
+      router.replace("/login");
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to log out");
+      setLoggingOut(false);
+    }
   }
 
   return (
@@ -172,6 +196,29 @@ export function DashboardSidebar() {
             label="Settings"
           />
         </nav>
+      </div>
+      <div className="shrink-0 border-t border-white/[0.09] px-1.5 py-2">
+        <button
+          aria-label="Log out"
+          className="group/item flex w-full flex-col items-center justify-start gap-1 rounded-lg px-0.5 py-1 text-center text-[#aeb4b1] transition-colors hover:text-[#ff8e88] disabled:cursor-wait disabled:opacity-60"
+          disabled={loggingOut}
+          onClick={() => void logout()}
+          title="Log out"
+          type="button"
+        >
+          <span className="flex size-8 items-center justify-center rounded-lg transition-colors group-hover/item:bg-[#ff5d55]/10">
+            {loggingOut ? (
+              <LoaderCircle
+                aria-hidden
+                className="size-[15px] animate-spin"
+                strokeWidth={1.8}
+              />
+            ) : (
+              <LogOut aria-hidden className="size-[15px]" strokeWidth={1.8} />
+            )}
+          </span>
+          <span className="text-[9px] leading-[11px] font-medium">Log out</span>
+        </button>
       </div>
     </aside>
   );
