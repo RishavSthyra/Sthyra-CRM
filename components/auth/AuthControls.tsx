@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 import type { FocusEventHandler, InputHTMLAttributes, ReactNode } from "react";
 import { useState } from "react";
 import { ArrowRight, Check, ChevronDown, Eye, EyeOff } from "lucide-react";
@@ -197,13 +196,11 @@ export function SocialButtons({
 }: {
   mode?: "login" | "signup";
 }) {
-  const router = useRouter();
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      <button
+      <a
         className="flex h-12 items-center justify-center gap-2.5 rounded-[10px] border border-[#342e2e] bg-[#222]/20 px-3 text-sm text-white transition hover:border-[#4b4444] hover:bg-white/[0.07]"
-        onClick={() => router.push(`/api/auth/google/start?mode=${mode}`)}
-        type="button"
+        href={`/api/auth/google/start?mode=${mode}`}
       >
         <span className="relative size-6 overflow-hidden">
           <Image
@@ -215,7 +212,7 @@ export function SocialButtons({
           />
         </span>
         Continue with Google
-      </button>
+      </a>
       {[["apple", "Continue with Apple"]].map(([provider, label]) => (
         <button
           className="flex h-12 cursor-not-allowed items-center justify-center gap-2.5 rounded-[10px] border border-[#342e2e] bg-[#222]/20 px-3 text-sm text-white/65"
