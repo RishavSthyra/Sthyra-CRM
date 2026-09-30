@@ -8,12 +8,16 @@ import {
 } from "@/lib/projects";
 
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
+import { requireOperationsContext } from "@/lib/operationsAccess";
+import { requirePermission } from "@/lib/authorization";
 
 type ProjectContext = {
   params: Promise<{ projectid: string }>;
 };
 
-export async function GET(_request: NextRequest, context: ProjectContext) {
+export async function GET(request: NextRequest, context: ProjectContext) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
   const { projectid } = await context.params;
   const projectId = parsePositiveInteger(projectid);
 
@@ -50,6 +54,8 @@ export async function GET(_request: NextRequest, context: ProjectContext) {
 }
 
 export async function PATCH(request: NextRequest, context: ProjectContext) {
+  const scope = await requirePermission(request, "PROJECTS_MANAGE");
+  if (!scope.ok) return scope.response;
  
   const { projectid } = await context.params;
  

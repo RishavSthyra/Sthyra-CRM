@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool, { adminPool } from "@/lib/db";
 import { hashToken } from "@/lib/auth";
 import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
+import { enforceRateLimits } from "@/lib/rateLimit";
 
 export async function GET(request: NextRequest) {
   const database = isSupabaseAuthConfigured() ? adminPool : pool;
@@ -9,6 +10,16 @@ export async function GET(request: NextRequest) {
   if (!token || token.length > 200) {
     return NextResponse.json({ error: "Invalid invitation link" }, { status: 400 });
   }
+  const rateLimit = await enforceRateLimits(request, [
+    { action: "invitation-validate:ip", limit: 30, windowSeconds: 10 * 60 },
+    {
+      action: "invitation-validate:token",
+      subject: `token:${token}`,
+      limit: 10,
+      windowSeconds: 10 * 60,
+    },
+  ]);
+  if (rateLimit) return rateLimit;
   try {
     const result = await database.query(
       `SELECT wi.invitation_id, wi.email, wi.status, wi.expires_at,

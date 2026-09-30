@@ -8,12 +8,16 @@ import {
   serializeRole,
   validateRolePayload,
 } from "@/lib/roles";
+import { requirePermission } from "@/lib/authorization";
 
 type RoleContext = {
   params: Promise<{ roleid: string }>;
 };
 
-export async function GET(_request: NextRequest, context: RoleContext) {
+export async function GET(request: NextRequest, context: RoleContext) {
+  const scope = await requirePermission(request, "PEOPLE_MANAGE");
+  if (!scope.ok) return scope.response;
+
   const { roleid } = await context.params;
   const roleId = parseRoleId(roleid);
 
@@ -37,6 +41,9 @@ export async function GET(_request: NextRequest, context: RoleContext) {
 }
 
 export async function PATCH(request: NextRequest, context: RoleContext) {
+  const scope = await requirePermission(request, "PEOPLE_MANAGE");
+  if (!scope.ok) return scope.response;
+
   const { roleid } = await context.params;
   const roleId = parseRoleId(roleid);
 
@@ -76,12 +83,15 @@ export async function PATCH(request: NextRequest, context: RoleContext) {
     const result = await pool.query(
       `UPDATE roles
        SET ${assignments.join(", ")}, updated_at = CURRENT_TIMESTAMP
-       WHERE role_id = $${values.length}
+       WHERE role_id = $${values.length} AND is_system_role = FALSE
        RETURNING ${ROLE_COLUMNS}`,
       values,
     );
     if (result.rowCount === 0) {
-      return NextResponse.json({ error: "Role not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Custom role not found or system role cannot be changed" },
+        { status: 404 },
+      );
     }
     return NextResponse.json({
       message: "Role updated",

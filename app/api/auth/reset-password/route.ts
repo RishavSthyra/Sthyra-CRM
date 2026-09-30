@@ -5,8 +5,14 @@ import { validateResetPasswordPayload } from "@/lib/authValidation";
 import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { validatePassword } from "@/utils/validatePassword";
+import { enforceRateLimits } from "@/lib/rateLimit";
 
 export async function POST(request: NextRequest) {
+  const rateLimit = await enforceRateLimits(request, [
+    { action: "password-reset:ip", limit: 10, windowSeconds: 60 * 60 },
+  ]);
+  if (rateLimit) return rateLimit;
+
   let body: unknown;
   try {
     body = await request.json();

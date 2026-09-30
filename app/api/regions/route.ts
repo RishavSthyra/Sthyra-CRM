@@ -7,8 +7,12 @@ import {
   validateRegionPayload,
 } from "@/lib/regions";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
+import { requireOperationsContext } from "@/lib/operationsAccess";
+import { requirePermission } from "@/lib/authorization";
 
 export async function GET(request: NextRequest) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
   const page = parsePositiveInteger(request.nextUrl.searchParams.get("page"), 1);
   const limit = parsePositiveInteger(
     request.nextUrl.searchParams.get("limit"),
@@ -90,6 +94,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const scope = await requirePermission(request, "PROJECTS_MANAGE");
+  if (!scope.ok) return scope.response;
+
   let body: unknown;
 
   try {

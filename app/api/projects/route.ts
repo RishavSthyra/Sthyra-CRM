@@ -11,8 +11,12 @@ import {
   validateProjectPayload,
 } from "@/lib/projects";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
+import { requireOperationsContext } from "@/lib/operationsAccess";
+import { requirePermission } from "@/lib/authorization";
 
 export async function GET(request: NextRequest) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
   const parameters = request.nextUrl.searchParams;
   const page = parsePositiveInteger(parameters.get("page"), 1);
   const limit = parsePositiveInteger(parameters.get("limit"), 50);
@@ -131,6 +135,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const scope = await requirePermission(request, "PROJECTS_MANAGE");
+  if (!scope.ok) return scope.response;
   let body: unknown;
 
   try {
@@ -165,6 +171,10 @@ export async function POST(request: NextRequest) {
     );
 
     if (companyResult.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: "Company not found" }, { status: 404 });
+    }
+    if (Number(companyResult.rows[0].company_id) !== scope.context.access.company.company_id) {
       await client.query("ROLLBACK");
       return NextResponse.json({ error: "Company not found" }, { status: 404 });
     }

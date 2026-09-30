@@ -1,0 +1,60 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { parseCsv, serializeCsv } from "../lib/dataTransfer";
+import {
+  normalizeWorkspaceSlug,
+  tenantDomainForSlug,
+} from "../lib/tenantDomains";
+import { roleHasPermission } from "../lib/authorization";
+import { hashRateLimitSubject } from "../lib/rateLimit";
+
+test("CSV parser supports quoted commas and escaped quotes", () => {
+  const rows = parseCsv(
+    'first_name,email,notes\r\n"Rishav, Jr",r@example.com,"said ""hello"""',
+  );
+  assert.deepEqual(rows, [
+    {
+      first_name: "Rishav, Jr",
+      email: "r@example.com",
+      notes: 'said "hello"',
+    },
+  ]);
+});
+
+test("CSV export neutralizes spreadsheet formulas", () => {
+  const csv = serializeCsv([{ name: "=WEBSERVICE(\"https://bad\")" }]);
+  assert.match(csv, /'=WEBSERVICE/);
+  assert.doesNotMatch(csv, /\r\n"=WEBSERVICE/);
+});
+
+test("workspace slugs are DNS safe and reserved names are avoided", () => {
+  assert.equal(normalizeWorkspaceSlug("  Démo Heights Pvt. Ltd. "), "demo-heights-pvt-ltd");
+  assert.equal(normalizeWorkspaceSlug("admin"), "admin-workspace");
+  assert.match(normalizeWorkspaceSlug("***"), /^[a-z0-9][a-z0-9-]{0,62}$/);
+});
+
+test("tenant hostname uses the configured root", () => {
+  const previous = process.env.TENANT_DOMAIN_ROOT;
+  process.env.TENANT_DOMAIN_ROOT = "crm.sthyra.com";
+  assert.equal(tenantDomainForSlug("Demo Company"), "demo-company.crm.sthyra.com");
+  process.env.TENANT_DOMAIN_ROOT = previous;
+});
+
+test("audit permission remains super-admin only", () => {
+  assert.equal(roleHasPermission("SUPER_ADMIN", [], "AUDIT_VIEW"), true);
+  assert.equal(roleHasPermission("COMPANY_OWNER", ["AUDIT_VIEW"], "AUDIT_VIEW"), false);
+  assert.equal(roleHasPermission("CUSTOM", ["DATA_EXPORT"], "DATA_EXPORT"), true);
+  assert.equal(roleHasPermission("CUSTOM", [], "DATA_EXPORT"), false);
+});
+
+test("rate-limit subjects are deterministic keyed digests", () => {
+  const previous = process.env.RATE_LIMIT_HASH_SECRET;
+  process.env.RATE_LIMIT_HASH_SECRET = "test-secret-that-is-at-least-thirty-two-characters";
+  const first = hashRateLimitSubject("Email:User@Example.com");
+  const same = hashRateLimitSubject(" email:user@example.com ");
+  const other = hashRateLimitSubject("email:other@example.com");
+  assert.equal(first, same);
+  assert.notEqual(first, other);
+  assert.match(first, /^[a-f0-9]{64}$/);
+  process.env.RATE_LIMIT_HASH_SECRET = previous;
+});

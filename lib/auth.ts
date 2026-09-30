@@ -270,11 +270,13 @@ export function setAuthCookies(
   refreshToken: string,
 ): void {
   const secure = process.env.NODE_ENV === "production";
+  const sharedDomain = process.env.AUTH_COOKIE_DOMAIN?.trim();
   response.cookies.set(ACCESS_COOKIE, accessToken, {
     httpOnly: true,
     secure,
     sameSite: "strict",
     path: "/",
+    ...(sharedDomain ? { domain: sharedDomain } : {}),
     maxAge: ACCESS_TOKEN_SECONDS,
   });
   response.cookies.set(REFRESH_COOKIE, refreshToken, {
@@ -282,12 +284,14 @@ export function setAuthCookies(
     secure,
     sameSite: "strict",
     path: "/api/auth",
+    ...(sharedDomain ? { domain: sharedDomain } : {}),
     maxAge: REFRESH_TOKEN_DAYS * 24 * 60 * 60,
   });
 }
 
 export function clearAuthCookies(response: NextResponse): void {
   const secure = process.env.NODE_ENV === "production";
+  const sharedDomain = process.env.AUTH_COOKIE_DOMAIN?.trim();
   for (const [name, path] of [
     [ACCESS_COOKIE, "/"],
     [REFRESH_COOKIE, "/api/auth"],
@@ -297,6 +301,7 @@ export function clearAuthCookies(response: NextResponse): void {
       secure,
       sameSite: "strict",
       path,
+      ...(sharedDomain ? { domain: sharedDomain } : {}),
       expires: new Date(0),
       maxAge: 0,
     });

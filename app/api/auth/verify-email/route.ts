@@ -2,8 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { adminPool } from "@/lib/db";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { linkExistingCrmIdentity } from "@/lib/supabase/workspaceProvisioning";
+import { enforceRateLimits } from "@/lib/rateLimit";
 
 export async function POST(request: NextRequest) {
+  const ipLimit = await enforceRateLimits(request, [
+    { action: "otp-verify:ip", limit: 20, windowSeconds: 15 * 60 },
+  ]);
+  if (ipLimit) return ipLimit;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -27,6 +33,16 @@ export async function POST(request: NextRequest) {
       { status: 422 },
     );
   }
+
+  const accountLimit = await enforceRateLimits(request, [
+    {
+      action: "otp-verify:email",
+      subject: `email:${email}`,
+      limit: 10,
+      windowSeconds: 15 * 60,
+    },
+  ]);
+  if (accountLimit) return accountLimit;
 
   try {
     const supabase = await createSupabaseServerClient();
@@ -57,10 +73,19 @@ export async function POST(request: NextRequest) {
       "UPDATE users SET last_login=CURRENT_TIMESTAMP WHERE user_id=$1",
       [user.user_id],
     );
+    const workspace = await adminPool.query<{ workspace_domain: string | null }>(
+      `SELECT company.workspace_domain
+       FROM users app_user
+       JOIN teams team ON team.team_id = app_user.team_id
+       JOIN companies company ON company.company_id = team.company_id
+       WHERE app_user.user_id = $1`,
+      [user.user_id],
+    );
 
     const response = NextResponse.json({
       message: "Email verified successfully",
       user,
+      workspace_domain: workspace.rows[0]?.workspace_domain ?? null,
     });
     response.headers.set("Cache-Control", "no-store");
     return response;

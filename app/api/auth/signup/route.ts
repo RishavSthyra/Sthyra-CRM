@@ -16,6 +16,11 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 import { provisionWorkspaceForAuthUser } from "@/lib/supabase/workspaceProvisioning";
 import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
+import { enforceRateLimits } from "@/lib/rateLimit";
+import {
+  createAvailableWorkspaceIdentity,
+  provisionTenantDomain,
+} from "@/lib/tenantDomains";
 
 function createUsername(email: string): string {
   const localPart = email.split("@")[0].replace(/[^a-zA-Z0-9._-]/g, "");
@@ -24,6 +29,11 @@ function createUsername(email: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  const ipLimit = await enforceRateLimits(request, [
+    { action: "signup:ip", limit: 5, windowSeconds: 60 * 60 },
+  ]);
+  if (ipLimit) return ipLimit;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -43,6 +53,15 @@ export async function POST(request: NextRequest) {
   }
 
   const signup = validation.data;
+  const accountLimit = await enforceRateLimits(request, [
+    {
+      action: "signup:email",
+      subject: `email:${signup.email}`,
+      limit: 3,
+      windowSeconds: 24 * 60 * 60,
+    },
+  ]);
+  if (accountLimit) return accountLimit;
   if (isSupabaseAuthConfigured()) {
     try {
       const existing = await adminPool.query(
@@ -152,12 +171,18 @@ export async function POST(request: NextRequest) {
       throw new Error("COMPANY_OWNER role is unavailable");
     }
 
+    const workspace = await createAvailableWorkspaceIdentity(
+      client,
+      signup.company_code || signup.company_name,
+    );
     const companyResult = await client.query(
       `INSERT INTO companies (
          company_name, company_legal_name, established_on,
-         company_phone_number, company_contact_email, company_code
-       ) VALUES ($1,$2,$3,$4,$5,$6)
-       RETURNING company_id, company_name, company_code`,
+         company_phone_number, company_contact_email, company_code,
+         workspace_slug, workspace_domain, workspace_domain_status
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending')
+       RETURNING company_id, company_name, company_code,
+                 workspace_slug, workspace_domain, workspace_domain_status`,
       [
         signup.company_name,
         signup.company_legal_name,
@@ -165,6 +190,8 @@ export async function POST(request: NextRequest) {
         signup.company_phone_number,
         signup.company_contact_email,
         signup.company_code,
+        workspace.slug,
+        workspace.domain,
       ],
     );
     const company = companyResult.rows[0];
@@ -198,11 +225,16 @@ export async function POST(request: NextRequest) {
     );
     await client.query("COMMIT");
 
+    const domain = await provisionTenantDomain(
+      Number(company.company_id),
+      String(company.workspace_domain),
+    );
+
     const response = NextResponse.json(
       {
         message: "Account created successfully",
         user: user.rows[0],
-        company,
+        company: { ...company, workspace_domain_status: domain.status },
       },
       { status: 201 },
     );

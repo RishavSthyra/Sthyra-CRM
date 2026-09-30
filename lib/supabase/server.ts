@@ -17,8 +17,12 @@ export async function createSupabaseServerClient() {
       },
       setAll(cookiesToSet) {
         try {
+          const sharedDomain = process.env.AUTH_COOKIE_DOMAIN?.trim();
           for (const cookie of cookiesToSet) {
-            cookieStore.set(cookie.name, cookie.value, cookie.options);
+            cookieStore.set(cookie.name, cookie.value, {
+              ...cookie.options,
+              ...(sharedDomain ? { domain: sharedDomain } : {}),
+            });
           }
         } catch {
           // Server Components cannot write cookies. The root Proxy refreshes

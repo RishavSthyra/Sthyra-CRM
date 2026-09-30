@@ -1,9 +1,16 @@
 import { NextResponse, NextRequest } from "next/server";
 import pool from "@/lib/db";
+import { requireOperationsContext } from "@/lib/operationsAccess";
+import { requirePermission } from "@/lib/authorization";
 
 export async function GET(request : NextRequest , {params} : {params : Promise<{companyid : string}>}){
+    const scope = await requireOperationsContext(request);
+    if (!scope.ok) return scope.response;
     try {
         const {companyid} = await params;
+        if (Number(companyid) !== scope.context.access.company.company_id) {
+            return NextResponse.json({message : "Company not found"},{status : 404})
+        }
 
         const result = await pool.query(
        "SELECT * FROM companies WHERE company_id = $1",  // put the first value of the array here
@@ -31,9 +38,14 @@ export async function GET(request : NextRequest , {params} : {params : Promise<{
 }
 
 export async function PATCH(request : NextRequest,{params} : {params : Promise<{companyid : string}>}){
+    const scope = await requirePermission(request, "WORKSPACE_MANAGE");
+    if (!scope.ok) return scope.response;
     try{
 
         const {companyid} = await params;
+        if (Number(companyid) !== scope.context.access.company.company_id) {
+            return NextResponse.json({message : "Company not found"},{status : 404})
+        }
 
         const company = await pool.query("SELECT * FROM companies WHERE company_id=$1",[companyid])
  

@@ -11,8 +11,14 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { linkExistingCrmIdentity } from "@/lib/supabase/workspaceProvisioning";
+import { enforceRateLimits } from "@/lib/rateLimit";
 
 export async function POST(request: NextRequest) {
+  const ipLimit = await enforceRateLimits(request, [
+    { action: "login:ip", limit: 20, windowSeconds: 15 * 60 },
+  ]);
+  if (ipLimit) return ipLimit;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -32,6 +38,15 @@ export async function POST(request: NextRequest) {
   }
 
   const { identifier, password } = validation.data;
+  const accountLimit = await enforceRateLimits(request, [
+    {
+      action: "login:account",
+      subject: `account:${identifier}`,
+      limit: 8,
+      windowSeconds: 15 * 60,
+    },
+  ]);
+  if (accountLimit) return accountLimit;
   if (isSupabaseAuthConfigured()) {
     try {
       const legacyResult = await adminPool.query(

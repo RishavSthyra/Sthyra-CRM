@@ -9,8 +9,11 @@ import {
   validateUserPayload,
 } from "@/lib/users";
 import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
+import { requirePermission } from "@/lib/authorization";
 
 export async function GET(request: NextRequest) {
+  const scope = await requirePermission(request, "PEOPLE_MANAGE");
+  if (!scope.ok) return scope.response;
   const parameters = request.nextUrl.searchParams;
   const page = parsePositiveInteger(parameters.get("page"), 1);
   const limit = parsePositiveInteger(parameters.get("limit"), 20);
@@ -123,6 +126,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const scope = await requirePermission(request, "PEOPLE_MANAGE");
+  if (!scope.ok) return scope.response;
+
   if (isSupabaseAuthConfigured()) {
     return NextResponse.json(
       {

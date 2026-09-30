@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { requireOperationsContext } from "@/lib/operationsAccess";
+import { requirePermission } from "@/lib/authorization";
 import { isUuid } from "@/lib/permissions";
 
 export async function requireInvitationAdmin(
@@ -16,17 +16,8 @@ export async function requireInvitationAdmin(
       ),
     };
   }
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "PEOPLE_MANAGE");
   if (!scope.ok) return scope;
-  if (!scope.context.access.canViewAllProjects) {
-    return {
-      ok: false as const,
-      response: NextResponse.json(
-        { error: "Administrator access is required" },
-        { status: 403 },
-      ),
-    };
-  }
   return {
     ok: true as const,
     invitationId,

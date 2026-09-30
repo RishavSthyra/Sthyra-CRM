@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { isUuid } from "@/lib/permissions";
 import { getRoleDatabaseErrorCode, parseRoleId } from "@/lib/roles";
+import { requirePermission } from "@/lib/authorization";
 
 type RolePermissionsContext = {
   params: Promise<{ roleid: string }>;
@@ -75,9 +76,12 @@ async function roleExists(
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   context: RolePermissionsContext,
 ) {
+  const scope = await requirePermission(request, "PEOPLE_MANAGE");
+  if (!scope.ok) return scope.response;
+
   const { roleid } = await context.params;
   const roleId = parseRoleId(roleid);
   if (roleId === null) {
@@ -115,6 +119,9 @@ export async function PUT(
   request: NextRequest,
   context: RolePermissionsContext,
 ) {
+  const scope = await requirePermission(request, "PEOPLE_MANAGE");
+  if (!scope.ok) return scope.response;
+
   const { roleid } = await context.params;
   const roleId = parseRoleId(roleid);
   if (roleId === null) {
@@ -147,12 +154,15 @@ export async function PUT(
     await client.query("BEGIN");
 
     const roleResult = await client.query(
-      "SELECT role_id FROM roles WHERE role_id = $1 FOR UPDATE",
+      "SELECT role_id FROM roles WHERE role_id = $1 AND is_system_role = FALSE FOR UPDATE",
       [roleId],
     );
     if (roleResult.rowCount === 0) {
       await client.query("ROLLBACK");
-      return NextResponse.json({ error: "Role not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Custom role not found or system role permissions cannot be changed" },
+        { status: 404 },
+      );
     }
 
     if (validation.permissionIds.length > 0) {

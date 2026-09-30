@@ -25,6 +25,8 @@ import {
   Clock3,
   Copy,
   FolderKanban,
+  FileDown,
+  History,
   Funnel,
   Inbox,
   ListTree,
@@ -63,6 +65,7 @@ type ContextData = {
   company: { company_id: number; company_code: string; company_name: string };
   role_key: string;
   can_view_all_projects: boolean;
+  permissions: string[];
   projects: Project[];
 };
 type Section =
@@ -78,6 +81,8 @@ type Section =
   | "sources"
   | "campaigns"
   | "tags"
+  | "data-tools"
+  | "audit-log"
   | "lead-configuration"
   | "lead-stages"
   | "opportunity-stages"
@@ -143,6 +148,16 @@ const companySections: { id: Section; label: string; description: string }[] = [
   },
   { id: "campaigns", label: "Campaigns", description: "Acquisition campaigns" },
   { id: "tags", label: "Tags", description: "Shared CRM labels" },
+  {
+    id: "data-tools",
+    label: "Data tools",
+    description: "Validated imports and portable exports",
+  },
+  {
+    id: "audit-log",
+    label: "Audit log",
+    description: "Detailed workspace change history",
+  },
 ];
 const projectSections: { id: Section; label: string; description: string }[] = [
   {
@@ -376,6 +391,8 @@ const settingsSectionIcons: Record<Section, LucideIcon> = {
   sources: Funnel,
   campaigns: Megaphone,
   tags: Tag,
+  "data-tools": FileDown,
+  "audit-log": History,
   "lead-configuration": SlidersHorizontal,
   "lead-stages": ListTree,
   "opportunity-stages": FolderKanban,
@@ -536,7 +553,18 @@ export function SettingsWorkspace() {
       setCompany((core[0].company as Row) ?? {});
       setAvailability((core[1].availability as Row) ?? {});
       setRegions((regionData.regions as Row[]) ?? []);
-      if (nextContext.can_view_all_projects) {
+      if (
+        nextContext.can_view_all_projects ||
+        (nextContext.permissions ?? []).some((permission) =>
+          [
+            "WORKSPACE_MANAGE",
+            "PEOPLE_MANAGE",
+            "PROJECTS_MANAGE",
+            "DATA_EXPORT",
+            "DATA_IMPORT",
+          ].includes(permission),
+        )
+      ) {
         const adminResults = await Promise.allSettled([
           api("/api/users?limit=100"),
           api(
@@ -675,6 +703,19 @@ export function SettingsWorkspace() {
     ...projectSections,
   ].find((item) => item.id === section);
   const admin = context?.can_view_all_projects === true;
+  const permissionKeys = new Set(context?.permissions ?? []);
+  const visibleCompanySections = companySections.filter((item) => {
+    if (item.id === "audit-log") return context?.role_key === "SUPER_ADMIN";
+    if (admin) return true;
+    if (item.id === "people") return permissionKeys.has("PEOPLE_MANAGE");
+    if (item.id === "projects" || item.id === "regions")
+      return permissionKeys.has("PROJECTS_MANAGE");
+    if (item.id === "data-tools")
+      return (
+        permissionKeys.has("DATA_EXPORT") || permissionKeys.has("DATA_IMPORT")
+      );
+    return permissionKeys.has("WORKSPACE_MANAGE");
+  });
 
   const navGroup = (title: string, items: typeof personalSections) => (
     <div className="flex flex-col gap-0.5 border-t border-white/[0.07] pt-4 first:border-0 first:pt-0">
@@ -738,7 +779,8 @@ export function SettingsWorkspace() {
                 </div>
               )}
               {navGroup("Personal", personalSections)}
-              {admin && navGroup("Administration", companySections)}
+              {visibleCompanySections.length > 0 &&
+                navGroup("Administration", visibleCompanySections)}
               <div className="flex flex-col gap-2 border-t border-white/[0.07] pt-4">
                 <span className="px-2 text-[9px] font-semibold tracking-[0.08em] text-[#656c69] uppercase">
                   Project settings
@@ -934,6 +976,13 @@ function SettingsPanel(props: PanelProps) {
     return <CatalogPanel {...props} kind="campaigns" rows={props.campaigns} />;
   if (props.section === "tags")
     return <CatalogPanel {...props} kind="tags" rows={props.tags} />;
+  if (props.section === "data-tools") return <DataToolsPanel {...props} />;
+  if (props.section === "audit-log")
+    return props.context?.role_key === "SUPER_ADMIN" ? (
+      <AuditLogPanel {...props} />
+    ) : (
+      <Empty>Super admin access is required.</Empty>
+    );
   if (!projectId)
     return <Empty>Select a project to configure this section.</Empty>;
   if (props.section === "lead-configuration")
@@ -1707,6 +1756,7 @@ function SecurityPanel(props: PanelProps) {
 
 function CompanyPanel(props: PanelProps) {
   const [form, setForm] = useState<Row>(props.company);
+  const [domainBusy, setDomainBusy] = useState(false);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const payload = {
@@ -1724,7 +1774,25 @@ function CompanyPanel(props: PanelProps) {
       props.loadAll,
     );
   };
+  const retryDomain = async () => {
+    setDomainBusy(true);
+    try {
+      const result = await props.api(
+        `/api/companies/${String(props.context?.company.company_id)}/domain`,
+        { method: "POST" },
+      );
+      toast.success(String(result.message ?? "Workspace domain updated"));
+      await props.loadAll();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Unable to provision domain",
+      );
+    } finally {
+      setDomainBusy(false);
+    }
+  };
   return (
+    <div className={settingsUi.stack}>
     <Card
       title="Company profile"
       description="Shared organisation information shown across the workspace."
@@ -1779,6 +1847,184 @@ function CompanyPanel(props: PanelProps) {
           <SaveButton busy={props.busy} />
         </div>
       </form>
+    </Card>
+    <Card
+      title="Workspace domain"
+      description="Every company receives a dedicated CRM hostname. DNS is wildcarded; Vercel project registration is automated."
+    >
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/[0.08] bg-black/15 p-4">
+        <div>
+          <a
+            className="text-sm font-medium text-[#dfe5e2] hover:text-[#70c9aa]"
+            href={`https://${String(props.company.workspace_domain ?? "")}`}
+            rel="noreferrer"
+            target="_blank"
+          >
+            {value(props.company, "workspace_domain")}
+          </a>
+          <p className="mt-1 text-[10px] text-[#727a77]">
+            Status: {value(props.company, "workspace_domain_status")}
+            {props.company.workspace_domain_error
+              ? ` · ${String(props.company.workspace_domain_error)}`
+              : ""}
+          </p>
+        </div>
+        <button
+          className={settingsUi.secondaryButton}
+          disabled={domainBusy || !props.company.workspace_domain}
+          onClick={() => void retryDomain()}
+          type="button"
+        >
+          {domainBusy ? "Provisioning…" : "Retry provisioning"}
+        </button>
+      </div>
+    </Card>
+    </div>
+  );
+}
+
+function DataToolsPanel(props: PanelProps) {
+  const [entity, setEntity] = useState<"contacts" | "leads">("leads");
+  const [csv, setCsv] = useState("");
+  const [importBusy, setImportBusy] = useState(false);
+  const canExport =
+    props.admin || props.context?.permissions.includes("DATA_EXPORT");
+  const canImport =
+    props.admin || props.context?.permissions.includes("DATA_IMPORT");
+  const runImport = async (validateOnly: boolean) => {
+    setImportBusy(true);
+    try {
+      const result = await props.api("/api/data/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entity, csv, validate_only: validateOnly }),
+      });
+      toast.success(String(result.message ?? "Import processed"));
+      if (!validateOnly) setCsv("");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to import data");
+    } finally {
+      setImportBusy(false);
+    }
+  };
+  return (
+    <div className={settingsUi.stack}>
+      <Card
+        title="Export workspace data"
+        description="Download up to 10,000 accessible records as spreadsheet-safe CSV or portable JSON."
+      >
+        <div className="flex flex-wrap gap-2">
+          {!canExport && (
+            <p className="text-xs text-[#777f7c]">Export permission is not assigned to your role.</p>
+          )}
+          {canExport &&
+            (["contacts", "leads", "opportunities"] as const).flatMap(
+              (item) =>
+                (["csv", "json"] as const).map((format) => (
+                  <a
+                    className={settingsUi.secondaryButton}
+                    href={`/api/data/export?entity=${item}&format=${format}`}
+                    key={`${item}-${format}`}
+                  >
+                    {item} · {format.toUpperCase()}
+                  </a>
+                )),
+            )}
+        </div>
+      </Card>
+      <Card
+        title="Import CSV"
+        description="Validate first, then commit up to 1,000 contacts or leads atomically. A failed row imports nothing."
+      >
+        <div className={settingsUi.form}>
+          <div className="max-w-[320px]">
+            <Field label="Record type">
+              <select value={entity} onChange={(event) => setEntity(event.target.value as typeof entity)}>
+                <option value="leads">Leads</option>
+                <option value="contacts">Contacts</option>
+              </select>
+            </Field>
+          </div>
+          <input
+            accept=".csv,text/csv"
+            className="text-xs text-[#aeb5b2] file:mr-3 file:rounded-lg file:border file:border-white/10 file:bg-white/[0.05] file:px-3 file:py-2 file:text-[#dfe4e2]"
+            disabled={!canImport}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (!file) return;
+              void file.text().then(setCsv);
+            }}
+            type="file"
+          />
+          <textarea
+            className="min-h-48 rounded-xl border border-white/10 bg-black/25 p-4 font-mono text-[10px] text-[#d8dddb] outline-none focus:border-[#4ea98b]"
+            disabled={!canImport}
+            onChange={(event) => setCsv(event.target.value)}
+            placeholder={
+              entity === "leads"
+                ? "project_id,first_name,last_name,email,phone_number,temperature,budget"
+                : "first_name,last_name,email,phone_number,country"
+            }
+            value={csv}
+          />
+          <div className={settingsUi.actions}>
+            <button className={settingsUi.secondaryButton} disabled={!canImport || importBusy || !csv.trim()} onClick={() => void runImport(true)} type="button">
+              Validate
+            </button>
+            <button className={settingsUi.primaryButton} disabled={!canImport || importBusy || !csv.trim()} onClick={() => void runImport(false)} type="button">
+              {importBusy ? "Processing…" : "Import data"}
+            </button>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function AuditLogPanel(props: PanelProps) {
+  const [logs, setLogs] = useState<Row[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(true);
+  const { api } = props;
+  useEffect(() => {
+    let active = true;
+    void api("/api/audit-logs?limit=50")
+      .then((result) => {
+        if (active) setLogs((result.logs as Row[]) ?? []);
+      })
+      .catch((error) => {
+        if (active) toast.error(error instanceof Error ? error.message : "Unable to load audit log");
+      })
+      .finally(() => {
+        if (active) setLoadingLogs(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [api]);
+  return (
+    <Card
+      title="Detailed audit log"
+      description="Visible only to super admins. Secret and token fields are redacted before storage."
+    >
+      {loadingLogs ? (
+        <div className="py-12 text-center text-xs text-[#777f7c]">Loading changes…</div>
+      ) : (
+        <ListTable
+          rows={logs}
+          columns={[
+            { key: "created_at", label: "Time", render: (row) => new Date(String(row.created_at)).toLocaleString() },
+            { key: "actor_name", label: "Actor" },
+            { key: "action", label: "Action" },
+            { key: "entity_type", label: "Entity" },
+            { key: "entity_id", label: "Record" },
+            {
+              key: "changed_fields",
+              label: "Changed fields",
+              render: (row) => Array.isArray(row.changed_fields) ? row.changed_fields.join(", ") : "—",
+            },
+          ]}
+        />
+      )}
     </Card>
   );
 }
@@ -2211,6 +2457,12 @@ function PeoplePanel(props: PanelProps) {
   const [invitationActionBusy, setInvitationActionBusy] = useState<
     string | null
   >(null);
+  const [permissionRole, setPermissionRole] = useState<Row | null>(null);
+  const [availablePermissions, setAvailablePermissions] = useState<Row[]>([]);
+  const [selectedPermissionIds, setSelectedPermissionIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [permissionBusy, setPermissionBusy] = useState(false);
 
   useEffect(() => {
     if (!dialogOpen) return;
@@ -2319,6 +2571,56 @@ function PeoplePanel(props: PanelProps) {
       );
     } finally {
       setInvitationActionBusy(null);
+    }
+  };
+  const openPermissions = async (role: Row) => {
+    if (role.is_system_role) return;
+    setPermissionBusy(true);
+    try {
+      const roleId = String(role.role_id);
+      const [catalog, assigned] = await Promise.all([
+        props.api("/api/permissions"),
+        props.api(`/api/roles/${roleId}/permissions`),
+      ]);
+      setAvailablePermissions((catalog.permissions as Row[]) ?? []);
+      setSelectedPermissionIds(
+        new Set(
+          ((assigned.permissions as Row[]) ?? []).map((permission) =>
+            String(permission.permission_id),
+          ),
+        ),
+      );
+      setPermissionRole(role);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Unable to load permissions",
+      );
+    } finally {
+      setPermissionBusy(false);
+    }
+  };
+  const savePermissions = async () => {
+    if (!permissionRole) return;
+    setPermissionBusy(true);
+    try {
+      await props.api(
+        `/api/roles/${String(permissionRole.role_id)}/permissions`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            permission_ids: [...selectedPermissionIds],
+          }),
+        },
+      );
+      toast.success("Role permissions updated");
+      setPermissionRole(null);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Unable to save permissions",
+      );
+    } finally {
+      setPermissionBusy(false);
     }
   };
   const pendingInvitations = props.invitations;
@@ -2535,6 +2837,25 @@ function PeoplePanel(props: PanelProps) {
                   key: "is_system_role",
                   label: "Type",
                   render: (row) => (row.is_system_role ? "System" : "Custom"),
+                },
+                {
+                  key: "role_id",
+                  label: "Permissions",
+                  render: (row) =>
+                    row.is_system_role ? (
+                      <span className="text-[10px] text-[#69716e]">
+                        Managed by Sthyra
+                      </span>
+                    ) : (
+                      <button
+                        className="rounded-lg border border-white/10 px-3 py-1.5 text-[10px] text-[#b9bfbd] transition hover:border-[#4ea98b]/60 hover:text-white"
+                        disabled={permissionBusy}
+                        onClick={() => void openPermissions(row)}
+                        type="button"
+                      >
+                        Customize
+                      </button>
+                    ),
                 },
               ]}
             />
@@ -2837,6 +3158,101 @@ function PeoplePanel(props: PanelProps) {
                 </button>
               </footer>
             </form>
+          </section>
+        </div>
+      )}
+      {permissionRole && (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/75 p-4 backdrop-blur-[3px]"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) setPermissionRole(null);
+          }}
+        >
+          <section
+            aria-labelledby="permission-dialog-title"
+            aria-modal="true"
+            className="max-h-[calc(100dvh-32px)] w-full max-w-[720px] overflow-hidden rounded-2xl border border-white/[0.12] bg-[#111513] shadow-[0_30px_100px_rgba(0,0,0,0.65)]"
+            role="dialog"
+          >
+            <header className="flex items-start justify-between gap-4 border-b border-white/[0.08] px-6 py-5">
+              <div>
+                <h2
+                  className="font-[var(--font-bricolage)] text-xl font-medium text-white"
+                  id="permission-dialog-title"
+                >
+                  {value(permissionRole, "role_name")} permissions
+                </h2>
+                <p className="mt-1 text-[10px] text-[#777f7c]">
+                  Select the exact capabilities members with this role receive.
+                </p>
+              </div>
+              <button
+                aria-label="Close permission editor"
+                className="flex size-8 items-center justify-center rounded-lg text-[#858c89] hover:bg-white/[0.06] hover:text-white"
+                onClick={() => setPermissionRole(null)}
+                type="button"
+              >
+                <X aria-hidden className="size-4" />
+              </button>
+            </header>
+            <div className="grid max-h-[58dvh] grid-cols-2 gap-2 overflow-y-auto p-6 max-[620px]:grid-cols-1">
+              {availablePermissions.map((permission) => {
+                const permissionId = String(permission.permission_id);
+                const checked = selectedPermissionIds.has(permissionId);
+                return (
+                  <label
+                    className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition ${
+                      checked
+                        ? "border-[#4ea98b]/50 bg-[#16382e]/55"
+                        : "border-white/[0.08] bg-black/10 hover:border-white/15"
+                    }`}
+                    key={permissionId}
+                  >
+                    <input
+                      checked={checked}
+                      className="mt-0.5 accent-[#4ea98b]"
+                      onChange={(event) => {
+                        const next = new Set(selectedPermissionIds);
+                        if (event.target.checked) next.add(permissionId);
+                        else next.delete(permissionId);
+                        setSelectedPermissionIds(next);
+                      }}
+                      type="checkbox"
+                    />
+                    <span className="min-w-0">
+                      <strong className="block text-[11px] font-medium text-[#e5e9e7]">
+                        {value(permission, "permission_name")}
+                      </strong>
+                      <small className="mt-0.5 block text-[9px] text-[#727a77]">
+                        {value(permission, "description")}
+                      </small>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+            <footer className="flex items-center justify-between gap-3 border-t border-white/[0.08] bg-black/10 px-6 py-4">
+              <span className="text-[10px] text-[#737b78]">
+                {selectedPermissionIds.size} capabilities selected
+              </span>
+              <div className="flex gap-2">
+                <button
+                  className={settingsUi.secondaryButton}
+                  onClick={() => setPermissionRole(null)}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button
+                  className={settingsUi.primaryButton}
+                  disabled={permissionBusy}
+                  onClick={() => void savePermissions()}
+                  type="button"
+                >
+                  {permissionBusy ? "Saving…" : "Save permissions"}
+                </button>
+              </div>
+            </footer>
           </section>
         </div>
       )}

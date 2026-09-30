@@ -7,10 +7,11 @@ import {
   TEAM_COLUMNS,
   validateTeamPayload,
 } from "@/lib/teams";
-
-import { parse } from "next/dist/build/swc";
+import { requirePermission } from "@/lib/authorization";
 
 export async function GET(request: NextRequest) {
+  const scope = await requirePermission(request, "PEOPLE_MANAGE");
+  if (!scope.ok) return scope.response;
 
   const page = parsePositiveInteger(request.nextUrl.searchParams.get("page"), 1);
 
@@ -100,6 +101,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const scope = await requirePermission(request, "PEOPLE_MANAGE");
+  if (!scope.ok) return scope.response;
+
   let body: unknown;
   try {
     body = await request.json();

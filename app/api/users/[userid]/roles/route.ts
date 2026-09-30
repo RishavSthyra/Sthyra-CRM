@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { parseUserId } from "@/lib/users";
 import { validateSingleUuidField } from "@/lib/userRelations";
+import { requirePermission } from "@/lib/authorization";
 
 type UserContext = {
   params: Promise<{ userid: string }>;
@@ -18,7 +19,10 @@ const ROLE_COLUMNS = `
   r.updated_at
 `;
 
-export async function GET(_request: NextRequest, context: UserContext) {
+export async function GET(request: NextRequest, context: UserContext) {
+  const scope = await requirePermission(request, "PEOPLE_MANAGE");
+  if (!scope.ok) return scope.response;
+
   const { userid } = await context.params;
   const userId = parseUserId(userid);
   if (userId === null) {
@@ -44,6 +48,9 @@ export async function GET(_request: NextRequest, context: UserContext) {
 }
 
 export async function PUT(request: NextRequest, context: UserContext) {
+  const scope = await requirePermission(request, "PEOPLE_MANAGE");
+  if (!scope.ok) return scope.response;
+
   const { userid } = await context.params;
   const userId = parseUserId(userid);
   if (userId === null) {
@@ -87,6 +94,21 @@ export async function PUT(request: NextRequest, context: UserContext) {
     if (roleResult.rowCount === 0) {
       await client.query("ROLLBACK");
       return NextResponse.json({ error: "Role not found" }, { status: 404 });
+    }
+    const selectedRoleKey = String(roleResult.rows[0].role_key);
+    const actorRoleKey = scope.context.access.roleKey;
+    const forbiddenRole =
+      (selectedRoleKey === "SUPER_ADMIN" && actorRoleKey !== "SUPER_ADMIN") ||
+      (selectedRoleKey === "COMPANY_OWNER" &&
+        !["SUPER_ADMIN", "COMPANY_OWNER"].includes(actorRoleKey)) ||
+      (selectedRoleKey === "COMPANY_ADMIN" &&
+        !["SUPER_ADMIN", "COMPANY_OWNER", "COMPANY_ADMIN"].includes(actorRoleKey));
+    if (forbiddenRole) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { error: "You cannot assign a role with greater access than your own" },
+        { status: 403 },
+      );
     }
 
     await client.query(

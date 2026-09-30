@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { requireOperationsContext } from "@/lib/operationsAccess";
+import { requirePermission } from "@/lib/authorization";
 import {
   getRoleDatabaseErrorCode,
   ROLE_COLUMNS,
@@ -10,7 +10,7 @@ import {
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 
 export async function GET(request: NextRequest) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "PEOPLE_MANAGE");
   if (!scope.ok) return scope.response;
 
   const page = parsePositiveInteger(request.nextUrl.searchParams.get("page"), 1);
@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "PEOPLE_MANAGE");
   if (!scope.ok) return scope.response;
 
   let body: unknown;

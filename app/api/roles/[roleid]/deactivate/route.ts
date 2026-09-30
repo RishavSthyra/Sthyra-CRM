@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { ROLE_COLUMNS, parseRoleId, serializeRole } from "@/lib/roles";
+import { requirePermission } from "@/lib/authorization";
 
 type RoleContext = {
   params: Promise<{ roleid: string }>;
 };
 
-export async function POST(_request: NextRequest, context: RoleContext) {
+export async function POST(request: NextRequest, context: RoleContext) {
+  const scope = await requirePermission(request, "PEOPLE_MANAGE");
+  if (!scope.ok) return scope.response;
   const { roleid } = await context.params;
   const roleId = parseRoleId(roleid);
   if (roleId === null) {
@@ -17,7 +20,7 @@ export async function POST(_request: NextRequest, context: RoleContext) {
     const result = await pool.query(
       `UPDATE roles
        SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP
-       WHERE role_id = $1
+       WHERE role_id = $1 AND is_system_role = FALSE
        RETURNING ${ROLE_COLUMNS}`,
       [roleId],
     );

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateRequest } from "@/lib/auth";
 import { getUserProjectAccess } from "@/lib/projectAccess";
+import { getUserPermissionKeys } from "@/lib/authorization";
 
 export async function GET(request: NextRequest) {
   const authentication = await authenticateRequest(request);
@@ -17,10 +18,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const permissions = await getUserPermissionKeys(
+      authentication.auth.user.user_id,
+    );
     const response = NextResponse.json({
       company: access.company,
       role_key: access.roleKey,
       can_view_all_projects: access.canViewAllProjects,
+      permissions,
       projects: access.projects,
     });
     response.headers.set("Cache-Control", "no-store");

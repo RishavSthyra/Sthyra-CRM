@@ -2,6 +2,10 @@ import { randomBytes } from "node:crypto";
 import { AUTH_USER_COLUMNS } from "@/lib/auth";
 import type { SignupPayload } from "@/lib/authValidation";
 import { adminPool } from "@/lib/db";
+import {
+  createAvailableWorkspaceIdentity,
+  provisionTenantDomain,
+} from "@/lib/tenantDomains";
 
 function createUsername(email: string): string {
   const localPart = email.split("@")[0].replace(/[^a-zA-Z0-9._-]/g, "");
@@ -44,12 +48,18 @@ export async function provisionWorkspaceForAuthUser(
       throw new Error("COMPANY_OWNER role is unavailable");
     }
 
+    const workspace = await createAvailableWorkspaceIdentity(
+      client,
+      signup.company_code || signup.company_name,
+    );
     const companyResult = await client.query(
       `INSERT INTO companies (
          company_name, company_legal_name, established_on,
-         company_phone_number, company_contact_email, company_code
-       ) VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING company_id, company_name, company_code`,
+         company_phone_number, company_contact_email, company_code,
+         workspace_slug, workspace_domain, workspace_domain_status
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
+       RETURNING company_id, company_name, company_code,
+                 workspace_slug, workspace_domain, workspace_domain_status`,
       [
         signup.company_name,
         signup.company_legal_name,
@@ -57,6 +67,8 @@ export async function provisionWorkspaceForAuthUser(
         signup.company_phone_number,
         signup.company_contact_email,
         signup.company_code,
+        workspace.slug,
+        workspace.domain,
       ],
     );
     const company = companyResult.rows[0];
@@ -100,7 +112,14 @@ export async function provisionWorkspaceForAuthUser(
       [userId],
     );
     await client.query("COMMIT");
-    return { company, user: user.rows[0] };
+    const domain = await provisionTenantDomain(
+      Number(company.company_id),
+      String(company.workspace_domain),
+    );
+    return {
+      company: { ...company, workspace_domain_status: domain.status },
+      user: user.rows[0],
+    };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;

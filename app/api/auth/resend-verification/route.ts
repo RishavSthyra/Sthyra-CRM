@@ -5,11 +5,17 @@ import {
   sendSignupVerificationCode,
 } from "@/lib/authVerificationEmail";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { enforceRateLimits } from "@/lib/rateLimit";
 
 const GENERIC_MESSAGE =
   "If the account is awaiting verification, a new code has been sent.";
 
 export async function POST(request: NextRequest) {
+  const ipLimit = await enforceRateLimits(request, [
+    { action: "otp-resend:ip", limit: 10, windowSeconds: 60 * 60 },
+  ]);
+  if (ipLimit) return ipLimit;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -34,6 +40,16 @@ export async function POST(request: NextRequest) {
       { status: 422 },
     );
   }
+
+  const accountLimit = await enforceRateLimits(request, [
+    {
+      action: "otp-resend:email",
+      subject: `email:${email}`,
+      limit: 5,
+      windowSeconds: 60 * 60,
+    },
+  ]);
+  if (accountLimit) return accountLimit;
 
   try {
     const identity = await adminPool.query(

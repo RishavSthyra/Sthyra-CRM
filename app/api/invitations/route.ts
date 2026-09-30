@@ -5,7 +5,7 @@ import {
   invitationUrl,
   sendInvitationEmail,
 } from "@/lib/invitations";
-import { requireOperationsContext } from "@/lib/operationsAccess";
+import { requirePermission } from "@/lib/authorization";
 import { isUuid } from "@/lib/permissions";
 import { isObject } from "@/utils/isObject";
 import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
@@ -34,14 +34,8 @@ const INVITATION_COLUMNS = `
 `;
 
 export async function GET(request: NextRequest) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "PEOPLE_MANAGE");
   if (!scope.ok) return scope.response;
-  if (!scope.context.access.canViewAllProjects) {
-    return NextResponse.json(
-      { error: "Administrator access is required to view invitations" },
-      { status: 403 },
-    );
-  }
 
   const requestedStatus =
     request.nextUrl.searchParams.get("status") ?? "pending";
@@ -87,14 +81,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "PEOPLE_MANAGE");
   if (!scope.ok) return scope.response;
-  if (!scope.context.access.canViewAllProjects) {
-    return NextResponse.json(
-      { error: "Administrator access is required to invite teammates" },
-      { status: 403 },
-    );
-  }
 
   let body: unknown;
   try {
@@ -133,7 +121,7 @@ export async function POST(request: NextRequest) {
   try {
     await client.query("BEGIN");
     const role = await client.query(
-      "SELECT role_id, role_name FROM roles WHERE role_id=$1 AND is_active=TRUE",
+      "SELECT role_id, role_name, role_key FROM roles WHERE role_id=$1 AND is_active=TRUE",
       [roleId],
     );
     if (!role.rowCount) {
@@ -141,6 +129,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "The selected role is unavailable" },
         { status: 422 },
+      );
+    }
+    const selectedRoleKey = String(role.rows[0].role_key);
+    const actorRoleKey = scope.context.access.roleKey;
+    const forbiddenRole =
+      (selectedRoleKey === "SUPER_ADMIN" && actorRoleKey !== "SUPER_ADMIN") ||
+      (selectedRoleKey === "COMPANY_OWNER" &&
+        !["SUPER_ADMIN", "COMPANY_OWNER"].includes(actorRoleKey)) ||
+      (selectedRoleKey === "COMPANY_ADMIN" &&
+        !["SUPER_ADMIN", "COMPANY_OWNER", "COMPANY_ADMIN"].includes(actorRoleKey));
+    if (forbiddenRole) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { error: "You cannot assign a role with greater access than your own" },
+        { status: 403 },
       );
     }
     const team = await client.query(

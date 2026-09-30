@@ -6,10 +6,14 @@ import {
   serializePermission,
   validatePermissionPayload,
 } from "@/lib/permissions";
+import { requirePermission, requireSuperAdmin } from "@/lib/authorization";
 
 const PERMISSION_TABLE = "permissions";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const scope = await requirePermission(request, "PEOPLE_MANAGE");
+  if (!scope.ok) return scope.response;
+
   try {
     const result = await pool.query(
       `SELECT ${PERMISSION_COLUMNS}
@@ -31,6 +35,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const scope = await requireSuperAdmin(request);
+  if (!scope.ok) return scope.response;
+
   let body: unknown;
 
   try {

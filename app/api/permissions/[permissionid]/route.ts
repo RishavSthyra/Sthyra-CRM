@@ -8,6 +8,7 @@ import {
   serializePermission,
   validatePermissionPayload,
 } from "@/lib/permissions";
+import { requirePermission, requireSuperAdmin } from "@/lib/authorization";
 
 const PERMISSION_TABLE = "permissions";
 
@@ -16,9 +17,12 @@ type PermissionContext = {
 };
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   context: PermissionContext,
 ) {
+  const scope = await requirePermission(request, "PEOPLE_MANAGE");
+  if (!scope.ok) return scope.response;
+
   const { permissionid } = await context.params;
   const permissionId = parsePermissionId(permissionid);
 
@@ -58,6 +62,9 @@ export async function PATCH(
   request: NextRequest,
   context: PermissionContext,
 ) {
+  const scope = await requireSuperAdmin(request);
+  if (!scope.ok) return scope.response;
+
   const { permissionid } = await context.params;
   const permissionId = parsePermissionId(permissionid);
 

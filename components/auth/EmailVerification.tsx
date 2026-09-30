@@ -57,8 +57,20 @@ export function EmailVerification({
         body: JSON.stringify({ email, token: code }),
       });
       if (!response.ok) throw new Error(await getApiError(response));
+      const result = (await response.json()) as {
+        workspace_domain?: string | null;
+      };
       toast.success("Email verified. Welcome to Sthyra CRM.");
       window.setTimeout(() => {
+        if (
+          result.workspace_domain &&
+          window.location.hostname !== result.workspace_domain
+        ) {
+          window.location.assign(
+            `https://${result.workspace_domain}/dashboard`,
+          );
+          return;
+        }
         router.replace("/dashboard");
         router.refresh();
       }, 700);

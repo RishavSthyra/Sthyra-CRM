@@ -22,6 +22,7 @@ export async function updateSupabaseSession(request: NextRequest) {
       cookies: {
         getAll: () => request.cookies.getAll(),
         setAll(cookiesToSet) {
+          const sharedDomain = process.env.AUTH_COOKIE_DOMAIN?.trim();
           for (const cookie of cookiesToSet) {
             request.cookies.set(cookie.name, cookie.value);
           }
@@ -29,7 +30,10 @@ export async function updateSupabaseSession(request: NextRequest) {
             request: { headers: requestHeaders },
           });
           for (const cookie of cookiesToSet) {
-            response.cookies.set(cookie.name, cookie.value, cookie.options);
+            response.cookies.set(cookie.name, cookie.value, {
+              ...cookie.options,
+              ...(sharedDomain ? { domain: sharedDomain } : {}),
+            });
           }
         },
       },

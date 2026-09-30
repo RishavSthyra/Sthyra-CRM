@@ -5,11 +5,17 @@ import { validateForgotPasswordPayload } from "@/lib/authValidation";
 import { getAppUrl } from "@/lib/appUrl";
 import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { enforceRateLimits } from "@/lib/rateLimit";
 
 const GENERIC_MESSAGE =
   "If an active account exists for that email, password reset instructions have been created.";
 
 export async function POST(request: NextRequest) {
+  const ipLimit = await enforceRateLimits(request, [
+    { action: "password-reset-request:ip", limit: 10, windowSeconds: 60 * 60 },
+  ]);
+  if (ipLimit) return ipLimit;
+
   let body: unknown;
   try {
     body = await request.json();
@@ -26,6 +32,16 @@ export async function POST(request: NextRequest) {
       { status: 422 },
     );
   }
+
+  const accountLimit = await enforceRateLimits(request, [
+    {
+      action: "password-reset-request:email",
+      subject: `email:${validation.data.email}`,
+      limit: 5,
+      windowSeconds: 60 * 60,
+    },
+  ]);
+  if (accountLimit) return accountLimit;
 
   if (isSupabaseAuthConfigured()) {
     const supabase = await createSupabaseServerClient();

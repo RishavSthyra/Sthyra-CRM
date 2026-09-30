@@ -72,7 +72,6 @@ export async function PATCH(request: NextRequest, context: UserContext) {
 
   const mutableFields: UserField[] = [
     "team_id",
-    "role_id",
     "username",
     "first_name",
     "last_name",
