@@ -3833,6 +3833,182 @@ function DefinitionEditor({
   );
 }
 
+type StageEditorColumn = {
+  key: string;
+  label: string;
+  type?: "text" | "checkbox";
+};
+
+function StageDefinitionEditor({
+  addLabel,
+  busy,
+  columns,
+  description,
+  items,
+  kind,
+  onAdd,
+  onChange,
+  onRemove,
+  onSave,
+  title,
+}: {
+  addLabel: string;
+  busy: boolean;
+  columns: StageEditorColumn[];
+  description: string;
+  items: Row[];
+  kind: "lead" | "opportunity";
+  onAdd: () => void;
+  onChange: (index: number, key: string, value: unknown) => void;
+  onRemove: (index: number) => void;
+  onSave: () => void;
+  title: string;
+}) {
+  const grid =
+    kind === "lead"
+      ? "lg:grid-cols-[56px_minmax(220px,1.2fr)_minmax(190px,1fr)_100px_100px_52px]"
+      : "lg:grid-cols-[56px_minmax(180px,1.1fr)_minmax(160px,1fr)_120px_160px_100px_52px]";
+
+  return (
+    <Card description={description} title={title}>
+      <div className="overflow-hidden rounded-xl border border-white/[0.09] bg-[#0a0d0c]">
+        <div
+          className={`hidden min-h-10 items-center border-b border-white/[0.08] bg-white/[0.025] text-[10px] font-medium text-[#858d8a] lg:grid ${grid}`}
+        >
+          <span className="px-4 text-center">Order</span>
+          {columns.map((column) => (
+            <span
+              className={
+                column.type === "checkbox" ? "text-center" : "px-3"
+              }
+              key={column.key}
+            >
+              {column.label}
+            </span>
+          ))}
+          <span className="sr-only">Actions</span>
+        </div>
+
+        <div className="divide-y divide-white/[0.07]">
+          {items.map((item, index) => (
+            <div
+              className={`grid grid-cols-2 gap-3 px-4 py-4 transition-colors hover:bg-white/[0.018] lg:items-stretch lg:gap-0 lg:px-0 lg:py-0 ${grid}`}
+              key={String(
+                item.stage_id ?? item.field_id ?? item.reason_id ?? index,
+              )}
+            >
+              <div className="col-span-2 flex items-center justify-between lg:col-span-1 lg:min-h-16 lg:justify-center lg:border-r lg:border-white/[0.07]">
+                <span className="font-mono text-[11px] font-medium text-[#6f7874]">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <button
+                  aria-label={`Remove stage ${index + 1}`}
+                  className="flex size-8 items-center justify-center rounded-lg text-[#9a6666] transition hover:bg-red-400/[0.08] hover:text-red-300 lg:hidden"
+                  onClick={() => onRemove(index)}
+                  title="Remove stage"
+                  type="button"
+                >
+                  <X aria-hidden className="size-4" strokeWidth={1.8} />
+                </button>
+              </div>
+
+              {columns.map((column) =>
+                column.type === "checkbox" ? (
+                  <label
+                    className="col-span-1 flex min-h-10 cursor-pointer items-center gap-2.5 rounded-lg border border-white/[0.08] px-3 text-[11px] text-[#aeb5b2] lg:col-span-1 lg:h-full lg:min-h-16 lg:justify-center lg:rounded-none lg:border-0 lg:border-r lg:border-white/[0.07] lg:px-0"
+                    key={column.key}
+                  >
+                    <input
+                      aria-label={column.label}
+                      className="size-4 accent-[#35ae86]"
+                      checked={Boolean(item[column.key])}
+                      onChange={(event) =>
+                        onChange(index, column.key, event.target.checked)
+                      }
+                      type="checkbox"
+                    />
+                    <span className="lg:sr-only">{column.label}</span>
+                  </label>
+                ) : (
+                  <label
+                    className="col-span-2 flex min-w-0 flex-col gap-1.5 lg:col-span-1 lg:h-full lg:min-h-16 lg:justify-center lg:gap-0 lg:border-r lg:border-white/[0.07] lg:px-3"
+                    key={column.key}
+                  >
+                    <span className="text-[10px] font-medium text-[#858d8a] lg:sr-only">
+                      {column.label}
+                    </span>
+                    <span className="relative block">
+                      {column.key === "color" && (
+                        <span
+                          aria-hidden
+                          className="absolute top-1/2 left-3 size-3 -translate-y-1/2 rounded-full border border-white/20"
+                          style={{
+                            backgroundColor: String(
+                              item[column.key] ?? "#87908b",
+                            ),
+                          }}
+                        />
+                      )}
+                      <input
+                        aria-label={column.label}
+                        className={`h-10 w-full min-w-0 rounded-lg border border-white/[0.09] bg-black/20 px-3 text-xs text-[#e8ebe9] outline-none transition placeholder:text-white/25 focus:border-[#4ea98b] focus:ring-2 focus:ring-[#4ea98b]/15 ${column.key === "color" ? "pl-9 font-mono" : ""}`}
+                        max={column.key === "probability" ? 100 : undefined}
+                        min={column.key === "probability" ? 0 : undefined}
+                        onChange={(event) =>
+                          onChange(index, column.key, event.target.value)
+                        }
+                        type={
+                          column.key === "probability" ? "number" : "text"
+                        }
+                        value={String(item[column.key] ?? "")}
+                      />
+                    </span>
+                  </label>
+                ),
+              )}
+
+              <button
+                aria-label={`Remove stage ${index + 1}`}
+                className="hidden min-h-16 items-center justify-center text-[#8d5d5d] transition hover:bg-red-400/[0.06] hover:text-red-300 lg:flex"
+                onClick={() => onRemove(index)}
+                title="Remove stage"
+                type="button"
+              >
+                <X aria-hidden className="size-4" strokeWidth={1.8} />
+              </button>
+            </div>
+          ))}
+
+          {!items.length && (
+            <div className="px-5 py-10 text-center text-xs text-[#747d79]">
+              No stages configured yet.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center justify-between gap-3 max-[560px]:items-stretch max-[560px]:flex-col">
+        <button
+          className={settingsUi.secondaryButton}
+          onClick={onAdd}
+          type="button"
+        >
+          <Plus aria-hidden className="mr-1.5 size-3.5" strokeWidth={1.8} />
+          {addLabel}
+        </button>
+        <button
+          className={settingsUi.primaryButton}
+          disabled={busy || !items.length}
+          onClick={onSave}
+          type="button"
+        >
+          {busy ? "Saving…" : "Save stages"}
+        </button>
+      </div>
+    </Card>
+  );
+}
+
 function StagesPanel(props: PanelProps & { projectId: number }) {
   const change = (index: number, key: string, next: unknown) =>
     props.setStages(
@@ -3864,11 +4040,13 @@ function StagesPanel(props: PanelProps & { projectId: number }) {
       () => props.loadProject(props.projectId),
     );
   return (
-    <DefinitionEditor
-      title="Lead lifecycle"
+    <StageDefinitionEditor
+      title="Lead stages"
+      description="Define the stages a lead moves through before qualification."
       addLabel="Add stage"
       busy={props.busy}
       items={props.stages}
+      kind="lead"
       columns={[
         { key: "stage_name", label: "Stage name" },
         { key: "stage_key", label: "Key" },
@@ -3926,12 +4104,13 @@ function OpportunityStagesPanel(props: PanelProps & { projectId: number }) {
     );
 
   return (
-    <DefinitionEditor
+    <StageDefinitionEditor
       title="Opportunity pipeline"
       description="These stages begin after lead qualification. Won and lost remain closing outcomes."
       addLabel="Add stage"
       busy={props.busy}
       items={props.opportunityStages}
+      kind="opportunity"
       columns={[
         { key: "stage_name", label: "Stage name" },
         { key: "stage_key", label: "Key" },
