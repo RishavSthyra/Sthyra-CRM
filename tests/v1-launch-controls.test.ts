@@ -7,6 +7,7 @@ import {
 } from "../lib/tenantDomains";
 import { roleHasPermission } from "../lib/authorization";
 import { hashRateLimitSubject } from "../lib/rateLimit";
+import { invitationAccountConflictMessage } from "../lib/invitationPolicy";
 
 test("CSV parser supports quoted commas and escaped quotes", () => {
   const rows = parseCsv(
@@ -57,4 +58,15 @@ test("rate-limit subjects are deterministic keyed digests", () => {
   assert.notEqual(first, other);
   assert.match(first, /^[a-f0-9]{64}$/);
   process.env.RATE_LIMIT_HASH_SECRET = previous;
+});
+
+test("invitation conflicts explain existing company membership", () => {
+  assert.equal(
+    invitationAccountConflictMessage(7, 7),
+    "This account is already a member of this company. Sign in instead.",
+  );
+  assert.equal(
+    invitationAccountConflictMessage(7, 12),
+    "This account already belongs to another company and cannot join a second company yet.",
+  );
 });

@@ -2473,6 +2473,15 @@ function PeoplePanel(props: PanelProps) {
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [dialogOpen]);
 
+  useEffect(() => {
+    if (!permissionRole) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPermissionRole(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [permissionRole]);
+
   const openCreate = () => {
     setForm({ is_active: true });
     setDialogOpen(true);
@@ -2643,6 +2652,11 @@ function PeoplePanel(props: PanelProps) {
   );
   const visibleTeams = props.teams.filter(matchesQuery);
   const visibleRoles = props.roles.filter(matchesQuery);
+  const formatPermissionLabel = (input: unknown) =>
+    String(input ?? "—")
+      .toLowerCase()
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, (character) => character.toUpperCase());
   const inputClass =
     "h-11 w-full rounded-xl border border-white/10 bg-[#0b0e0d] px-3.5 text-xs text-[#f0f0f0] outline-none transition placeholder:text-white/25 focus:border-[#4ea98b] focus:ring-2 focus:ring-[#4ea98b]/15";
   const dialogTitle =
@@ -3163,7 +3177,7 @@ function PeoplePanel(props: PanelProps) {
       )}
       {permissionRole && (
         <div
-          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/75 p-4 backdrop-blur-[3px]"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 p-4 backdrop-blur-[3px]"
           onMouseDown={(event) => {
             if (event.currentTarget === event.target) setPermissionRole(null);
           }}
@@ -3171,19 +3185,23 @@ function PeoplePanel(props: PanelProps) {
           <section
             aria-labelledby="permission-dialog-title"
             aria-modal="true"
-            className="max-h-[calc(100dvh-32px)] w-full max-w-[720px] overflow-hidden rounded-2xl border border-white/[0.12] bg-[#111513] shadow-[0_30px_100px_rgba(0,0,0,0.65)]"
+            className="flex max-h-[calc(100dvh-32px)] w-full max-w-[920px] flex-col overflow-hidden rounded-2xl border border-white/[0.12] bg-[#101311] shadow-[0_30px_100px_rgba(0,0,0,0.72)]"
             role="dialog"
           >
-            <header className="flex items-start justify-between gap-4 border-b border-white/[0.08] px-6 py-5">
-              <div>
+            <header className="flex shrink-0 items-start justify-between gap-4 border-b border-white/[0.08] px-6 py-5">
+              <div className="min-w-0">
                 <h2
                   className="font-[var(--font-bricolage)] text-xl font-medium text-white"
                   id="permission-dialog-title"
                 >
-                  {value(permissionRole, "role_name")} permissions
+                  Add permissions
                 </h2>
                 <p className="mt-1 text-[10px] text-[#777f7c]">
-                  Select the exact capabilities members with this role receive.
+                  Choose permission policies for{" "}
+                  <span className="font-medium text-[#dce2df]">
+                    {value(permissionRole, "role_name")}
+                  </span>
+                  .
                 </p>
               </div>
               <button
@@ -3195,45 +3213,97 @@ function PeoplePanel(props: PanelProps) {
                 <X aria-hidden className="size-4" />
               </button>
             </header>
-            <div className="grid max-h-[58dvh] grid-cols-2 gap-2 overflow-y-auto p-6 max-[620px]:grid-cols-1">
-              {availablePermissions.map((permission) => {
-                const permissionId = String(permission.permission_id);
-                const checked = selectedPermissionIds.has(permissionId);
-                return (
-                  <label
-                    className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition ${
-                      checked
-                        ? "border-[#4ea98b]/50 bg-[#16382e]/55"
-                        : "border-white/[0.08] bg-black/10 hover:border-white/15"
-                    }`}
-                    key={permissionId}
-                  >
-                    <input
-                      checked={checked}
-                      className="mt-0.5 accent-[#4ea98b]"
-                      onChange={(event) => {
-                        const next = new Set(selectedPermissionIds);
-                        if (event.target.checked) next.add(permissionId);
-                        else next.delete(permissionId);
-                        setSelectedPermissionIds(next);
-                      }}
-                      type="checkbox"
-                    />
-                    <span className="min-w-0">
-                      <strong className="block text-[11px] font-medium text-[#e5e9e7]">
-                        {value(permission, "permission_name")}
-                      </strong>
-                      <small className="mt-0.5 block text-[9px] text-[#727a77]">
-                        {value(permission, "description")}
-                      </small>
-                    </span>
-                  </label>
-                );
-              })}
+            <div className="shrink-0 border-b border-white/[0.08] px-6 py-4">
+              <h3 className="text-[13px] font-semibold text-[#edf1ef]">
+                Permission policies{" "}
+                <span className="font-normal text-[#858d89]">
+                  ({selectedPermissionIds.size}/{availablePermissions.length})
+                </span>
+              </h3>
+              <p className="mt-1 text-[10px] text-[#747c79]">
+                Choose one or more policies to attach to this role.
+              </p>
             </div>
-            <footer className="flex items-center justify-between gap-3 border-t border-white/[0.08] bg-black/10 px-6 py-4">
-              <span className="text-[10px] text-[#737b78]">
-                {selectedPermissionIds.size} capabilities selected
+            <div className="min-h-0 flex-1 overflow-auto bg-[#0b0e0c]">
+              <table className="w-full min-w-[680px] table-fixed border-collapse text-left">
+                <colgroup>
+                  <col className="w-12" />
+                  <col className="w-[52%]" />
+                  <col className="w-[25%]" />
+                  <col />
+                </colgroup>
+                <thead className="sticky top-0 z-10 bg-[#171b19] shadow-[0_1px_0_rgba(255,255,255,0.09)]">
+                  <tr className="h-10 text-[9px] font-semibold tracking-[0.05em] text-[#959d99] uppercase">
+                    <th aria-label="Selection" className="px-4" />
+                    <th className="px-3 font-semibold">Policy name</th>
+                    <th className="border-l border-white/[0.07] px-4 font-semibold">
+                      Module
+                    </th>
+                    <th className="border-l border-white/[0.07] px-4 font-semibold">
+                      Access
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {availablePermissions.map((permission) => {
+                    const permissionId = String(permission.permission_id);
+                    const checked = selectedPermissionIds.has(permissionId);
+                    return (
+                      <tr
+                        className="h-[58px] border-b border-white/[0.07] bg-transparent transition hover:bg-white/[0.025]"
+                        key={permissionId}
+                      >
+                        <td className="px-4 align-middle">
+                          <input
+                            aria-label={"Select " + value(permission, "permission_name")}
+                            checked={checked}
+                            className="size-3.5 cursor-pointer accent-[#56b997]"
+                            onChange={(event) => {
+                              const next = new Set(selectedPermissionIds);
+                              if (event.target.checked) next.add(permissionId);
+                              else next.delete(permissionId);
+                              setSelectedPermissionIds(next);
+                            }}
+                            type="checkbox"
+                          />
+                        </td>
+                        <td className="px-3 py-2 align-middle">
+                          <span className="block truncate text-[11px] font-medium text-[#e7ece9]">
+                            {value(permission, "permission_name")}
+                          </span>
+                          <span className="mt-1 block truncate text-[9px] text-[#707875]">
+                            {value(permission, "description")}
+                          </span>
+                        </td>
+                        <td className="border-l border-white/[0.05] px-4 align-middle">
+                          <span className="text-[10px] text-[#b7bfbb]">
+                            {formatPermissionLabel(permission.feature_key)}
+                          </span>
+                        </td>
+                        <td className="border-l border-white/[0.05] px-4 align-middle">
+                          <span className="inline-flex rounded-md border border-white/[0.08] bg-white/[0.035] px-2 py-1 text-[9px] font-medium text-[#aeb6b2]">
+                            {formatPermissionLabel(permission.action)}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {availablePermissions.length === 0 && (
+                    <tr>
+                      <td className="h-40 px-6 text-center" colSpan={4}>
+                        <p className="text-[11px] text-[#7c8480]">
+                          No permission policies are available.
+                        </p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-white/[0.08] bg-[#131714] px-6 py-4">
+              <span aria-live="polite" className="text-[10px] text-[#7f8783]">
+                {selectedPermissionIds.size}{" "}
+                {selectedPermissionIds.size === 1 ? "policy" : "policies"} selected
               </span>
               <div className="flex gap-2">
                 <button

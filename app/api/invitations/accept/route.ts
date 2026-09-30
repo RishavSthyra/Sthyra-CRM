@@ -14,6 +14,7 @@ import { validateText } from "@/utils/validateText";
 import { sendSignupVerificationCode } from "@/lib/authVerificationEmail";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
+import { invitationAccountConflictMessage } from "@/lib/invitationPolicy";
 
 export async function POST(request: NextRequest) {
   let body: unknown;
@@ -147,6 +148,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "This invitation has expired" },
         { status: 410 },
+      );
+    }
+    const existingAccount = await client.query(
+      `SELECT team.company_id
+       FROM users existing_user
+       JOIN teams team ON team.team_id = existing_user.team_id
+       WHERE LOWER(existing_user.email) = LOWER($1)
+         AND existing_user.deleted_at IS NULL
+       LIMIT 1`,
+      [invitation.email],
+    );
+    if (existingAccount.rowCount) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        {
+          error: invitationAccountConflictMessage(
+            Number(existingAccount.rows[0].company_id),
+            Number(invitation.company_id),
+          ),
+        },
+        { status: 409 },
       );
     }
     if (useSupabase) {

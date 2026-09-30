@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import pool from "@/lib/db";
+import pool, { adminPool } from "@/lib/db";
 import {
   createInvitationToken,
   invitationUrl,
@@ -9,6 +9,7 @@ import { requirePermission } from "@/lib/authorization";
 import { isUuid } from "@/lib/permissions";
 import { isObject } from "@/utils/isObject";
 import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
+import { invitationAccountConflictMessage } from "@/lib/invitationPolicy";
 
 const INVITATION_COLUMNS = `
   wi.invitation_id,
@@ -157,16 +158,24 @@ export async function POST(request: NextRequest) {
         { status: 422 },
       );
     }
-    const existingUser = await client.query(
-      `SELECT 1
-       FROM users u
-       WHERE LOWER(u.email)=LOWER($1) AND u.deleted_at IS NULL`,
+    const existingUser = await adminPool.query(
+      `SELECT team.company_id
+       FROM users existing_user
+       JOIN teams team ON team.team_id = existing_user.team_id
+       WHERE LOWER(existing_user.email)=LOWER($1)
+         AND existing_user.deleted_at IS NULL
+       LIMIT 1`,
       [email],
     );
     if (existingUser.rowCount) {
       await client.query("ROLLBACK");
       return NextResponse.json(
-        { error: "This email already belongs to a workspace member" },
+        {
+          error: invitationAccountConflictMessage(
+            Number(existingUser.rows[0].company_id),
+            companyId,
+          ),
+        },
         { status: 409 },
       );
     }

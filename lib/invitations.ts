@@ -67,6 +67,74 @@ export async function sendInvitationEmail(data: InvitationEmailData) {
       timeZone: "Asia/Kolkata",
     }),
   );
+  const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="supported-color-schemes" content="light">
+    <title>Invitation to join ${company}</title>
+  </head>
+  <body style="margin:0;padding:0;background:#ffffff;color:#18201e;font-family:Arial,Helvetica,sans-serif;color-scheme:light;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#ffffff" style="width:100%;background:#ffffff;">
+      <tr>
+        <td align="center" style="padding:40px 20px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:600px;">
+            <tr>
+              <td style="padding:0 0 20px;border-bottom:1px solid #e4e8e6;">
+                <span style="font-size:18px;line-height:24px;font-weight:700;letter-spacing:-0.02em;color:#111714;">STHYRA</span>
+                <span style="margin-left:7px;font-size:13px;line-height:24px;font-weight:600;color:#69736f;">CRM</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px 0 0;">
+                <h1 style="margin:0 0 14px;font-size:28px;line-height:36px;font-weight:700;letter-spacing:-0.02em;color:#111714;">You’re invited to join ${company}</h1>
+                <p style="margin:0;font-size:16px;line-height:26px;color:#59635f;">${inviter} invited you to join their workspace on Sthyra CRM.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:26px 0;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border:1px solid #e1e6e3;border-radius:8px;border-collapse:separate;">
+                  <tr>
+                    <td style="width:120px;padding:15px 18px;border-bottom:1px solid #e8ecea;font-size:13px;line-height:20px;color:#69736f;">Workspace</td>
+                    <td style="padding:15px 18px;border-bottom:1px solid #e8ecea;font-size:14px;line-height:20px;font-weight:600;color:#18201e;">${company}</td>
+                  </tr>
+                  <tr>
+                    <td style="width:120px;padding:15px 18px;border-bottom:1px solid #e8ecea;font-size:13px;line-height:20px;color:#69736f;">Team</td>
+                    <td style="padding:15px 18px;border-bottom:1px solid #e8ecea;font-size:14px;line-height:20px;font-weight:600;color:#18201e;">${team}</td>
+                  </tr>
+                  <tr>
+                    <td style="width:120px;padding:15px 18px;font-size:13px;line-height:20px;color:#69736f;">Role</td>
+                    <td style="padding:15px 18px;font-size:14px;line-height:20px;font-weight:600;color:#18201e;">${role}</td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 0 24px;">
+                <a href="${url}" style="display:inline-block;padding:13px 20px;border-radius:7px;background:#247a62;color:#ffffff;font-size:15px;line-height:20px;font-weight:700;text-decoration:none;">Accept invitation</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 0 30px;">
+                <p style="margin:0 0 16px;font-size:13px;line-height:21px;color:#69736f;">This invitation expires on <strong style="font-weight:600;color:#3c4743;">${expiry}</strong>.</p>
+                <p style="margin:0 0 5px;font-size:12px;line-height:19px;color:#7a8580;">If the button does not work, copy and paste this link into your browser:</p>
+                <a href="${url}" style="font-size:12px;line-height:19px;color:#176b55;text-decoration:underline;word-break:break-all;">${url}</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:22px 0 0;border-top:1px solid #e4e8e6;">
+                <p style="margin:0 0 6px;font-size:12px;line-height:19px;color:#7a8580;">If you were not expecting this invitation, you can safely ignore this email.</p>
+                <p style="margin:0;font-size:12px;line-height:19px;color:#929a97;">Sthyra CRM</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
 
   try {
     await transporter.sendMail({
@@ -74,7 +142,7 @@ export async function sendInvitationEmail(data: InvitationEmailData) {
       to: data.email,
       subject: `Join ${data.companyName} on Sthyra CRM`,
       text: `${data.inviterName || "A workspace administrator"} invited you to join ${data.companyName} as ${data.roleName} in ${data.teamName}. Accept before ${expiry}: ${data.invitationUrl}`,
-      html: `<!doctype html><html><body style="margin:0;background:#080a09;color:#f2f5f4;font-family:Arial,sans-serif"><div style="max-width:560px;margin:0 auto;padding:48px 24px"><div style="border:1px solid #29322f;border-radius:20px;background:#111513;padding:34px"><div style="color:#63c5a3;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase">Sthyra CRM</div><h1 style="margin:18px 0 10px;font-size:28px">Join ${company}</h1><p style="margin:0 0 24px;color:#9ba4a1;line-height:1.6">${inviter} invited you to the <strong style="color:#e9edeb">${team}</strong> team with the <strong style="color:#e9edeb">${role}</strong> role.</p><a href="${url}" style="display:inline-block;border-radius:10px;background:#2c8a6e;color:white;text-decoration:none;padding:14px 22px;font-weight:700">Accept invitation</a><p style="margin:24px 0 0;color:#707976;font-size:12px;line-height:1.5">This secure link expires on ${expiry}. If you did not expect this invitation, you can ignore this email.</p></div></div></body></html>`,
+      html,
     });
     return { sent: true as const };
   } catch (error) {
