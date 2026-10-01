@@ -195,7 +195,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const insertResult = await client.query(
+    await client.query(
       `INSERT INTO projects (
         company_id,
         region_id,
@@ -213,8 +213,7 @@ export async function POST(request: NextRequest) {
         rera_number,
         is_active
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-      RETURNING project_id`,
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
       [
         companyResult.rows[0].company_id,
         regionResult.rows[0].region_id,
@@ -234,7 +233,15 @@ export async function POST(request: NextRequest) {
       ],
     );
 
-    const projectId = insertResult.rows[0].project_id as number;
+    // INSERT ... RETURNING is also checked against the project's SELECT RLS
+    // policy. The access helper cannot see the row until this statement has
+    // completed, so retrieve the generated identity in a separate statement.
+    const identityResult = await client.query<{ project_id: number }>(
+      `SELECT currval(
+         pg_get_serial_sequence('public.projects', 'project_id')
+       )::integer AS project_id`,
+    );
+    const projectId = identityResult.rows[0].project_id;
     for (const [index, stage] of DEFAULT_PROJECT_LEAD_STAGES.entries()) {
       await client.query(
         `INSERT INTO project_lead_stages (
