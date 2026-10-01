@@ -10,7 +10,6 @@ import {
   CircleCheck,
   Clock3,
   ExternalLink,
-  FileText,
   KanbanSquare,
   LayoutList,
   LoaderCircle,
@@ -39,6 +38,10 @@ import {
 import toast from "react-hot-toast";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { OpportunityBookingPanel } from "@/components/opportunities/OpportunityBookingPanel";
+import {
+  QuotationManager,
+  type ManagedQuotation,
+} from "@/components/opportunities/QuotationManager";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 
 type Project = {
@@ -145,19 +148,7 @@ type Shortlist = {
   updated_at: string;
 };
 
-type Quotation = {
-  quotation_id: string;
-  quotation_number: string;
-  version: number;
-  status: string;
-  currency: string;
-  subtotal: string | number;
-  tax_amount: string | number;
-  total_amount: string | number;
-  valid_until?: string | null;
-  line_items: ShortlistItem[];
-  created_at: string;
-};
+type Quotation = ManagedQuotation;
 
 type SiteVisit = {
   visit_id?: string;
@@ -836,127 +827,6 @@ function SiteVisitDialog({
   );
 }
 
-function QuoteDialog({
-  opportunity,
-  shortlist,
-  onClose,
-  onSaved,
-}: {
-  opportunity: OpportunityDetail;
-  shortlist: Shortlist;
-  onClose: () => void;
-  onSaved: () => Promise<void>;
-}) {
-  const valid = new Date();
-  valid.setDate(valid.getDate() + 14);
-  const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState({
-    valid_until: valid.toISOString().slice(0, 10),
-    tax_amount: "0",
-    notes: "",
-  });
-  const subtotal = shortlist.items.reduce(
-    (sum, item) => sum + Number(item.amount ?? 0),
-    0,
-  );
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    try {
-      await api(`/api/opportunities/${opportunity.opportunity_id}/quotations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          shortlist_id: shortlist.shortlist_id,
-          valid_until: form.valid_until || null,
-          tax_amount: Number(form.tax_amount || 0),
-          notes: form.notes || null,
-        }),
-      });
-      toast.success("Quotation created");
-      window.dispatchEvent(new Event("notifications:changed"));
-      await onSaved();
-      onClose();
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Unable to create quotation",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Modal
-      description={`Based on ${shortlist.title} and its captured effective prices.`}
-      onClose={onClose}
-      title="Create quotation"
-    >
-      <form className="p-6" onSubmit={submit}>
-        <div className="mb-5 flex items-center justify-between border-y border-white/[0.08] py-4">
-          <span className="text-sm text-[#8f9792]">
-            {shortlist.items.length} unit
-            {shortlist.items.length === 1 ? "" : "s"}
-          </span>
-          <strong className="text-lg text-white">
-            {formatMoney(subtotal, shortlist.items[0]?.currency ?? "INR")}
-          </strong>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label>
-            <span className="mb-2 block text-xs text-[#aab1ad]">
-              Valid until
-            </span>
-            <input
-              className={inputClass}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  valid_until: event.target.value,
-                }))
-              }
-              type="date"
-              value={form.valid_until}
-            />
-          </label>
-          <label>
-            <span className="mb-2 block text-xs text-[#aab1ad]">
-              Tax amount
-            </span>
-            <input
-              className={inputClass}
-              min="0"
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  tax_amount: event.target.value,
-                }))
-              }
-              type="number"
-              value={form.tax_amount}
-            />
-          </label>
-          <label className="sm:col-span-2">
-            <span className="mb-2 block text-xs text-[#aab1ad]">Notes</span>
-            <textarea
-              className={`${inputClass} min-h-24 resize-y py-3`}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  notes: event.target.value,
-                }))
-              }
-              value={form.notes}
-            />
-          </label>
-        </div>
-        <FormActions busy={busy} label="Create quotation" onClose={onClose} />
-      </form>
-    </Modal>
-  );
-}
-
 function OpportunityCard({
   opportunity,
   onOpen,
@@ -1037,7 +907,6 @@ export function OpportunityWorkspace() {
   const [relatedLoading, setRelatedLoading] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [dialog, setDialog] = useState<"edit" | "close" | "visit" | null>(null);
-  const [quoteShortlist, setQuoteShortlist] = useState<Shortlist | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -1215,7 +1084,7 @@ export function OpportunityWorkspace() {
   useEffect(() => {
     if (!selectedId) return;
     const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !dialog && !quoteShortlist) closeDrawer();
+      if (event.key === "Escape" && !dialog) closeDrawer();
     };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
@@ -1954,7 +1823,7 @@ export function OpportunityWorkspace() {
                                 </span>
                                 <button
                                   className="text-[10px] font-semibold text-[#67d3b2]"
-                                  onClick={() => setQuoteShortlist(shortlist)}
+                                  onClick={() => setDrawerTab("quotes")}
                                   type="button"
                                 >
                                   Create quote
@@ -2134,72 +2003,17 @@ export function OpportunityWorkspace() {
                   )}
 
                   {!relatedLoading && drawerTab === "quotes" && (
-                    <div>
-                      <div className="border-b border-white/[0.08] pb-5">
-                        <h3 className="text-base font-semibold text-[#e7ebe8]">
-                          Quotations
-                        </h3>
-                        <p className="mt-1 text-xs text-[#747c78]">
-                          Create quotations from priced inventory shortlists.
-                        </p>
-                      </div>
-                      {quotations.length ? (
-                        <div className="divide-y divide-white/[0.07]">
-                          {quotations.map((quotation) => (
-                            <div
-                              className="flex items-center gap-4 py-4"
-                              key={quotation.quotation_id}
-                            >
-                              <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-[#172f45] text-[#9dcef9]">
-                                <FileText className="size-[18px]" />
-                              </span>
-                              <span className="min-w-0 flex-1">
-                                <strong className="block truncate text-sm text-[#dfe3e0]">
-                                  {quotation.quotation_number}
-                                </strong>
-                                <span className="mt-1 block text-xs text-[#727a76]">
-                                  Version {quotation.version} ·{" "}
-                                  {quotation.line_items.length} item
-                                  {quotation.line_items.length === 1 ? "" : "s"}
-                                  {quotation.valid_until
-                                    ? ` · Valid until ${formatDate(quotation.valid_until)}`
-                                    : ""}
-                                </span>
-                              </span>
-                              <span className="text-right">
-                                <strong className="block text-sm text-[#dfe3e0]">
-                                  {formatMoney(
-                                    quotation.total_amount,
-                                    quotation.currency,
-                                  )}
-                                </strong>
-                                <span className="mt-1 block text-[10px] capitalize text-[#727a76]">
-                                  {quotation.status}
-                                </span>
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <EmptyState
-                          action={
-                            shortlists[0]
-                              ? () => setQuoteShortlist(shortlists[0])
-                              : undefined
-                          }
-                          actionLabel={
-                            shortlists[0] ? "Create a quotation" : undefined
-                          }
-                          description={
-                            shortlists.length
-                              ? "Use a saved selection to prepare the first quotation."
-                              : "Save a priced inventory shortlist before preparing a quotation."
-                          }
-                          icon={FileText}
-                          title="No quotations yet"
-                        />
-                      )}
-                    </div>
+                    <QuotationManager
+                      onChanged={async () => {
+                        await loadRelated(detail);
+                        window.dispatchEvent(
+                          new Event("notifications:changed"),
+                        );
+                      }}
+                      opportunity={detail}
+                      quotations={quotations}
+                      shortlists={shortlists}
+                    />
                   )}
                 </div>
               </>
@@ -2230,16 +2044,6 @@ export function OpportunityWorkspace() {
             await loadOpportunities(true);
           }}
           opportunity={detail}
-        />
-      )}
-      {detail && quoteShortlist && (
-        <QuoteDialog
-          onClose={() => setQuoteShortlist(null)}
-          onSaved={async () => {
-            await loadRelated(detail);
-          }}
-          opportunity={detail}
-          shortlist={quoteShortlist}
         />
       )}
     </main>

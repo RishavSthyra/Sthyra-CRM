@@ -15,14 +15,15 @@ export async function updateSupabaseSession(request: NextRequest) {
   }
 
   let response = NextResponse.next({ request: { headers: requestHeaders } });
+  const sharedDomain = process.env.AUTH_COOKIE_DOMAIN?.trim();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
+      ...(sharedDomain ? { cookieOptions: { domain: sharedDomain } } : {}),
       cookies: {
         getAll: () => request.cookies.getAll(),
         setAll(cookiesToSet) {
-          const sharedDomain = process.env.AUTH_COOKIE_DOMAIN?.trim();
           for (const cookie of cookiesToSet) {
             request.cookies.set(cookie.name, cookie.value);
           }
@@ -32,7 +33,6 @@ export async function updateSupabaseSession(request: NextRequest) {
           for (const cookie of cookiesToSet) {
             response.cookies.set(cookie.name, cookie.value, {
               ...cookie.options,
-              ...(sharedDomain ? { domain: sharedDomain } : {}),
             });
           }
         },

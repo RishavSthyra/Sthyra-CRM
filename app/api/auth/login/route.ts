@@ -61,6 +61,10 @@ export async function POST(request: NextRequest) {
       const email =
         typeof legacyUser?.email === "string" ? legacyUser.email : identifier;
       const supabase = await createSupabaseServerClient();
+      const { error: signOutError } = await supabase.auth.signOut({
+        scope: "local",
+      });
+      if (signOutError) throw signOutError;
       let authResult = await supabase.auth.signInWithPassword({
         email,
         password,

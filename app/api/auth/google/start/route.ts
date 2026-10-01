@@ -12,6 +12,10 @@ export async function GET(request: NextRequest) {
   try {
     if (isSupabaseAuthConfigured()) {
       const supabase = await createSupabaseServerClient();
+      const { error: signOutError } = await supabase.auth.signOut({
+        scope: "local",
+      });
+      if (signOutError) throw signOutError;
       const redirectTo = new URL(
         "/api/auth/google/callback",
         getAppUrl(request),

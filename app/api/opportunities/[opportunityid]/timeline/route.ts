@@ -61,6 +61,19 @@ export async function GET(request: NextRequest, context: Context) {
              'currency', q.currency
            ), q.updated_at
          FROM opportunity_quotations q WHERE q.opportunity_id=$1
+         UNION ALL
+         SELECT event.quotation_event_id, 'quotation_' || event.event_type,
+           JSONB_BUILD_OBJECT(
+             'quotation_id', event.quotation_id,
+             'event_type', event.event_type,
+             'actor_user_id', event.actor_user_id,
+             'actor_name', event.actor_name,
+             'actor_email', event.actor_email,
+             'comment', event.comment,
+             'metadata', event.metadata
+           ), event.created_at
+         FROM opportunity_quotation_events event
+         WHERE event.opportunity_id=$1
        )
        SELECT event_id, event_type, data, occurred_at,
               COUNT(*) OVER()::integer AS total
