@@ -52,6 +52,7 @@ import {
 } from "lucide-react";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
+import { generateCodeFromName } from "@/utils/generateCodeFromName";
 
 type Row = Record<string, unknown>;
 type Project = {
@@ -2034,6 +2035,7 @@ function RegionsPanel(props: PanelProps) {
     region_type: "city",
     timezone: "Asia/Kolkata",
   });
+  const regionCode = generateCodeFromName(String(form.region_name ?? ""));
 
   const create = async (event: FormEvent) => {
     event.preventDefault();
@@ -2042,7 +2044,7 @@ function RegionsPanel(props: PanelProps) {
       "POST",
       {
         region_name: form.region_name,
-        region_code: form.region_code,
+        region_code: regionCode,
         region_type: form.region_type || null,
         state: form.state || null,
         latitude:
@@ -2133,17 +2135,10 @@ function RegionsPanel(props: PanelProps) {
             <Field label="Region code">
               <input
                 maxLength={20}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    region_code: event.target.value
-                      .toUpperCase()
-                      .replace(/[^A-Z0-9_-]/g, ""),
-                  })
-                }
-                placeholder="KOL"
+                placeholder="Generated from region name"
+                readOnly
                 required
-                value={String(form.region_code ?? "")}
+                value={regionCode}
               />
             </Field>
             <Field label="Region type">
@@ -2220,6 +2215,7 @@ function ProjectsPanel(props: PanelProps) {
     project_status: "planning",
     project_type: "residential",
   });
+  const projectCode = generateCodeFromName(String(form.project_name ?? ""));
   const activeRegions = props.regions.filter(
     (region) => region.is_active !== false,
   );
@@ -2235,7 +2231,7 @@ function ProjectsPanel(props: PanelProps) {
       {
         company_code: props.context?.company.company_code,
         region_code: selectedRegionCode,
-        project_code: form.project_code,
+        project_code: projectCode,
         project_name: form.project_name,
         project_status: form.project_status,
         project_type: form.project_type,
@@ -2319,16 +2315,11 @@ function ProjectsPanel(props: PanelProps) {
             </Field>
             <Field label="Project code">
               <input
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    project_code: event.target.value
-                      .toUpperCase()
-                      .replaceAll(" ", "_"),
-                  })
-                }
+                maxLength={20}
+                placeholder="Generated from project name"
+                readOnly
                 required
-                value={String(form.project_code ?? "")}
+                value={projectCode}
               />
             </Field>
             <Field label="Region">
