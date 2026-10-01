@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import {
   ChevronDown,
@@ -245,6 +246,10 @@ export default function LeadsPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionLead, setActionLead] = useState<string | null>(null);
   const [actionMenuLead, setActionMenuLead] = useState<string | null>(null);
+  const [actionMenuPosition, setActionMenuPosition] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [leadDetail, setLeadDetail] = useState<LeadDetail | null>(null);
   const [timeline, setTimeline] = useState<LeadActivity[]>([]);
@@ -476,18 +481,35 @@ export default function LeadsPage() {
     function closeActionMenu(event: PointerEvent) {
       if (!(event.target as Element).closest("[data-lead-row-actions]")) {
         setActionMenuLead(null);
+        setActionMenuPosition(null);
       }
     }
 
     function closeActionMenuOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setActionMenuLead(null);
+      if (event.key === "Escape") {
+        setActionMenuLead(null);
+        setActionMenuPosition(null);
+      }
+    }
+
+    function closeActionMenuOnViewportChange() {
+      setActionMenuLead(null);
+      setActionMenuPosition(null);
     }
 
     document.addEventListener("pointerdown", closeActionMenu);
     document.addEventListener("keydown", closeActionMenuOnEscape);
+    window.addEventListener("resize", closeActionMenuOnViewportChange);
+    window.addEventListener("scroll", closeActionMenuOnViewportChange, true);
     return () => {
       document.removeEventListener("pointerdown", closeActionMenu);
       document.removeEventListener("keydown", closeActionMenuOnEscape);
+      window.removeEventListener("resize", closeActionMenuOnViewportChange);
+      window.removeEventListener(
+        "scroll",
+        closeActionMenuOnViewportChange,
+        true,
+      );
     };
   }, [actionMenuLead]);
 
@@ -719,12 +741,14 @@ export default function LeadsPage() {
     } finally {
       setActionLead(null);
       setActionMenuLead(null);
+      setActionMenuPosition(null);
     }
   }
 
   function openLeadOverview(lead: Lead) {
     setOpenTool(null);
     setActionMenuLead(null);
+    setActionMenuPosition(null);
     setSelectedLead(lead);
   }
 
@@ -1181,39 +1205,73 @@ export default function LeadsPage() {
                               disabled={actionLead === lead.lead_id}
                               onClick={(event) => {
                                 event.stopPropagation();
-                                setActionMenuLead((current) =>
-                                  current === lead.lead_id
-                                    ? null
-                                    : lead.lead_id,
+                                if (actionMenuLead === lead.lead_id) {
+                                  setActionMenuLead(null);
+                                  setActionMenuPosition(null);
+                                  return;
+                                }
+                                const bounds =
+                                  event.currentTarget.getBoundingClientRect();
+                                const menuWidth = 176;
+                                const menuHeight = 220;
+                                const gap = 7;
+                                const viewportPadding = 8;
+                                const spaceBelow =
+                                  window.innerHeight - bounds.bottom;
+                                const top =
+                                  spaceBelow >= menuHeight + gap
+                                    ? bounds.bottom + gap
+                                    : Math.max(
+                                        viewportPadding,
+                                        bounds.top - menuHeight - gap,
+                                      );
+                                const left = Math.min(
+                                  window.innerWidth -
+                                    menuWidth -
+                                    viewportPadding,
+                                  Math.max(
+                                    viewportPadding,
+                                    bounds.right - menuWidth,
+                                  ),
                                 );
+                                setActionMenuPosition({ left, top });
+                                setActionMenuLead(lead.lead_id);
                               }}
                               type="button"
                             >
                               •••
                             </button>
-                            {actionMenuLead === lead.lead_id && (
-                              <div
-                                className="absolute top-[calc(100%+7px)] right-0 z-50 min-w-40 rounded-[9px] border border-[#363636] bg-[#151515] p-[5px] shadow-[0_15px_35px_rgba(0,0,0,0.55)] [&_button]:block [&_button]:w-full [&_button]:rounded-md [&_button]:border-0 [&_button]:bg-transparent [&_button]:px-[9px] [&_button]:py-2 [&_button]:text-left [&_button]:text-[11px] [&_button]:text-[#d0d0d0] [&_button]:hover:bg-[#2b2b2b] [&_button]:hover:text-white"
-                                onClick={(event) => event.stopPropagation()}
-                                role="menu"
-                              >
-                                {leadActions.map((option) => (
-                                  <button
-                                    key={option.value}
-                                    onClick={() =>
-                                      void runLeadAction(
-                                        lead.lead_id,
-                                        option.value,
-                                      )
+                            {actionMenuLead === lead.lead_id &&
+                            actionMenuPosition
+                              ? createPortal(
+                                  <div
+                                    className="fixed z-[120] w-44 rounded-[9px] border border-[#363636] bg-[#151515] p-[5px] shadow-[0_15px_35px_rgba(0,0,0,0.55)] [&_button]:block [&_button]:w-full [&_button]:rounded-md [&_button]:border-0 [&_button]:bg-transparent [&_button]:px-[9px] [&_button]:py-2 [&_button]:text-left [&_button]:text-[11px] [&_button]:text-[#d0d0d0] [&_button]:hover:bg-[#2b2b2b] [&_button]:hover:text-white"
+                                    data-lead-row-actions
+                                    onClick={(event) =>
+                                      event.stopPropagation()
                                     }
-                                    role="menuitem"
-                                    type="button"
+                                    role="menu"
+                                    style={actionMenuPosition}
                                   >
-                                    {option.label}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
+                                    {leadActions.map((option) => (
+                                      <button
+                                        key={option.value}
+                                        onClick={() =>
+                                          void runLeadAction(
+                                            lead.lead_id,
+                                            option.value,
+                                          )
+                                        }
+                                        role="menuitem"
+                                        type="button"
+                                      >
+                                        {option.label}
+                                      </button>
+                                    ))}
+                                  </div>,
+                                  document.body,
+                                )
+                              : null}
                           </span>
                         )}
                       </td>
