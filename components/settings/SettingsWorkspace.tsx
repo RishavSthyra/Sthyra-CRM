@@ -1888,17 +1888,39 @@ function DataToolsPanel(props: PanelProps) {
   const [entity, setEntity] = useState<"contacts" | "leads">("leads");
   const [csv, setCsv] = useState("");
   const [importBusy, setImportBusy] = useState(false);
+  const [chosenImportProjectId, setChosenImportProjectId] = useState<
+    string | null
+  >(null);
+  const importProjectId =
+    chosenImportProjectId ??
+    String(
+      props.selectedProject?.project_id ??
+        props.context?.projects[0]?.project_id ??
+        "",
+    );
   const canExport =
     props.admin || props.context?.permissions.includes("DATA_EXPORT");
   const canImport =
     props.admin || props.context?.permissions.includes("DATA_IMPORT");
+
   const runImport = async (validateOnly: boolean) => {
+    if (entity === "leads" && !importProjectId) {
+      toast.error("Choose a destination project");
+      return;
+    }
     setImportBusy(true);
     try {
       const result = await props.api("/api/data/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entity, csv, validate_only: validateOnly }),
+        body: JSON.stringify({
+          entity,
+          csv,
+          validate_only: validateOnly,
+          ...(entity === "leads"
+            ? { project_id: Number(importProjectId) }
+            : {}),
+        }),
       });
       toast.success(String(result.message ?? "Import processed"));
       if (!validateOnly) setCsv("");
@@ -1946,6 +1968,36 @@ function DataToolsPanel(props: PanelProps) {
               </select>
             </Field>
           </div>
+          {entity === "leads" && (
+            <div className="max-w-[420px]">
+              <Field label="Destination project">
+                <select
+                  disabled={!canImport || !props.context?.projects.length}
+                  onChange={(event) =>
+                    setChosenImportProjectId(event.target.value)
+                  }
+                  required
+                  value={importProjectId}
+                >
+                  {!props.context?.projects.length && (
+                    <option value="">No active projects available</option>
+                  )}
+                  {props.context?.projects.map((project) => (
+                    <option
+                      key={project.project_id}
+                      value={project.project_id}
+                    >
+                      {project.project_name} ({project.project_code})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <p className="mt-2 text-[10px] leading-relaxed text-[#747c79]">
+                Every imported lead will be assigned to this project. A
+                project_id column is no longer required in the CSV.
+              </p>
+            </div>
+          )}
           <input
             accept=".csv,text/csv"
             className="text-xs text-[#aeb5b2] file:mr-3 file:rounded-lg file:border file:border-white/10 file:bg-white/[0.05] file:px-3 file:py-2 file:text-[#dfe4e2]"
@@ -1963,7 +2015,7 @@ function DataToolsPanel(props: PanelProps) {
             onChange={(event) => setCsv(event.target.value)}
             placeholder={
               entity === "leads"
-                ? "project_id,first_name,last_name,email,phone_number,temperature,budget"
+                ? "first_name,last_name,email,phone_number,temperature,budget"
                 : "first_name,last_name,email,phone_number,country"
             }
             value={csv}
@@ -2267,6 +2319,7 @@ function ProjectsPanel(props: PanelProps) {
           rows={props.projects}
           columns={[
             { key: "project_name", label: "Project" },
+            { key: "project_id", label: "ID" },
             { key: "project_code", label: "Code" },
             { key: "region_name", label: "Region" },
             { key: "project_status", label: "Status" },

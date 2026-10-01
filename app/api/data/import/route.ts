@@ -104,9 +104,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Provide between 1 and 1000 import rows" }, { status: 422 });
   }
 
+  let selectedProjectId: number | undefined;
+  if (entity === "leads" && source.project_id !== undefined) {
+    const projectId = Number(source.project_id);
+    if (!Number.isSafeInteger(projectId) || !canAccessProject(scope.context.access, projectId)) {
+      return NextResponse.json(
+        { error: "Selected project is missing or inaccessible" },
+        { status: 422 },
+      );
+    }
+    selectedProjectId = projectId;
+  }
+
+  const preparedRows = rows.map((row) =>
+    entity === "leads" && selectedProjectId
+      ? { ...row, project_id: selectedProjectId }
+      : row,
+  );
+
   const allowed = entity === "contacts" ? CONTACT_FIELDS : LEAD_FIELDS;
   const errors: Array<{ row: number; errors: string[] }> = [];
-  const preparedContacts = rows.map((row, index) => {
+  const preparedContacts = preparedRows.map((row, index) => {
     const unknown = Object.keys(row).filter((key) => !allowed.has(key));
     const validation = validateContactPayload(contactPayload(row), { partial: false });
     const rowErrors = [
@@ -130,7 +148,7 @@ export async function POST(request: NextRequest) {
   try {
     await client.query("BEGIN");
     let imported = 0;
-    for (let index = 0; index < rows.length; index += 1) {
+    for (let index = 0; index < preparedRows.length; index += 1) {
       const contactData = preparedContacts[index]!;
       if (entity === "contacts") {
         await createContact(client, contactData, scope.context.access.company.company_id);
@@ -151,7 +169,7 @@ export async function POST(request: NextRequest) {
           const created = await createContact(client, contactData, scope.context.access.company.company_id);
           contactId = created.contact_id;
         }
-        const validation = validateLeadPayload(leadPayload(rows[index], contactId), { partial: false });
+        const validation = validateLeadPayload(leadPayload(preparedRows[index], contactId), { partial: false });
         if (!validation.ok) {
           throw new Error(`Row ${index + 2}: ${validation.errors.join(", ")}`);
         }
