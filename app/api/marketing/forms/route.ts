@@ -96,7 +96,9 @@ export async function POST(request: NextRequest) {
   const projectId = Number(body.project_id);
   const name = typeof body.form_name === "string" ? body.form_name.trim() : "";
   const provider = typeof body.provider === "string" ? body.provider : "";
-  const origins = originList(body.allowed_origins ?? []);
+  const origins = originList(
+    provider === "website_form" ? (body.allowed_origins ?? []) : [],
+  );
   const errors: string[] = [];
   if (!Number.isSafeInteger(projectId) || !canAccessProject(scope.context.access, projectId)) {
     errors.push("Select an accessible project");

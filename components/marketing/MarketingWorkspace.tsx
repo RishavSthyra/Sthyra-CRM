@@ -905,30 +905,57 @@ function FormDialog({
     (item) => !source || String(item.source_id ?? "") === source,
   );
   async function save() {
+    const endpointName = name.trim();
+    const allowedOrigins = origins
+      .split(/[\n,]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (!endpointName) {
+      toast.error("Enter an endpoint name");
+      return;
+    }
+    if (!project) {
+      toast.error("Select a project");
+      return;
+    }
+    if (provider === "website_form" && allowedOrigins.length === 0) {
+      toast.error("Add at least one allowed website origin");
+      return;
+    }
+    if (provider === "google_lead_form" && !providerFormId.trim()) {
+      toast.error("Enter the Google form ID");
+      return;
+    }
     setSaving(true);
     try {
       const response = await fetchWithSession("/api/marketing/forms", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          form_name: name,
+          form_name: endpointName,
           provider,
           project_id: Number(project),
           source_id: source || null,
           campaign_id: campaign || null,
           integration_id: integration || null,
           provider_form_id: providerFormId || null,
-          allowed_origins: origins
-            .split(/[\n,]/)
-            .map((item) => item.trim())
-            .filter(Boolean),
+          allowed_origins:
+            provider === "website_form" ? allowedOrigins : [],
           lead_defaults: {},
           field_mapping: {},
         }),
       });
       const body = (await response.json()) as RecordValue;
-      if (!response.ok)
-        throw new Error(String(body.error ?? "Unable to create endpoint"));
+      if (!response.ok) {
+        const details = Array.isArray(body.details)
+          ? body.details.map(String).filter(Boolean)
+          : [];
+        throw new Error(
+          details.length
+            ? details.join(". ")
+            : String(body.error ?? "Unable to create endpoint"),
+        );
+      }
       toast.success("Capture endpoint created");
       onCreated(body);
     } catch (error) {
@@ -953,6 +980,7 @@ function FormDialog({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Skyline Heights landing page"
+            required
           />
         </label>
         <label>
@@ -1048,7 +1076,7 @@ function FormDialog({
               placeholder="Google lead form asset ID"
             />
           </label>
-        ) : (
+        ) : provider === "website_form" ? (
           <label className="col-span-2 max-[620px]:col-span-1">
             <span className={labelClass}>
               Allowed website origins — one per line
@@ -1062,6 +1090,12 @@ function FormDialog({
               }
             />
           </label>
+        ) : (
+          <div className="col-span-2 rounded-lg border border-white/[0.08] bg-white/[0.025] px-4 py-3 text-xs leading-5 text-[#8b9490] max-[620px]:col-span-1">
+            Allowed website origins are not required for server push. After
+            creating the endpoint, authenticate requests with the one-time
+            submission secret.
+          </div>
         )}
       </div>
       <div className="flex justify-end gap-2 border-t border-white/[0.08] px-6 py-4">

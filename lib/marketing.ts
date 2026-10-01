@@ -423,11 +423,12 @@ export async function processMarketingSubmission(
          lead_id, source_id, campaign_id, attribution_type, sub_source,
          occurred_at, metadata
        )
-       SELECT $1,$2,$3,'first_touch',$4,$5::timestamptz,$6::jsonb
+       SELECT $1::uuid,$2::uuid,$3::uuid,'first_touch',$4::text,
+              $5::timestamptz,$6::jsonb
        WHERE ($2::uuid IS NOT NULL OR $3::uuid IS NOT NULL OR $4::text IS NOT NULL)
          AND NOT EXISTS (
            SELECT 1 FROM lead_attributions
-           WHERE lead_id=$1 AND attribution_type='first_touch'
+           WHERE lead_id=$1::uuid AND attribution_type='first_touch'
          )`,
       [
         linkedLead.lead_id,
