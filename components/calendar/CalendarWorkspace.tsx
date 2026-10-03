@@ -41,6 +41,7 @@ import toast from "react-hot-toast";
 import { SiteVisitDetails } from "@/components/calendar/SiteVisitDetails";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
+import { getAppointmentTiming } from "@/lib/appointmentTiming";
 
 type CalendarView = "day" | "week" | "month" | "year";
 type AppointmentType = "call" | "meeting" | "site_visit" | "video" | "other";
@@ -1881,7 +1882,21 @@ function AppointmentDrawer({
   const terminal = ["cancelled", "completed", "no_show"].includes(
     appointment.status,
   );
-  const overdue = !terminal && new Date(appointment.starts_at).getTime() < now;
+  const timing = getAppointmentTiming(
+    appointment.starts_at,
+    appointment.ends_at,
+    now,
+  );
+  const overdue = !terminal && timing.isOverdue;
+  const canConfirm = !overdue;
+  const canCheckIn = timing.canCheckIn;
+  const canComplete = timing.canComplete;
+  const checkInHint = timing.hasEnded
+    ? "This site visit is overdue and can no longer be checked in."
+    : "Check-in opens one hour before the site visit.";
+  const completeHint = timing.hasEnded
+    ? "This appointment is overdue and can no longer be completed."
+    : "Complete becomes available when the appointment starts.";
   return (
     <div
       className="fixed inset-0 z-[70] bg-black/55 backdrop-blur-[2px]"
@@ -2051,6 +2066,22 @@ function AppointmentDrawer({
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-2">
+              {appointment.appointment_type === "site_visit" &&
+                ["scheduled", "confirmed", "rescheduled"].includes(
+                  appointment.status,
+                ) &&
+                !canCheckIn && (
+                  <p className="col-span-2 rounded-md border border-white/[0.08] bg-white/[0.025] px-3 py-2 text-[10px] leading-4 text-[#858b87]">
+                    {checkInHint}
+                  </p>
+                )}
+              {(appointment.appointment_type !== "site_visit" ||
+                appointment.status === "checked_in") &&
+                !canComplete && (
+                  <p className="col-span-2 rounded-md border border-white/[0.08] bg-white/[0.025] px-3 py-2 text-[10px] leading-4 text-[#858b87]">
+                    {completeHint}
+                  </p>
+                )}
               <button
                 className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-white/[0.11] bg-[#181b19] text-xs text-[#d9dcda] transition hover:bg-[#222623] disabled:opacity-40"
                 disabled={saving}
@@ -2071,9 +2102,14 @@ function AppointmentDrawer({
               )}
               {["scheduled", "rescheduled"].includes(appointment.status) && (
                 <button
-                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-[#205b77] text-xs font-semibold text-white transition hover:bg-[#286f90] disabled:opacity-40"
-                  disabled={saving}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-[#205b77] text-xs font-semibold text-white transition hover:bg-[#286f90] disabled:cursor-not-allowed disabled:bg-[#242826] disabled:text-[#747a76]"
+                  disabled={saving || !canConfirm}
                   onClick={() => onAction(appointment, "confirm")}
+                  title={
+                    canConfirm
+                      ? "Confirm appointment"
+                      : "An overdue appointment cannot be confirmed"
+                  }
                   type="button"
                 >
                   <Check className="size-3.5" /> Confirm
@@ -2084,9 +2120,10 @@ function AppointmentDrawer({
                   appointment.status,
                 ) && (
                   <button
-                    className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-[#2b715f] text-xs font-semibold text-white transition hover:bg-[#35846f] disabled:opacity-40"
-                    disabled={saving}
+                    className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-[#2b715f] text-xs font-semibold text-white transition hover:bg-[#35846f] disabled:cursor-not-allowed disabled:bg-[#242826] disabled:text-[#747a76]"
+                    disabled={saving || !canCheckIn}
                     onClick={() => onAction(appointment, "check-in")}
+                    title={canCheckIn ? "Check in" : checkInHint}
                     type="button"
                   >
                     <MapPin className="size-3.5" /> Check in
@@ -2095,9 +2132,10 @@ function AppointmentDrawer({
               {(appointment.appointment_type !== "site_visit" ||
                 appointment.status === "checked_in") && (
                 <button
-                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-[#237e66] text-xs font-semibold text-white transition hover:bg-[#2a9277] disabled:opacity-40"
-                  disabled={saving}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-[#237e66] text-xs font-semibold text-white transition hover:bg-[#2a9277] disabled:cursor-not-allowed disabled:bg-[#242826] disabled:text-[#747a76]"
+                  disabled={saving || !canComplete}
                   onClick={() => onAction(appointment, "complete")}
+                  title={canComplete ? "Complete appointment" : completeHint}
                   type="button"
                 >
                   <CheckCircle2 className="size-3.5" /> Complete

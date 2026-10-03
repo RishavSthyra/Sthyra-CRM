@@ -18,6 +18,7 @@ import {
 import { isObject } from "@/utils/isObject";
 import { validateText } from "@/utils/validateText";
 import { queueMarketingConversion } from "@/lib/marketing";
+import { appointmentActionTimingError } from "@/lib/appointmentTiming";
 
 type SiteVisitAction =
   "confirm" | "check-in" | "complete" | "no-show" | "cancel";
@@ -173,13 +174,15 @@ export async function changeSiteVisitState(
         { status: 409 },
       );
     }
-    if (
-      action === "no-show" &&
-      new Date(visit.starts_at as string).getTime() > Date.now()
-    ) {
+    const timingError = appointmentActionTimingError(
+      action,
+      visit.starts_at as string | Date,
+      visit.ends_at as string | Date,
+    );
+    if (timingError) {
       await client.query("ROLLBACK");
       return NextResponse.json(
-        { error: "A future site visit cannot be marked as no-show" },
+        { error: timingError },
         { status: 409 },
       );
     }
@@ -194,31 +197,31 @@ export async function changeSiteVisitState(
               ? "completed"
               : "confirmed";
     const appointment = await client.query(
-      `UPDATE appointments SET status=$2, updated_by=$3, updated_at=CURRENT_TIMESTAMP,
-       confirmed_at=CASE WHEN $2='confirmed' THEN CURRENT_TIMESTAMP ELSE confirmed_at END,
-       confirmed_by=CASE WHEN $2='confirmed' THEN $3 ELSE confirmed_by END,
-       completed_at=CASE WHEN $2='completed' THEN CURRENT_TIMESTAMP ELSE completed_at END,
-       completed_by=CASE WHEN $2='completed' THEN $3 ELSE completed_by END,
-       cancelled_at=CASE WHEN $2 IN ('cancelled','no_show') THEN CURRENT_TIMESTAMP ELSE cancelled_at END,
-       cancelled_by=CASE WHEN $2 IN ('cancelled','no_show') THEN $3 ELSE cancelled_by END,
-       cancellation_reason=CASE WHEN $2 IN ('cancelled','no_show') THEN $4 ELSE cancellation_reason END
+      `UPDATE appointments SET status=$2::varchar, updated_by=$3::uuid, updated_at=CURRENT_TIMESTAMP,
+       confirmed_at=CASE WHEN $2::varchar='confirmed' THEN CURRENT_TIMESTAMP ELSE confirmed_at END,
+       confirmed_by=CASE WHEN $2::varchar='confirmed' THEN $3::uuid ELSE confirmed_by END,
+       completed_at=CASE WHEN $2::varchar='completed' THEN CURRENT_TIMESTAMP ELSE completed_at END,
+       completed_by=CASE WHEN $2::varchar='completed' THEN $3::uuid ELSE completed_by END,
+       cancelled_at=CASE WHEN $2::varchar IN ('cancelled','no_show') THEN CURRENT_TIMESTAMP ELSE cancelled_at END,
+       cancelled_by=CASE WHEN $2::varchar IN ('cancelled','no_show') THEN $3::uuid ELSE cancelled_by END,
+       cancellation_reason=CASE WHEN $2::varchar IN ('cancelled','no_show') THEN $4::text ELSE cancellation_reason END
        WHERE appointment_id=$1 RETURNING *`,
       [visitId, nextStatus, scope.context.userId, reason ?? null],
     );
     await client.query(
       `UPDATE site_visits SET updated_at=CURRENT_TIMESTAMP,
-       check_in_at=CASE WHEN $2='checked_in' THEN CURRENT_TIMESTAMP ELSE check_in_at END,
-       checked_in_by=CASE WHEN $2='checked_in' THEN $3 ELSE checked_in_by END,
-       check_in_latitude=CASE WHEN $2='checked_in' THEN $4 ELSE check_in_latitude END,
-       check_in_longitude=CASE WHEN $2='checked_in' THEN $5 ELSE check_in_longitude END,
-       check_in_notes=CASE WHEN $2='checked_in' THEN $6 ELSE check_in_notes END,
-       outcome=CASE WHEN $2='completed' THEN $7 ELSE outcome END,
-       feedback=CASE WHEN $2='completed' THEN $8 ELSE feedback END,
-       customer_rating=CASE WHEN $2='completed' THEN $9 ELSE customer_rating END,
-       next_action=CASE WHEN $2='completed' THEN $10 ELSE next_action END,
-       no_show_at=CASE WHEN $2='no_show' THEN CURRENT_TIMESTAMP ELSE no_show_at END,
-       no_show_by=CASE WHEN $2='no_show' THEN $3 ELSE no_show_by END,
-       no_show_reason=CASE WHEN $2='no_show' THEN $11 ELSE no_show_reason END
+       check_in_at=CASE WHEN $2::varchar='checked_in' THEN CURRENT_TIMESTAMP ELSE check_in_at END,
+       checked_in_by=CASE WHEN $2::varchar='checked_in' THEN $3::uuid ELSE checked_in_by END,
+       check_in_latitude=CASE WHEN $2::varchar='checked_in' THEN $4::numeric ELSE check_in_latitude END,
+       check_in_longitude=CASE WHEN $2::varchar='checked_in' THEN $5::numeric ELSE check_in_longitude END,
+       check_in_notes=CASE WHEN $2::varchar='checked_in' THEN $6::text ELSE check_in_notes END,
+       outcome=CASE WHEN $2::varchar='completed' THEN $7::varchar ELSE outcome END,
+       feedback=CASE WHEN $2::varchar='completed' THEN $8::text ELSE feedback END,
+       customer_rating=CASE WHEN $2::varchar='completed' THEN $9::integer ELSE customer_rating END,
+       next_action=CASE WHEN $2::varchar='completed' THEN $10::text ELSE next_action END,
+       no_show_at=CASE WHEN $2::varchar='no_show' THEN CURRENT_TIMESTAMP ELSE no_show_at END,
+       no_show_by=CASE WHEN $2::varchar='no_show' THEN $3::uuid ELSE no_show_by END,
+       no_show_reason=CASE WHEN $2::varchar='no_show' THEN $11::text ELSE no_show_reason END
        WHERE visit_id=$1`,
       [
         visitId,

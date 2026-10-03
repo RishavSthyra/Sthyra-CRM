@@ -11,6 +11,7 @@ import {
 } from "@/lib/operationsAccess";
 import { isObject } from "@/utils/isObject";
 import { validateText } from "@/utils/validateText";
+import { appointmentActionTimingError } from "@/lib/appointmentTiming";
 
 export async function changeAppointmentState(
   request: NextRequest,
@@ -102,6 +103,17 @@ export async function changeAppointmentState(
         },
         { status: 409 },
       );
+    }
+    if (action === "confirm" || action === "complete") {
+      const timingError = appointmentActionTimingError(
+        action,
+        current.starts_at,
+        current.ends_at,
+      );
+      if (timingError) {
+        await client.query("ROLLBACK");
+        return NextResponse.json({ error: timingError }, { status: 409 });
+      }
     }
     const status =
       action === "confirm"
