@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getProjectStage, lockLead, transitionLead } from "@/lib/leadCommands";
 import { parseLeadId } from "@/lib/leads";
+import { requireOperationsContext } from "@/lib/operationsAccess";
 import { isObject } from "@/utils/isObject";
+import { validateText } from "@/utils/validateText";
 
 type Context = { params: Promise<{ leadid: string }> };
 export async function POST(request: NextRequest, context: Context) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
   const leadId = parseLeadId((await context.params).leadid);
   if (!leadId) {
     return NextResponse.json(
@@ -29,6 +33,18 @@ export async function POST(request: NextRequest, context: Context) {
   ) {
     return NextResponse.json(
       { error: "stage_key is required" },
+      { status: 422 },
+    );
+  }
+  const errors: string[] = [];
+  const reason = validateText(body.reason, "reason", 5000, false, errors);
+  if (!reason) errors.push("reason is required");
+  Object.keys(body)
+    .filter((key) => !["stage_key", "reason"].includes(key))
+    .forEach((key) => errors.push(`Unknown field: ${key}`));
+  if (errors.length) {
+    return NextResponse.json(
+      { error: "Validation failed", details: errors },
       { status: 422 },
     );
   }
@@ -82,7 +98,8 @@ export async function POST(request: NextRequest, context: Context) {
       lead.status as string,
       stage.stage_id as string,
       {},
-      { stage_key: stage.stage_key },
+      { stage_key: stage.stage_key, reason },
+      scope.context.userId,
     );
     await client.query("COMMIT");
     return NextResponse.json({ message: "Lead stage changed", lead: updated });

@@ -593,9 +593,9 @@ export async function queueMarketingConversion(
        conversion_value, currency, request_payload
      )
      SELECT $1,$2,integration.integration_id,touchpoint.touchpoint_id,
-            COALESCE(touchpoint.contact_id,lead.contact_id),$3,$4,$5,$6,$7,$8,$9,
+            COALESCE(touchpoint.contact_id,lead.contact_id),$3,$4,$5::varchar,$6,$7,$8,$9,
             JSONB_BUILD_OBJECT('conversion_action_id',
-              integration.settings->'conversion_actions'->>$5)
+              integration.settings->'conversion_actions'->>$5::text)
      FROM marketing_integrations integration
      LEFT JOIN leads lead ON lead.lead_id=$3 AND lead.company_id=$1
      LEFT JOIN LATERAL (
@@ -610,7 +610,7 @@ export async function queueMarketingConversion(
      WHERE integration.company_id=$1
        AND integration.provider='google_data_manager'
        AND integration.status='connected'
-       AND NULLIF(integration.settings->'conversion_actions'->>$5,'') IS NOT NULL
+       AND NULLIF(integration.settings->'conversion_actions'->>$5::text,'') IS NOT NULL
      ON CONFLICT (integration_id, event_name, transaction_id) DO NOTHING`,
     [
       args.companyId,

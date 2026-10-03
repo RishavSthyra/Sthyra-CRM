@@ -95,10 +95,24 @@ type LeadDetail = Lead & {
 type LeadActivity = {
   activity_id: string;
   activity_type: string;
-  source_type: "task" | "note" | "appointment" | "call" | "email";
+  source_type: "task" | "note" | "appointment" | "call" | "email" | "lead";
   title: string;
   description?: string | null;
   occurred_at: string;
+};
+
+type LeadHistoryEvent = {
+  event_id: string;
+  event_type: string;
+  occurred_at: string;
+  data: {
+    command?: string | null;
+    from_status?: string | null;
+    to_status?: string | null;
+    from_stage_name?: string | null;
+    to_stage_name?: string | null;
+    metadata?: Record<string, unknown> | null;
+  };
 };
 
 type LeadCall = {
@@ -182,6 +196,79 @@ const leadActions = [
   { value: "mark-invalid", label: "Mark invalid" },
   { value: "move-to-nurture", label: "Move to nurture" },
 ];
+
+function availableLeadActions(status?: string) {
+  const allowed =
+    status === "nurture"
+      ? new Set(["qualify", "reopen", "mark-duplicate", "mark-invalid"])
+      : status === "closed" || status === "invalid"
+        ? new Set(["reopen"])
+        : status === "qualified" || status === "duplicate"
+          ? new Set<string>()
+          : new Set([
+              "change-stage",
+              "qualify",
+              "mark-duplicate",
+              "mark-invalid",
+              "move-to-nurture",
+            ]);
+  return leadActions.filter((action) => allowed.has(action.value));
+}
+
+function leadHistoryActivity(
+  event: LeadHistoryEvent,
+): LeadActivity | null {
+  if (event.event_type !== "state_change") return null;
+  const command = event.data.command || "change_stage";
+  const fromStage =
+    event.data.from_stage_name || event.data.from_status || "Previous stage";
+  const toStage =
+    event.data.to_stage_name || event.data.to_status || "New stage";
+  const title =
+    command === "change_stage"
+      ? `Lead stage changed: ${fromStage} → ${toStage}`
+      : command === "move_to_nurture"
+        ? "Lead moved to nurture"
+        : command === "mark_invalid"
+          ? "Lead marked invalid"
+          : command === "mark_duplicate"
+            ? "Lead marked as duplicate"
+            : command === "qualify"
+              ? "Lead qualified and converted"
+              : command === "reopen"
+                ? `Lead reopened in ${toStage}`
+                : command === "close"
+                  ? `Lead closed in ${toStage}`
+                  : `Lead ${label(command).toLowerCase()}`;
+  const metadata = event.data.metadata;
+  const reason =
+    metadata && typeof metadata.reason === "string"
+      ? metadata.reason.trim()
+      : "";
+
+  return {
+    activity_id: `lead-state-${event.event_id}`,
+    activity_type: `lead_${command}`,
+    source_type: "lead",
+    title,
+    description: reason || null,
+    occurred_at: event.occurred_at,
+  };
+}
+
+function mergeLeadActivities(
+  activities: LeadActivity[],
+  events: LeadHistoryEvent[],
+) {
+  const stateChanges = events
+    .map(leadHistoryActivity)
+    .filter((event): event is LeadActivity => event !== null);
+  return [...activities, ...stateChanges].sort(
+    (left, right) =>
+      new Date(right.occurred_at).getTime() -
+      new Date(left.occurred_at).getTime(),
+  );
+}
 
 function label(value?: string | null) {
   return value
@@ -562,6 +649,9 @@ export default function LeadsPage() {
             `/api/activities/timeline?lead_id=${leadQuery}&limit=100`,
             { cache: "no-store" },
           ),
+          fetchWithSession(`/api/leads/${leadId}/timeline?limit=100`, {
+            cache: "no-store",
+          }),
           fetchWithSession(`/api/calls?lead_id=${leadQuery}&limit=100`, {
             cache: "no-store",
           }),
@@ -578,10 +668,18 @@ export default function LeadsPage() {
         }
         const failed = responses.find((response) => !response.ok);
         if (failed) throw new Error(await getApiError(failed));
-        const [leadBody, activityBody, callsBody, emailsBody, notesBody] =
+        const [
+          leadBody,
+          activityBody,
+          leadTimelineBody,
+          callsBody,
+          emailsBody,
+          notesBody,
+        ] =
           (await Promise.all(responses.map((response) => response.json()))) as [
             { lead?: LeadDetail },
             { timeline?: LeadActivity[] },
+            { events?: LeadHistoryEvent[] },
             { calls?: LeadCall[] },
             { emails?: LeadEmail[] },
             { notes?: LeadNote[] },
@@ -591,7 +689,12 @@ export default function LeadsPage() {
         };
         if (!cancelled) {
           setLeadDetail(typedLeadBody.lead ?? null);
-          setTimeline(activityBody.timeline ?? []);
+          setTimeline(
+            mergeLeadActivities(
+              activityBody.timeline ?? [],
+              leadTimelineBody.events ?? [],
+            ),
+          );
           setLeadCalls(callsBody.calls ?? []);
           setLeadEmails(emailsBody.emails ?? []);
           setLeadNotes(notesBody.notes ?? []);
@@ -670,15 +773,28 @@ export default function LeadsPage() {
       if (payload.note) {
         setLeadNotes((current) => [payload.note!, ...current]);
       }
-      const activityResponse = await fetchWithSession(
-        `/api/activities/timeline?lead_id=${encodeURIComponent(lead.lead_id)}&limit=100`,
-        { cache: "no-store" },
-      );
-      if (activityResponse.ok) {
+      const [activityResponse, leadTimelineResponse] = await Promise.all([
+        fetchWithSession(
+          `/api/activities/timeline?lead_id=${encodeURIComponent(lead.lead_id)}&limit=100`,
+          { cache: "no-store" },
+        ),
+        fetchWithSession(`/api/leads/${lead.lead_id}/timeline?limit=100`, {
+          cache: "no-store",
+        }),
+      ]);
+      if (activityResponse.ok && leadTimelineResponse.ok) {
         const activityPayload = (await activityResponse.json()) as {
           timeline?: LeadActivity[];
         };
-        setTimeline(activityPayload.timeline ?? []);
+        const leadTimelinePayload = (await leadTimelineResponse.json()) as {
+          events?: LeadHistoryEvent[];
+        };
+        setTimeline(
+          mergeLeadActivities(
+            activityPayload.timeline ?? [],
+            leadTimelinePayload.events ?? [],
+          ),
+        );
       }
       setNoteTitle("");
       setNoteBody("");
@@ -698,7 +814,9 @@ export default function LeadsPage() {
     if (action === "change-stage") {
       const stageKey = window.prompt("Enter the project stage key");
       if (!stageKey) return;
-      body = { stage_key: stageKey };
+      const reason = window.prompt("Why are you changing this lead's stage?");
+      if (!reason?.trim()) return;
+      body = { stage_key: stageKey, reason: reason.trim() };
     } else if (action === "mark-duplicate") {
       const duplicateId = window.prompt("Enter the duplicate lead UUID");
       if (!duplicateId) return;
@@ -1192,7 +1310,7 @@ export default function LeadsPage() {
                           >
                             Open opportunity
                           </Link>
-                        ) : (
+                        ) : availableLeadActions(lead.status).length ? (
                           <span
                             className={`relative inline-block ${actionMenuLead === lead.lead_id ? "z-[31]" : "z-[1]"}`}
                             data-lead-row-actions
@@ -1253,26 +1371,30 @@ export default function LeadsPage() {
                                     role="menu"
                                     style={actionMenuPosition}
                                   >
-                                    {leadActions.map((option) => (
-                                      <button
-                                        key={option.value}
-                                        onClick={() =>
-                                          void runLeadAction(
-                                            lead.lead_id,
-                                            option.value,
-                                          )
-                                        }
-                                        role="menuitem"
-                                        type="button"
-                                      >
-                                        {option.label}
-                                      </button>
-                                    ))}
+                                    {availableLeadActions(lead.status).map(
+                                      (option) => (
+                                        <button
+                                          key={option.value}
+                                          onClick={() =>
+                                            void runLeadAction(
+                                              lead.lead_id,
+                                              option.value,
+                                            )
+                                          }
+                                          role="menuitem"
+                                          type="button"
+                                        >
+                                          {option.label}
+                                        </button>
+                                      ),
+                                    )}
                                   </div>,
                                   document.body,
                                 )
                               : null}
                           </span>
+                        ) : (
+                          <span className="text-[10px] text-[#656a67]">—</span>
                         )}
                       </td>
                     </tr>
@@ -1544,17 +1666,17 @@ export default function LeadsPage() {
                                       {label(event.source_type)}
                                     </span>
                                   </div>
-                                  <small className="text-[10px] text-[#70746f]">
-                                    {new Date(
-                                      event.occurred_at,
-                                    ).toLocaleString()}
-                                  </small>
                                   {event.description && (
                                     <RichTextContent
                                       className="mt-[3px] rounded-lg border border-[#2c2c2c] bg-[#191919] p-3 text-[11px] leading-[1.5] text-[#d0d0d0]"
                                       value={event.description}
                                     />
                                   )}
+                                  <small className="text-[10px] text-[#70746f]">
+                                    {new Date(
+                                      event.occurred_at,
+                                    ).toLocaleString()}
+                                  </small>
                                 </div>
                               </article>
                             ))}

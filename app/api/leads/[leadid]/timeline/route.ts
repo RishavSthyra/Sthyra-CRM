@@ -25,15 +25,25 @@ export async function GET(request: NextRequest, context: Context) {
     }
     const result = await pool.query(
       `WITH timeline AS (
-         SELECT history_id AS event_id, 'state_change'::text AS event_type,
+         SELECT history.history_id AS event_id, 'state_change'::text AS event_type,
                 JSONB_BUILD_OBJECT(
-                  'command', command, 'from_status', from_status,
-                  'to_status', to_status, 'from_stage_id', from_stage_id,
-                  'to_stage_id', to_stage_id, 'metadata', metadata,
-                  'performed_by', performed_by
+                  'command', history.command,
+                  'from_status', history.from_status,
+                  'to_status', history.to_status,
+                  'from_stage_id', history.from_stage_id,
+                  'from_stage_name', from_stage.stage_name,
+                  'to_stage_id', history.to_stage_id,
+                  'to_stage_name', to_stage.stage_name,
+                  'metadata', history.metadata,
+                  'performed_by', history.performed_by
                 ) AS data,
-                created_at AS occurred_at
-         FROM lead_state_history WHERE lead_id=$1
+                history.created_at AS occurred_at
+         FROM lead_state_history history
+         LEFT JOIN project_lead_stages from_stage
+           ON from_stage.stage_id=history.from_stage_id
+         LEFT JOIN project_lead_stages to_stage
+           ON to_stage.stage_id=history.to_stage_id
+         WHERE history.lead_id=$1
          UNION ALL
          SELECT ownership_history_id, 'ownership_change',
                 JSONB_BUILD_OBJECT(

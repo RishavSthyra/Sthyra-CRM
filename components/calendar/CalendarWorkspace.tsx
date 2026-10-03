@@ -2066,22 +2066,6 @@ function AppointmentDrawer({
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-2">
-              {appointment.appointment_type === "site_visit" &&
-                ["scheduled", "confirmed", "rescheduled"].includes(
-                  appointment.status,
-                ) &&
-                !canCheckIn && (
-                  <p className="col-span-2 rounded-md border border-white/[0.08] bg-white/[0.025] px-3 py-2 text-[10px] leading-4 text-[#858b87]">
-                    {checkInHint}
-                  </p>
-                )}
-              {(appointment.appointment_type !== "site_visit" ||
-                appointment.status === "checked_in") &&
-                !canComplete && (
-                  <p className="col-span-2 rounded-md border border-white/[0.08] bg-white/[0.025] px-3 py-2 text-[10px] leading-4 text-[#858b87]">
-                    {completeHint}
-                  </p>
-                )}
               <button
                 className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-white/[0.11] bg-[#181b19] text-xs text-[#d9dcda] transition hover:bg-[#222623] disabled:opacity-40"
                 disabled={saving}
