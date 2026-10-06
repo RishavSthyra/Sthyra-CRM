@@ -176,25 +176,25 @@ export async function GET(request: NextRequest) {
   }
   const where = `WHERE ${filters.join(" AND ")}`;
   try {
-    const count = await pool.query(
-      `SELECT COUNT(*)::integer AS total FROM leads l
-       JOIN contacts c ON c.contact_id=l.contact_id ${where}`,
-      values,
-    );
     const summary = await pool.query(
       `SELECT
          COUNT(*)::integer AS total,
          COUNT(*) FILTER (WHERE l.status = 'qualified')::integer AS qualified,
          COUNT(*) FILTER (WHERE l.temperature = 'hot')::integer AS hot,
          COUNT(*) FILTER (
-           WHERE na.status = 'pending' AND na.due_at <= CURRENT_TIMESTAMP
+           WHERE EXISTS (
+             SELECT 1
+             FROM lead_next_actions na
+             WHERE na.lead_id = l.lead_id
+               AND na.status = 'pending'
+               AND na.due_at <= CURRENT_TIMESTAMP
+           )
          )::integer AS needs_follow_up,
          COUNT(*) FILTER (
            WHERE l.current_owner_user_id IS NULL AND l.current_team_id IS NULL
          )::integer AS unassigned
        FROM leads l
        JOIN contacts c ON c.contact_id=l.contact_id
-       LEFT JOIN lead_next_actions na ON na.lead_id=l.lead_id
        ${where}`,
       values,
     );
@@ -214,8 +214,8 @@ export async function GET(request: NextRequest) {
        LIMIT $${listValues.length - 1} OFFSET $${listValues.length}`,
       listValues,
     );
-    const total = Number(count.rows[0]?.total ?? 0);
     const summaryRow = summary.rows[0] ?? {};
+    const total = Number(summaryRow.total ?? 0);
     return NextResponse.json({
       leads: result.rows,
       summary: {
