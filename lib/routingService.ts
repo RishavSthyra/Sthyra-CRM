@@ -1,6 +1,8 @@
 import type { PoolClient } from "pg";
 import {
+  chooseQueueAssignee,
   createAssignment,
+  OperationsConflictError,
   OperationsReferenceError,
 } from "@/lib/assignmentService";
 import { matchesConditions, RoutingRuleInput } from "@/lib/operations";
@@ -59,12 +61,20 @@ export async function applyRoutingForLead(
   actorId: string | null = null,
 ): Promise<Record<string, unknown> | null> {
   const project = await client.query(
-    "SELECT company_id FROM projects WHERE project_id=$1",
+    `SELECT p.company_id,
+       COALESCE(configuration.auto_assignment_enabled, FALSE) AS auto_assignment_enabled
+     FROM projects p
+     LEFT JOIN project_lead_configurations configuration
+       ON configuration.project_id=p.project_id
+     WHERE p.project_id=$1`,
     [lead.project_id],
   );
   if (!project.rowCount) return null;
 
   const companyId = Number(project.rows[0].company_id);
+  const autoAssignmentEnabled = Boolean(
+    project.rows[0].auto_assignment_enabled,
+  );
   const rules = await client.query(
     `SELECT * FROM routing_rules
      WHERE company_id=$1 AND is_active=TRUE
@@ -84,6 +94,41 @@ export async function applyRoutingForLead(
        ON CONFLICT (lead_id) WHERE status='waiting' DO NOTHING`,
       [rule.target_queue_id, lead.lead_id, actorId],
     );
+
+    if (!autoAssignmentEnabled) return rule;
+
+    const queueResult = await client.query(
+      "SELECT * FROM queues WHERE queue_id=$1 AND is_active=TRUE FOR UPDATE",
+      [rule.target_queue_id],
+    );
+    const queue = queueResult.rows[0];
+    if (!queue || queue.assignment_strategy === "manual") return rule;
+
+    try {
+      const assignee = await chooseQueueAssignee(client, queue);
+      await createAssignment(
+        client,
+        {
+          leadId: String(lead.lead_id),
+          queueId: String(queue.queue_id),
+          userId: assignee,
+          teamId: (queue.team_id as string | null) ?? null,
+        },
+        actorId,
+        "auto_assigned",
+        "accepted",
+      );
+      await client.query(
+        `UPDATE queues
+         SET last_assigned_user_id=$1, updated_at=CURRENT_TIMESTAMP
+         WHERE queue_id=$2`,
+        [assignee, queue.queue_id],
+      );
+    } catch (error) {
+      // Never reject a real lead because every queue member is unavailable.
+      // The lead remains waiting in the queue and can be claimed later.
+      if (!(error instanceof OperationsConflictError)) throw error;
+    }
     return rule;
   }
 
@@ -96,6 +141,7 @@ export async function applyRoutingForLead(
     },
     actorId,
     "auto_assigned",
+    autoAssignmentEnabled ? "accepted" : "pending",
   );
   return rule;
 }

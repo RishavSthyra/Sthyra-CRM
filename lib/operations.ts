@@ -291,6 +291,7 @@ export type RoutingRuleInput = {
   target_queue_id?: string | null;
   target_user_id?: string | null;
   target_team_id?: string | null;
+  is_active?: boolean;
 };
 
 export function validateRoutingRulePayload(
@@ -310,6 +311,7 @@ export function validateRoutingRulePayload(
     "target_queue_id",
     "target_user_id",
     "target_team_id",
+    "is_active",
   ]);
   const errors = Object.keys(body)
     .filter((key) => !allowed.has(key))
@@ -356,6 +358,12 @@ export function validateRoutingRulePayload(
     "target_team_id",
     errors,
   );
+  let isActive: boolean | undefined;
+  if (body.is_active !== undefined) {
+    if (typeof body.is_active !== "boolean")
+      errors.push("is_active must be a boolean");
+    else isActive = body.is_active;
+  }
   if (!partial) {
     if (!name) errors.push("rule_name is required");
     if (!actionType) errors.push("action_type is required");
@@ -389,6 +397,7 @@ export function validateRoutingRulePayload(
           target_queue_id: queueId,
           target_user_id: userId,
           target_team_id: teamId,
+          is_active: isActive,
         },
       };
 }
@@ -403,6 +412,7 @@ export type SlaRuleInput = {
   response_minutes?: number | null;
   resolution_minutes?: number | null;
   escalation_minutes?: number | null;
+  is_active?: boolean;
 };
 
 export function validateSlaRulePayload(
@@ -421,6 +431,7 @@ export function validateSlaRulePayload(
     "response_minutes",
     "resolution_minutes",
     "escalation_minutes",
+    "is_active",
   ]);
   const errors = Object.keys(body)
     .filter((key) => !allowed.has(key))
@@ -461,6 +472,12 @@ export function validateSlaRulePayload(
   const response = duration("response_minutes", 1);
   const resolution = duration("resolution_minutes", 1);
   const escalation = duration("escalation_minutes", 0);
+  let isActive: boolean | undefined;
+  if (body.is_active !== undefined) {
+    if (typeof body.is_active !== "boolean")
+      errors.push("is_active must be a boolean");
+    else isActive = body.is_active;
+  }
   if (!partial) {
     if (!name) errors.push("rule_name is required");
     if (!appliesTo) appliesTo = "assignment";
@@ -482,6 +499,7 @@ export function validateSlaRulePayload(
           response_minutes: response,
           resolution_minutes: resolution,
           escalation_minutes: escalation,
+          is_active: isActive,
         },
       };
 }

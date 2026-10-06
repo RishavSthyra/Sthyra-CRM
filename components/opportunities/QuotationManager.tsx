@@ -297,7 +297,7 @@ function Modal({
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <section
-        className={`max-h-[94vh] w-full overflow-hidden rounded-xl border border-white/[0.12] bg-[#101512] shadow-2xl ${wide ? "max-w-6xl" : "max-w-xl"}`}
+        className={`max-h-[94vh] w-full overflow-hidden rounded-xl border border-white/[0.12] bg-[#101512] shadow-2xl ${wide ? "max-w-[1360px]" : "max-w-xl"}`}
       >
         <header className="flex items-start justify-between border-b border-white/[0.08] px-6 py-5">
           <div>
@@ -460,9 +460,9 @@ function QuotationEditor({
         className="max-h-[calc(94vh-82px)] overflow-y-auto"
         onSubmit={submit}
       >
-        <div className="grid gap-5 p-6 lg:grid-cols-[minmax(0,1fr)_300px]">
-          <div className="space-y-5">
-            <section className="grid gap-4 rounded-lg border border-white/[0.08] p-4 sm:grid-cols-[1fr_110px_150px]">
+        <div className="grid px-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="min-w-0 lg:pr-8">
+            <section className="grid gap-4 border-b border-white/[0.08] py-6 sm:grid-cols-[minmax(0,1fr)_110px_160px]">
               <label>
                 <span className={labelClass}>Quotation title</span>
                 <input
@@ -496,8 +496,8 @@ function QuotationEditor({
               </label>
             </section>
 
-            <section className="overflow-hidden rounded-lg border border-white/[0.08]">
-              <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
+            <section className="border-b border-white/[0.08] py-6">
+              <div className="flex items-center justify-between gap-4">
                 <div>
                   <h3 className="text-sm font-semibold text-[#e4e8e5]">
                     Line items
@@ -520,9 +520,9 @@ function QuotationEditor({
                   <Plus className="size-3.5" /> Add item
                 </button>
               </div>
-              <div className="overflow-x-auto">
+              <div className="-mx-2 mt-4 overflow-x-auto">
                 <table className="w-full min-w-[760px] text-left">
-                  <thead className="bg-white/[0.025] text-[10px] uppercase tracking-[0.12em] text-[#6f7873]">
+                  <thead className="border-y border-white/[0.07] bg-white/[0.018] text-[10px] uppercase tracking-[0.12em] text-[#6f7873]">
                     <tr>
                       <th className="px-3 py-2.5">Type</th>
                       <th className="px-3 py-2.5">Description</th>
@@ -623,8 +623,8 @@ function QuotationEditor({
               </div>
             </section>
 
-            <div className="grid gap-5 lg:grid-cols-2">
-              <section className="rounded-lg border border-white/[0.08] p-4">
+            <section className="grid border-b border-white/[0.08] py-6 lg:grid-cols-2 lg:divide-x lg:divide-white/[0.08]">
+              <div className="lg:pr-6">
                 <div className="mb-3 flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-[#e4e8e5]">
                     Taxes
@@ -710,12 +710,17 @@ function QuotationEditor({
                     </div>
                   ))}
                 </div>
-              </section>
-              <section className="rounded-lg border border-white/[0.08] p-4">
-                <h3 className="mb-3 text-sm font-semibold text-[#e4e8e5]">
-                  Discount
-                </h3>
-                <div className="grid grid-cols-[1fr_130px] gap-3">
+              </div>
+              <div className="mt-6 border-t border-white/[0.08] pt-6 lg:mt-0 lg:border-t-0 lg:pt-0 lg:pl-6">
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-[#e4e8e5]">
+                    Discount
+                  </h3>
+                  <p className="mt-0.5 text-[11px] text-[#6f7773]">
+                    Apply a percentage or a fixed reduction.
+                  </p>
+                </div>
+                <div className="grid grid-cols-[minmax(0,1fr)_130px] gap-3">
                   <select
                     className={inputClass}
                     onChange={(e) =>
@@ -747,11 +752,11 @@ function QuotationEditor({
                     value={form.discount_value}
                   />
                 </div>
-              </section>
-            </div>
+              </div>
+            </section>
 
-            <section className="rounded-lg border border-white/[0.08] p-4">
-              <div className="mb-3 flex items-end justify-between gap-3">
+            <section className="border-b border-white/[0.08] py-6">
+              <div className="flex flex-wrap items-end justify-between gap-4">
                 <div>
                   <h3 className="text-sm font-semibold text-[#e4e8e5]">
                     Payment plan
@@ -771,7 +776,13 @@ function QuotationEditor({
                   <option value="custom">Custom</option>
                 </select>
               </div>
-              <div className="space-y-2">
+              <div className="mt-4 hidden grid-cols-[minmax(0,1fr)_95px_minmax(0,1fr)_36px] gap-2 border-y border-white/[0.07] px-2 py-2.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-[#68716c] sm:grid">
+                <span>Installment</span>
+                <span>Share</span>
+                <span>Due</span>
+                <span />
+              </div>
+              <div className="mt-2 space-y-2">
                 {form.payment_plan.installments.map((row, index) => (
                   <div
                     className="grid gap-2 sm:grid-cols-[1fr_95px_1fr_36px]"
@@ -899,7 +910,7 @@ function QuotationEditor({
               </button>
             </section>
 
-            <section className="grid gap-4 sm:grid-cols-2">
+            <section className="grid gap-5 py-6 sm:grid-cols-2">
               <label>
                 <span className={labelClass}>Customer message</span>
                 <textarea
@@ -931,7 +942,7 @@ function QuotationEditor({
             </section>
           </div>
 
-          <aside className="h-fit rounded-lg border border-white/[0.09] bg-[#0b100d] p-5 lg:sticky lg:top-0">
+          <aside className="h-fit border-t border-white/[0.08] py-6 lg:sticky lg:top-0 lg:border-t-0 lg:border-l lg:py-6 lg:pl-7">
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#68716c]">
               Quotation summary
             </p>
@@ -962,7 +973,7 @@ function QuotationEditor({
                 <dd>{money(total, form.currency)}</dd>
               </div>
             </dl>
-            <div className="mt-6 rounded-md bg-[#17372d]/60 p-3 text-[11px] leading-5 text-[#8fc7b2]">
+            <div className="mt-6 border-t border-white/[0.08] pt-4 text-[10px] leading-5 text-[#76817c]">
               Once sent or accepted, this version becomes read-only. Further
               changes require a new revision.
             </div>

@@ -3640,10 +3640,8 @@ function LeadConfigurationPanel(props: PanelProps & { projectId: number }) {
       default_source_id: form.default_source_id || null,
       default_campaign_id: form.default_campaign_id || null,
       auto_assignment_enabled: Boolean(form.auto_assignment_enabled),
-      assignment_strategy: form.assignment_strategy,
       duplicate_check_enabled: Boolean(form.duplicate_check_enabled),
       duplicate_window_days: Number(form.duplicate_window_days),
-      response_sla_minutes: Number(form.response_sla_minutes),
     };
     const result = await props.save(
       `/api/projects/${props.projectId}/lead-configuration`,
@@ -3698,28 +3696,6 @@ function LeadConfigurationPanel(props: PanelProps & { projectId: number }) {
                 ))}
             </select>
           </Field>
-          <Field label="Assignment strategy">
-            <select
-              onChange={(e) =>
-                setForm({ ...form, assignment_strategy: e.target.value })
-              }
-              value={String(form.assignment_strategy ?? "manual")}
-            >
-              <option value="manual">Manual</option>
-              <option value="round_robin">Round robin</option>
-              <option value="load_balanced">Load balanced</option>
-            </select>
-          </Field>
-          <Field label="Response SLA (minutes)">
-            <input
-              min="1"
-              type="number"
-              value={String(form.response_sla_minutes ?? 30)}
-              onChange={(e) =>
-                setForm({ ...form, response_sla_minutes: e.target.value })
-              }
-            />
-          </Field>
           <Field label="Duplicate window (days)">
             <input
               min="1"
@@ -3735,6 +3711,7 @@ function LeadConfigurationPanel(props: PanelProps & { projectId: number }) {
       <Card title="Automation">
         <Toggle
           checked={Boolean(form.auto_assignment_enabled)}
+          description="Use active routing rules and queue members to choose an owner for each new lead."
           label="Automatically assign incoming leads"
           onChange={(checked) =>
             setForm({ ...form, auto_assignment_enabled: checked })
@@ -3747,6 +3724,10 @@ function LeadConfigurationPanel(props: PanelProps & { projectId: number }) {
             setForm({ ...form, duplicate_check_enabled: checked })
           }
         />
+        <p className="mt-3 text-[10px] leading-relaxed text-[#737b78]">
+          Distribution is configured under Queues and Routing rules. Response
+          targets are configured under SLA rules.
+        </p>
       </Card>
       <div className={settingsUi.actions}>
         <SaveButton busy={props.busy} />
@@ -4338,7 +4319,140 @@ function AutomationPanel(
     rows: Row[];
   },
 ) {
-  const [form, setForm] = useState<Row>({ priority: 100, conditions: "{}" });
+  const defaultForm = () =>
+    props.kind === "queues"
+      ? ({ strategy: "round_robin", member_user_ids: [] } as Row)
+      : props.kind === "routing-rules"
+        ? ({
+            priority: 100,
+            match_field: "all",
+            action_type: "queue",
+          } as Row)
+        : ({
+            priority: 100,
+            match_field: "all",
+            applies_to: "lead",
+            response_minutes: 15,
+            resolution_minutes: 1440,
+          } as Row);
+  const [form, setForm] = useState<Row>(defaultForm);
+  const [editingQueueId, setEditingQueueId] = useState<string | null>(null);
+
+  const activeUsers = props.users.filter(
+    (row) => row.is_active !== false && row.deleted_at == null,
+  );
+  const activeTeams = props.teams.filter((row) => row.is_active !== false);
+  const activeQueues = props.queues.filter((row) => row.is_active !== false);
+  const selectedMemberIds = new Set(
+    Array.isArray(form.member_user_ids)
+      ? form.member_user_ids.map((id) => String(id))
+      : [],
+  );
+
+  const userName = (row: Row) =>
+    `${String(row.first_name ?? "")} ${String(row.last_name ?? "")}`.trim() ||
+    String(row.email ?? row.username ?? "Unnamed user");
+
+  const userTeamName = (row: Row) => {
+    const team = props.teams.find(
+      (item) => String(item.team_id) === String(row.team_id),
+    );
+    return team ? value(team, "name") : "No team";
+  };
+
+  const userRoleName = (row: Row) => {
+    const role = props.roles.find(
+      (item) => String(item.role_id) === String(row.role_id),
+    );
+    return role ? value(role, "role_name") : "No role";
+  };
+
+  const conditionsFromForm = () => {
+    const field = String(form.match_field ?? "all");
+    if (field === "all") return {};
+    return { [field]: form.match_value };
+  };
+
+  const conditionsLabel = (row: Row) => {
+    const conditions = row.conditions;
+    if (!conditions || typeof conditions !== "object") return "All leads";
+    const entries = Object.entries(conditions as Row);
+    if (!entries.length) return "All leads";
+    return entries
+      .map(([key, conditionValue]) => {
+        const fieldLabels: Record<string, string> = {
+          campaign_id: "Campaign",
+          customer_type: "Customer type",
+          preferred_config: "Configuration",
+          preferred_location: "Location",
+          source_id: "Source",
+          sub_source: "Sub-source",
+          temperature: "Temperature",
+        };
+        let displayValue = Array.isArray(conditionValue)
+          ? conditionValue.join(", ")
+          : conditionValue && typeof conditionValue === "object"
+            ? Array.isArray((conditionValue as Row).in)
+              ? ((conditionValue as Row).in as unknown[]).join(", ")
+              : String((conditionValue as Row).eq ?? "Custom condition")
+            : String(conditionValue ?? "");
+        if (key === "source_id") {
+          const source = props.sources.find(
+            (item) => String(item.source_id) === displayValue,
+          );
+          if (source) displayValue = value(source, "source_name");
+        }
+        if (key === "campaign_id") {
+          const campaign = props.campaigns.find(
+            (item) => String(item.campaign_id) === displayValue,
+          );
+          if (campaign) displayValue = value(campaign, "campaign_name");
+        }
+        return `${fieldLabels[key] ?? key}: ${displayValue}`;
+      })
+      .join(" · ");
+  };
+
+  const destinationLabel = (row: Row) => {
+    if (row.action_type === "queue")
+      return String(row.queue_name ?? "Queue");
+    if (row.action_type === "team")
+      return String(row.target_team_name ?? "Team");
+    return (
+      `${String(row.target_user_first_name ?? "")} ${String(row.target_user_last_name ?? "")}`.trim() ||
+      "Workspace member"
+    );
+  };
+
+  const resetForm = () => {
+    setEditingQueueId(null);
+    setForm(defaultForm());
+  };
+
+  const editQueue = async (row: Row) => {
+    try {
+      const id = String(row.queue_id);
+      const result = await props.api(`/api/queues/${id}`);
+      const queue = (result.queue as Row) ?? row;
+      const members = Array.isArray(queue.members)
+        ? (queue.members as Row[]).map((member) => String(member.user_id))
+        : [];
+      setEditingQueueId(id);
+      setForm({
+        name: queue.queue_name,
+        code: queue.queue_code,
+        description: queue.description ?? "",
+        strategy: queue.assignment_strategy ?? "round_robin",
+        team_id: queue.team_id ?? "",
+        member_user_ids: members,
+      });
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Unable to load queue",
+      );
+    }
+  };
+
   const toggleActive = (row: Row) => {
     const active = Boolean(row.is_active);
     const id = String(row.queue_id ?? row.rule_id ?? row.sla_rule_id);
@@ -4363,30 +4477,28 @@ function AutomationPanel(
   const create = async (event: FormEvent) => {
     event.preventDefault();
     let payload: Row;
-    if (props.kind === "queues")
-      payload = {
-        project_id: props.projectId,
-        queue_code: form.code,
-        queue_name: form.name,
-        description: form.description || null,
-        assignment_strategy: form.strategy || "manual",
-        team_id: form.team_id || null,
-        member_user_ids: [],
-      };
-    else if (props.kind === "routing-rules") {
-      let conditions: Row;
-      try {
-        conditions = JSON.parse(String(form.conditions || "{}")) as Row;
-      } catch {
-        toast.error("Conditions must contain valid JSON");
+    if (props.kind === "queues") {
+      if (!selectedMemberIds.size) {
+        toast.error("Select at least one member for this queue");
         return;
       }
+      payload = {
+        project_id: props.projectId,
+        queue_code:
+          form.code || generateCodeFromName(String(form.name ?? "")),
+        queue_name: form.name,
+        description: form.description || null,
+        assignment_strategy: form.strategy || "round_robin",
+        team_id: form.team_id || null,
+        member_user_ids: [...selectedMemberIds],
+      };
+    } else if (props.kind === "routing-rules") {
       payload = {
         project_id: props.projectId,
         rule_name: form.name,
         description: form.description || null,
         priority: Number(form.priority || 100),
-        conditions,
+        conditions: conditionsFromForm(),
         action_type: form.action_type || "queue",
         target_queue_id:
           form.action_type === "queue" || !form.action_type
@@ -4394,22 +4506,16 @@ function AutomationPanel(
             : null,
         target_user_id: form.action_type === "user" ? form.target_id : null,
         target_team_id: form.action_type === "team" ? form.target_id : null,
+        is_active: true,
       };
     } else {
-      let conditions: Row;
-      try {
-        conditions = JSON.parse(String(form.conditions || "{}")) as Row;
-      } catch {
-        toast.error("Conditions must contain valid JSON");
-        return;
-      }
       payload = {
         project_id: props.projectId,
         rule_name: form.name,
         description: form.description || null,
         applies_to: form.applies_to || "assignment",
         priority: Number(form.priority || 100),
-        conditions,
+        conditions: conditionsFromForm(),
         response_minutes: form.response_minutes
           ? Number(form.response_minutes)
           : null,
@@ -4419,16 +4525,19 @@ function AutomationPanel(
         escalation_minutes: form.escalation_minutes
           ? Number(form.escalation_minutes)
           : null,
+        is_active: true,
       };
     }
     const result = await props.save(
-      `/api/${props.kind}`,
-      "POST",
+      editingQueueId
+        ? `/api/queues/${editingQueueId}`
+        : `/api/${props.kind}`,
+      editingQueueId ? "PATCH" : "POST",
       payload,
-      "Configuration created",
+      editingQueueId ? "Queue updated" : "Configuration created",
       () => props.loadProject(props.projectId),
     );
-    if (result) setForm({ priority: 100, conditions: "{}" });
+    if (result) resetForm();
   };
   const title =
     props.kind === "queues"
@@ -4441,29 +4550,78 @@ function AutomationPanel(
       ? [
           { key: "queue_name", label: "Queue" },
           { key: "queue_code", label: "Code" },
-          { key: "assignment_strategy", label: "Strategy" },
+          {
+            key: "assignment_strategy",
+            label: "Distribution",
+            render: (row: Row) =>
+              row.assignment_strategy === "round_robin"
+                ? "Take turns"
+                : row.assignment_strategy === "load_balanced"
+                  ? "Balance workload"
+                  : "Manual claim",
+          },
+          { key: "member_count", label: "Members" },
           { key: "waiting_count", label: "Waiting" },
+          {
+            key: "is_active",
+            label: "Status",
+            render: (row: Row) => (
+              <span
+                className={`${settingsUi.status} ${row.is_active ? settingsUi.statusOn : ""}`}
+              >
+                {row.is_active ? "Active" : "Inactive"}
+              </span>
+            ),
+          },
           {
             key: "action",
             label: "",
             render: (row: Row) =>
               props.admin ? (
-                <button
-                  className={settingsUi.tableAction}
-                  disabled={props.busy}
-                  onClick={() => toggleActive(row)}
-                  type="button"
-                >
-                  {row.is_active ? "Deactivate" : "Activate"}
-                </button>
+                <span className="flex items-center gap-3">
+                  <button
+                    className={settingsUi.tableAction}
+                    disabled={props.busy}
+                    onClick={() => void editQueue(row)}
+                    type="button"
+                  >
+                    Manage
+                  </button>
+                  <button
+                    className={settingsUi.tableAction}
+                    disabled={props.busy}
+                    onClick={() => toggleActive(row)}
+                    type="button"
+                  >
+                    {row.is_active ? "Deactivate" : "Activate"}
+                  </button>
+                </span>
               ) : null,
           },
         ]
       : props.kind === "routing-rules"
         ? [
             { key: "rule_name", label: "Rule" },
-            { key: "priority", label: "Priority" },
-            { key: "action_type", label: "Action" },
+            {
+              key: "priority",
+              label: "Order",
+              render: (row: Row) =>
+                Number(row.priority) <= 10
+                  ? "First"
+                  : Number(row.priority) >= 1000
+                    ? "Last"
+                    : "Normal",
+            },
+            {
+              key: "conditions",
+              label: "When",
+              render: (row: Row) => conditionsLabel(row),
+            },
+            {
+              key: "target",
+              label: "Send to",
+              render: (row: Row) => destinationLabel(row),
+            },
             {
               key: "is_active",
               label: "Status",
@@ -4493,9 +4651,27 @@ function AutomationPanel(
           ]
         : [
             { key: "rule_name", label: "Rule" },
-            { key: "applies_to", label: "Applies to" },
-            { key: "response_minutes", label: "Response" },
-            { key: "resolution_minutes", label: "Resolution" },
+            {
+              key: "conditions",
+              label: "For",
+              render: (row: Row) => conditionsLabel(row),
+            },
+            {
+              key: "response_minutes",
+              label: "First response",
+              render: (row: Row) =>
+                row.response_minutes
+                  ? `${String(row.response_minutes)} min`
+                  : "Not tracked",
+            },
+            {
+              key: "resolution_minutes",
+              label: "Resolution",
+              render: (row: Row) =>
+                row.resolution_minutes
+                  ? `${String(row.resolution_minutes)} min`
+                  : "Not tracked",
+            },
             {
               key: "is_active",
               label: "Status",
@@ -4525,15 +4701,52 @@ function AutomationPanel(
           ];
   return (
     <div className={settingsUi.stack}>
-      <Card title={title}>
+      <Card
+        title={title}
+        description={
+          props.kind === "queues"
+            ? "Group workspace members and distribute incoming leads between them."
+            : props.kind === "routing-rules"
+              ? "Rules run from highest to lowest order. The first matching rule decides where a new lead goes."
+              : "SLA rules set deadlines; they do not assign leads."
+        }
+      >
         <ListTable rows={props.rows} columns={columns} />
       </Card>
       {props.admin && (
-        <Card title={`Create ${props.kind === "queues" ? "queue" : "rule"}`}>
+        <Card
+          title={
+            editingQueueId
+              ? "Manage queue"
+              : `Create ${props.kind === "queues" ? "queue" : "rule"}`
+          }
+          description={
+            props.kind === "queues"
+              ? "Choose exactly who can receive leads from this queue."
+              : props.kind === "routing-rules"
+                ? "Choose a simple condition and a destination—no JSON required."
+                : "Choose who the target applies to and the expected response times."
+          }
+        >
           <form className={settingsUi.form} onSubmit={create}>
             <div className={settingsUi.grid}>
-              <Field label="Name">
+              <Field
+                label={
+                  props.kind === "queues"
+                    ? "Queue name"
+                    : props.kind === "routing-rules"
+                      ? "Rule name"
+                      : "SLA name"
+                }
+              >
                 <input
+                  placeholder={
+                    props.kind === "queues"
+                      ? "Nykaa Homes queue"
+                      : props.kind === "routing-rules"
+                        ? "Send all leads to a queue"
+                        : "15 minute first response"
+                  }
                   required
                   value={String(form.name ?? "")}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -4543,39 +4756,36 @@ function AutomationPanel(
                 <>
                   <Field label="Code">
                     <input
+                      readOnly
                       required
-                      value={String(form.code ?? "")}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          code: e.target.value
-                            .toUpperCase()
-                            .replaceAll(" ", "_"),
-                        })
-                      }
+                      value={String(
+                        form.code ||
+                          generateCodeFromName(String(form.name ?? "")),
+                      )}
                     />
                   </Field>
-                  <Field label="Strategy">
-                    <select
-                      value={String(form.strategy ?? "manual")}
-                      onChange={(e) =>
-                        setForm({ ...form, strategy: e.target.value })
-                      }
-                    >
-                      <option value="manual">Manual</option>
-                      <option value="round_robin">Round robin</option>
-                      <option value="load_balanced">Load balanced</option>
-                    </select>
-                  </Field>
-                  <Field label="Team">
+                  <Field label="Team (optional)">
                     <select
                       value={String(form.team_id ?? "")}
-                      onChange={(e) =>
-                        setForm({ ...form, team_id: e.target.value })
-                      }
+                      onChange={(e) => {
+                        const teamId = e.target.value;
+                        const teamMemberIds = teamId
+                          ? activeUsers
+                              .filter(
+                                (member) =>
+                                  String(member.team_id ?? "") === teamId,
+                              )
+                              .map((member) => String(member.user_id))
+                          : [];
+                        setForm({
+                          ...form,
+                          team_id: teamId,
+                          member_user_ids: teamMemberIds,
+                        });
+                      }}
                     >
                       <option value="">No team</option>
-                      {props.teams.map((row) => (
+                      {activeTeams.map((row) => (
                         <option
                           key={String(row.team_id)}
                           value={String(row.team_id)}
@@ -4585,30 +4795,208 @@ function AutomationPanel(
                       ))}
                     </select>
                   </Field>
+                  <Field label="Distribution method">
+                    <select
+                      value={String(form.strategy ?? "round_robin")}
+                      onChange={(event) =>
+                        setForm({ ...form, strategy: event.target.value })
+                      }
+                    >
+                      <option value="round_robin">Take turns</option>
+                      <option value="load_balanced">Balance workload</option>
+                      <option value="manual">Manual claim</option>
+                    </select>
+                  </Field>
+                  <div className="col-span-2 max-[720px]:col-span-1">
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <span className="text-[11px] font-medium tracking-wide text-[#8e9693]">
+                        Queue members
+                      </span>
+                      <span className="text-[10px] text-[#68706d]">
+                        {selectedMemberIds.size} selected
+                      </span>
+                    </div>
+                    <div className="max-h-64 overflow-auto rounded-lg border border-white/[0.08] bg-black/10 [scrollbar-width:thin]">
+                      {activeUsers.length ? (
+                        <table className="w-full min-w-[580px] border-collapse text-left">
+                          <thead className="sticky top-0 bg-[#101312] text-[9px] font-semibold uppercase tracking-[0.1em] text-[#68706d]">
+                            <tr className="border-b border-white/[0.08]">
+                              <th className="w-12 px-4 py-3">
+                                <span className="sr-only">Selected</span>
+                              </th>
+                              <th className="px-2 py-3">Member</th>
+                              <th className="px-3 py-3">Team</th>
+                              <th className="px-3 py-3">Role</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {activeUsers.map((member) => {
+                              const id = String(member.user_id);
+                              const checked = selectedMemberIds.has(id);
+                              return (
+                                <tr
+                                  className="border-b border-white/[0.07] last:border-b-0 hover:bg-white/[0.018]"
+                                  key={id}
+                                >
+                                  <td className="px-4 py-3">
+                                    <input
+                                      aria-label={`Select ${userName(member)}`}
+                                      checked={checked}
+                                      className="size-3.5 accent-[#42b995]"
+                                      onChange={() => {
+                                        const next = new Set(selectedMemberIds);
+                                        if (checked) next.delete(id);
+                                        else next.add(id);
+                                        setForm({
+                                          ...form,
+                                          member_user_ids: [...next],
+                                        });
+                                      }}
+                                      type="checkbox"
+                                    />
+                                  </td>
+                                  <td className="px-2 py-3">
+                                    <strong className="block truncate text-[11px] font-medium text-[#e2e5e3]">
+                                      {userName(member)}
+                                    </strong>
+                                    <small className="mt-0.5 block truncate text-[9px] text-[#6f7774]">
+                                      {String(member.email ?? "")}
+                                    </small>
+                                  </td>
+                                  <td className="px-3 py-3 text-[10px] text-[#aeb4b1]">
+                                    {userTeamName(member)}
+                                  </td>
+                                  <td className="px-3 py-3 text-[10px] text-[#aeb4b1]">
+                                    {userRoleName(member)}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <div className="px-4 py-8 text-center text-[10px] text-[#777f7c]">
+                          Add an active workspace member under People &amp; access first.
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </>
               ) : (
                 <>
-                  <Field label="Priority">
-                    <input
-                      min="1"
-                      type="number"
-                      value={String(form.priority ?? 100)}
+                  <Field label="Which leads should this apply to?">
+                    <select
+                      value={String(form.match_field ?? "all")}
                       onChange={(e) =>
-                        setForm({ ...form, priority: e.target.value })
+                        setForm({
+                          ...form,
+                          match_field: e.target.value,
+                          match_value: "",
+                        })
                       }
-                    />
+                    >
+                      <option value="all">All new leads</option>
+                      <option value="temperature">Lead temperature</option>
+                      <option value="source_id">Lead source</option>
+                      <option value="campaign_id">Campaign</option>
+                      <option value="sub_source">Sub-source</option>
+                      <option value="preferred_location">
+                        Preferred location
+                      </option>
+                      <option value="preferred_config">
+                        Preferred configuration
+                      </option>
+                      <option value="customer_type">Customer type</option>
+                    </select>
                   </Field>
-                  <Field label="Conditions (JSON)">
-                    <input
-                      value={String(form.conditions ?? "{}")}
-                      onChange={(e) =>
-                        setForm({ ...form, conditions: e.target.value })
-                      }
-                    />
-                  </Field>
+                  {String(form.match_field ?? "all") !== "all" ? (
+                    <Field label="Value to match">
+                      {form.match_field === "temperature" ? (
+                        <select
+                          required
+                          value={String(form.match_value ?? "")}
+                          onChange={(e) =>
+                            setForm({ ...form, match_value: e.target.value })
+                          }
+                        >
+                          <option value="">Choose temperature</option>
+                          <option value="hot">Hot</option>
+                          <option value="warm">Warm</option>
+                          <option value="cold">Cold</option>
+                        </select>
+                      ) : form.match_field === "source_id" ? (
+                        <select
+                          required
+                          value={String(form.match_value ?? "")}
+                          onChange={(e) =>
+                            setForm({ ...form, match_value: e.target.value })
+                          }
+                        >
+                          <option value="">Choose source</option>
+                          {props.sources
+                            .filter((row) => row.is_active !== false)
+                            .map((row) => (
+                              <option
+                                key={String(row.source_id)}
+                                value={String(row.source_id)}
+                              >
+                                {value(row, "source_name")}
+                              </option>
+                            ))}
+                        </select>
+                      ) : form.match_field === "campaign_id" ? (
+                        <select
+                          required
+                          value={String(form.match_value ?? "")}
+                          onChange={(e) =>
+                            setForm({ ...form, match_value: e.target.value })
+                          }
+                        >
+                          <option value="">Choose campaign</option>
+                          {props.campaigns
+                            .filter((row) => row.is_active !== false)
+                            .map((row) => (
+                              <option
+                                key={String(row.campaign_id)}
+                                value={String(row.campaign_id)}
+                              >
+                                {value(row, "campaign_name")}
+                              </option>
+                            ))}
+                        </select>
+                      ) : (
+                        <input
+                          placeholder="Enter the exact value"
+                          required
+                          value={String(form.match_value ?? "")}
+                          onChange={(e) =>
+                            setForm({ ...form, match_value: e.target.value })
+                          }
+                        />
+                      )}
+                    </Field>
+                  ) : (
+                    <div className="flex items-end pb-3 text-[10px] leading-relaxed text-[#737b78]">
+                      This is a fallback that matches every new lead.
+                    </div>
+                  )}
+                  {props.kind === "routing-rules" && (
+                    <Field label="Rule order">
+                      <select
+                        value={String(form.priority ?? 100)}
+                        onChange={(e) =>
+                          setForm({ ...form, priority: Number(e.target.value) })
+                        }
+                      >
+                        <option value="10">First — special rule</option>
+                        <option value="100">Normal</option>
+                        <option value="1000">Last — fallback rule</option>
+                      </select>
+                    </Field>
+                  )}
                   {props.kind === "routing-rules" ? (
                     <>
-                      <Field label="Action">
+                      <Field label="Send the lead to">
                         <select
                           value={String(form.action_type ?? "queue")}
                           onChange={(e) =>
@@ -4619,12 +5007,12 @@ function AutomationPanel(
                             })
                           }
                         >
-                          <option value="queue">Queue</option>
-                          <option value="user">User</option>
-                          <option value="team">Team</option>
+                          <option value="queue">A queue</option>
+                          <option value="user">One workspace member</option>
+                          <option value="team">A team</option>
                         </select>
                       </Field>
-                      <Field label="Target">
+                      <Field label="Choose destination">
                         <select
                           required
                           value={String(form.target_id ?? "")}
@@ -4632,29 +5020,37 @@ function AutomationPanel(
                             setForm({ ...form, target_id: e.target.value })
                           }
                         >
-                          <option value="">Select target</option>
+                          <option value="">Select destination</option>
                           {(form.action_type === "user"
-                            ? props.users
+                            ? activeUsers
                             : form.action_type === "team"
-                              ? props.teams
-                              : props.queues
+                              ? activeTeams
+                              : activeQueues
                           ).map((row) => (
                             <option
                               key={String(
-                                row.user_id ?? row.team_id ?? row.queue_id,
+                                form.action_type === "user"
+                                  ? row.user_id
+                                  : form.action_type === "team"
+                                    ? row.team_id
+                                    : row.queue_id,
                               )}
                               value={String(
-                                row.user_id ?? row.team_id ?? row.queue_id,
+                                form.action_type === "user"
+                                  ? row.user_id
+                                  : form.action_type === "team"
+                                    ? row.team_id
+                                    : row.queue_id,
                               )}
                             >
-                              {value(
-                                row,
-                                form.action_type === "user"
-                                  ? "first_name"
-                                  : form.action_type === "team"
-                                    ? "name"
-                                    : "queue_name",
-                              )}
+                              {form.action_type === "user"
+                                ? userName(row)
+                                : value(
+                                    row,
+                                    form.action_type === "team"
+                                      ? "name"
+                                      : "queue_name",
+                                  )}
                             </option>
                           ))}
                         </select>
@@ -4662,55 +5058,53 @@ function AutomationPanel(
                     </>
                   ) : (
                     <>
-                      <Field label="Applies to">
+                      <Field label="Start measuring from">
                         <select
-                          value={String(form.applies_to ?? "assignment")}
+                          value={String(form.applies_to ?? "lead")}
                           onChange={(e) =>
                             setForm({ ...form, applies_to: e.target.value })
                           }
                         >
-                          <option value="assignment">Assignment</option>
-                          <option value="lead">Lead</option>
+                          <option value="lead">When the lead is created</option>
+                          <option value="assignment">
+                            When the lead is assigned
+                          </option>
                         </select>
                       </Field>
-                      <Field label="Response minutes">
-                        <input
-                          min="1"
-                          type="number"
-                          value={String(form.response_minutes ?? "")}
+                      <Field label="First response due in">
+                        <select
+                          value={String(form.response_minutes ?? 15)}
                           onChange={(e) =>
                             setForm({
                               ...form,
-                              response_minutes: e.target.value,
+                              response_minutes: Number(e.target.value),
                             })
                           }
-                        />
+                        >
+                          <option value="5">5 minutes</option>
+                          <option value="10">10 minutes</option>
+                          <option value="15">15 minutes</option>
+                          <option value="30">30 minutes</option>
+                          <option value="60">1 hour</option>
+                          <option value="120">2 hours</option>
+                        </select>
                       </Field>
-                      <Field label="Resolution minutes">
-                        <input
-                          min="1"
-                          type="number"
-                          value={String(form.resolution_minutes ?? "")}
+                      <Field label="Resolution due in">
+                        <select
+                          value={String(form.resolution_minutes ?? 1440)}
                           onChange={(e) =>
                             setForm({
                               ...form,
-                              resolution_minutes: e.target.value,
+                              resolution_minutes: Number(e.target.value),
                             })
                           }
-                        />
-                      </Field>
-                      <Field label="Escalation minutes">
-                        <input
-                          min="0"
-                          type="number"
-                          value={String(form.escalation_minutes ?? "")}
-                          onChange={(e) =>
-                            setForm({
-                              ...form,
-                              escalation_minutes: e.target.value,
-                            })
-                          }
-                        />
+                        >
+                          <option value="120">2 hours</option>
+                          <option value="480">8 hours</option>
+                          <option value="1440">24 hours</option>
+                          <option value="2880">2 days</option>
+                          <option value="10080">7 days</option>
+                        </select>
                       </Field>
                     </>
                   )}
@@ -4718,7 +5112,22 @@ function AutomationPanel(
               )}
             </div>
             <div className={settingsUi.actions}>
-              <SaveButton busy={props.busy}>Create</SaveButton>
+              {editingQueueId && (
+                <button
+                  className={settingsUi.secondaryButton}
+                  onClick={resetForm}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              )}
+              <SaveButton busy={props.busy}>
+                {editingQueueId
+                  ? "Save queue"
+                  : props.kind === "queues"
+                    ? "Create queue"
+                    : "Create and activate"}
+              </SaveButton>
             </div>
           </form>
         </Card>

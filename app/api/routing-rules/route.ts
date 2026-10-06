@@ -121,8 +121,9 @@ export async function POST(request: NextRequest) {
     const result = await client.query(
       `INSERT INTO routing_rules (
          company_id, project_id, rule_name, description, priority, conditions,
-         action_type, target_queue_id, target_user_id, target_team_id, created_by
-       ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11) RETURNING *`,
+         action_type, target_queue_id, target_user_id, target_team_id,
+         is_active, created_by
+       ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11,$12) RETURNING *`,
       [
         scope.context.access.company.company_id,
         validation.data.project_id ?? null,
@@ -134,6 +135,7 @@ export async function POST(request: NextRequest) {
         validation.data.target_queue_id ?? null,
         validation.data.target_user_id ?? null,
         validation.data.target_team_id ?? null,
+        validation.data.is_active ?? false,
         scope.context.userId,
       ],
     );

@@ -357,9 +357,17 @@ export async function chooseQueueAssignee(
        COUNT(a.assignment_id) FILTER (WHERE a.status IN ('pending','accepted'))::integer AS active_assignments
      FROM queue_members qm
      JOIN users u ON u.user_id=qm.user_id
+     LEFT JOIN user_availability availability ON availability.user_id=u.user_id
      LEFT JOIN assignments a ON a.assigned_to_user_id=qm.user_id
      WHERE qm.queue_id=$1 AND qm.is_active=TRUE
        AND u.is_active=TRUE AND u.deleted_at IS NULL
+       AND COALESCE(availability.is_available, TRUE)=TRUE
+       AND NOT EXISTS (
+         SELECT 1 FROM user_leaves leave_record
+         WHERE leave_record.user_id=u.user_id
+           AND leave_record.status='approved'
+           AND CURRENT_DATE BETWEEN leave_record.start_date AND leave_record.end_date
+       )
      GROUP BY qm.user_id, qm.position
      ORDER BY ${orderBy}
      LIMIT 1`,

@@ -122,8 +122,8 @@ export async function POST(request: NextRequest) {
       `INSERT INTO sla_rules (
          company_id, project_id, rule_name, description, applies_to,
          priority, conditions, response_minutes, resolution_minutes,
-         escalation_minutes, created_by
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11) RETURNING *`,
+         escalation_minutes, is_active, created_by
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12) RETURNING *`,
       [
         scope.context.access.company.company_id,
         validation.data.project_id ?? null,
@@ -135,6 +135,7 @@ export async function POST(request: NextRequest) {
         validation.data.response_minutes ?? null,
         validation.data.resolution_minutes ?? null,
         validation.data.escalation_minutes ?? null,
+        validation.data.is_active ?? false,
         scope.context.userId,
       ],
     );

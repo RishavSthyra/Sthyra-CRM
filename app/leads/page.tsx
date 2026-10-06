@@ -40,6 +40,7 @@ type Lead = {
   source_id?: string | null;
   campaign_id?: string | null;
   sub_source?: string | null;
+  stage_key?: string | null;
   stage_name?: string | null;
   opportunity_id?: string | null;
   updated_at?: string;
@@ -197,7 +198,8 @@ const leadActions = [
   { value: "move-to-nurture", label: "Move to nurture" },
 ];
 
-function availableLeadActions(status?: string) {
+function availableLeadActions(lead: Lead) {
+  const status = lead.status;
   const allowed =
     status === "nurture"
       ? new Set(["qualify", "reopen", "mark-duplicate", "mark-invalid"])
@@ -212,6 +214,14 @@ function availableLeadActions(status?: string) {
               "mark-invalid",
               "move-to-nurture",
             ]);
+
+  const currentStage = `${lead.stage_key || ""} ${lead.stage_name || ""}`
+    .trim()
+    .toLowerCase();
+  if (currentStage.includes("nurtur")) {
+    allowed.delete("move-to-nurture");
+  }
+
   return leadActions.filter((action) => allowed.has(action.value));
 }
 
@@ -1310,7 +1320,7 @@ export default function LeadsPage() {
                           >
                             Open opportunity
                           </Link>
-                        ) : availableLeadActions(lead.status).length ? (
+                        ) : availableLeadActions(lead).length ? (
                           <span
                             className={`relative inline-block ${actionMenuLead === lead.lead_id ? "z-[31]" : "z-[1]"}`}
                             data-lead-row-actions
@@ -1330,8 +1340,10 @@ export default function LeadsPage() {
                                 }
                                 const bounds =
                                   event.currentTarget.getBoundingClientRect();
+                                const actionCount =
+                                  availableLeadActions(lead).length;
                                 const menuWidth = 176;
-                                const menuHeight = 220;
+                                const menuHeight = actionCount * 33 + 12;
                                 const gap = 7;
                                 const viewportPadding = 8;
                                 const spaceBelow =
@@ -1371,7 +1383,7 @@ export default function LeadsPage() {
                                     role="menu"
                                     style={actionMenuPosition}
                                   >
-                                    {availableLeadActions(lead.status).map(
+                                    {availableLeadActions(lead).map(
                                       (option) => (
                                         <button
                                           key={option.value}
