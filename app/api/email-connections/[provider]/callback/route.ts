@@ -5,11 +5,13 @@ import {
   EmailProvider,
   exchangeAuthorizationCode,
   getProviderProfile,
+  mailboxOAuthCookieDomain,
   providerRedirectUri,
 } from "@/lib/email/oauthProviders";
 import { encryptEmailToken } from "@/lib/email/tokenEncryption";
 import { readSignedState } from "@/lib/oauthState";
 import { getUserProjectAccess } from "@/lib/projectAccess";
+import { isTenantApplicationHostname } from "@/lib/tenantHost";
 
 const STATE_COOKIE = "sthyra_mailbox_oauth_state";
 type MailboxState = {
@@ -18,21 +20,48 @@ type MailboxState = {
   userId: string;
   companyId: number;
   codeVerifier: string;
+  returnOrigin: string;
 };
 
-function settingsUrl(request: NextRequest, values: Record<string, string>) {
-  const url = new URL("/settings", getAppUrl(request));
+function safeReturnOrigin(request: NextRequest, value?: string): string {
+  if (!value) return getAppUrl(request);
+  try {
+    const url = new URL(value);
+    const isLocal = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+    if (
+      (url.protocol === "https:" && isTenantApplicationHostname(url.hostname)) ||
+      (process.env.NODE_ENV !== "production" && isLocal)
+    ) {
+      return url.origin;
+    }
+  } catch {
+    // Fall back to the callback host when the signed return origin is invalid.
+  }
+  return getAppUrl(request);
+}
+
+function settingsUrl(
+  request: NextRequest,
+  values: Record<string, string>,
+  returnOrigin?: string,
+) {
+  const url = new URL("/settings", safeReturnOrigin(request, returnOrigin));
   url.searchParams.set("section", "email-accounts");
   for (const [key, value] of Object.entries(values)) url.searchParams.set(key, value);
   return url;
 }
 
-function clearState(response: NextResponse, provider: string) {
+function clearState(
+  request: NextRequest,
+  response: NextResponse,
+  provider: string,
+) {
   response.cookies.set(STATE_COOKIE, "", {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: `/api/email-connections/${provider}/callback`,
+    domain: mailboxOAuthCookieDomain(request),
     expires: new Date(0),
   });
 }
@@ -63,9 +92,13 @@ export async function GET(
   const providerError = request.nextUrl.searchParams.get("error");
   if (!code || providerError) {
     const response = NextResponse.redirect(
-      settingsUrl(request, { mailbox_error: providerError || "missing_code" }),
+      settingsUrl(
+        request,
+        { mailbox_error: providerError || "missing_code" },
+        state.returnOrigin,
+      ),
     );
-    clearState(response, provider);
+    clearState(request, response, provider);
     return response;
   }
 
@@ -130,16 +163,24 @@ export async function GET(
       ],
     );
     const response = NextResponse.redirect(
-      settingsUrl(request, { mailbox_connected: provider }),
+      settingsUrl(
+        request,
+        { mailbox_connected: provider },
+        state.returnOrigin,
+      ),
     );
-    clearState(response, provider);
+    clearState(request, response, provider);
     return response;
   } catch (error) {
     console.error(`${provider} mailbox OAuth callback failed`, error);
     const response = NextResponse.redirect(
-      settingsUrl(request, { mailbox_error: "connection_failed" }),
+      settingsUrl(
+        request,
+        { mailbox_error: "connection_failed" },
+        state.returnOrigin,
+      ),
     );
-    clearState(response, provider);
+    clearState(request, response, provider);
     return response;
   }
 }

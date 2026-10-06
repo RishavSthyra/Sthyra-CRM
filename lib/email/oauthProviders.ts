@@ -1,6 +1,10 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { getAppUrl } from "@/lib/appUrl";
+import {
+  isTenantApplicationHostname,
+  tenantDomainRootValue,
+} from "@/lib/tenantHost";
 
 export type EmailProvider = "google" | "microsoft";
 
@@ -43,9 +47,21 @@ export function providerRedirectUri(
         ? process.env.GOOGLE_EMAIL_REDIRECT_URI
         : process.env.MICROSOFT_EMAIL_REDIRECT_URI;
   if (explicit) return explicit;
+  if (purpose === "mailbox" && isTenantApplicationHostname(request.nextUrl.hostname)) {
+    const origin = `${request.nextUrl.protocol}//${tenantDomainRootValue()}`;
+    return `${origin}/api/email-connections/${provider}/callback`;
+  }
   return purpose === "auth"
     ? `${getAppUrl(request)}/api/auth/google/callback`
     : `${getAppUrl(request)}/api/email-connections/${provider}/callback`;
+}
+
+export function mailboxOAuthCookieDomain(
+  request: NextRequest,
+): string | undefined {
+  return isTenantApplicationHostname(request.nextUrl.hostname)
+    ? `.${tenantDomainRootValue()}`
+    : undefined;
 }
 
 export function getAuthorizationUrl(args: {

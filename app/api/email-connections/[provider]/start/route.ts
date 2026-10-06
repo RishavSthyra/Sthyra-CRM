@@ -3,8 +3,10 @@ import {
   EmailProvider,
   createPkcePair,
   getAuthorizationUrl,
+  mailboxOAuthCookieDomain,
   providerRedirectUri,
 } from "@/lib/email/oauthProviders";
+import { getAppUrl } from "@/lib/appUrl";
 import { requireOperationsContext } from "@/lib/operationsAccess";
 import { createSignedState } from "@/lib/oauthState";
 
@@ -29,6 +31,7 @@ export async function GET(
       userId: scope.context.userId,
       companyId: scope.context.access.company.company_id,
       codeVerifier: pkce.verifier,
+      returnOrigin: getAppUrl(request),
     });
     const response = NextResponse.redirect(
       getAuthorizationUrl({
@@ -44,6 +47,7 @@ export async function GET(
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: `/api/email-connections/${provider}/callback`,
+      domain: mailboxOAuthCookieDomain(request),
       maxAge: 10 * 60,
     });
     return response;
