@@ -93,6 +93,13 @@ async function applyAuthenticatedRole(
   client: PoolClient,
   authUserId: string,
 ): Promise<void> {
+  // Supabase's transaction pooler can hand this transaction a PostgreSQL
+  // backend that was previously used by a client which changed search_path
+  // (pg_dump, for example, sets it to an empty value). Never inherit that
+  // backend-local state: all application SQL expects CRM tables in public.
+  await client.query(
+    "SET LOCAL search_path = pg_catalog, public, extensions, pg_temp",
+  );
   await client.query(
     `SELECT set_config(
        'request.jwt.claims',

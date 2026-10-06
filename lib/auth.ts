@@ -339,8 +339,8 @@ export async function authenticateRequest(
 
       const result = await pool.query(
         `SELECT ${AUTH_USER_COLUMNS}
-         FROM users u
-         JOIN workspace_memberships membership
+         FROM public.users u
+         JOIN public.workspace_memberships membership
            ON membership.crm_user_id = u.user_id
           AND membership.auth_user_id = $1
           AND membership.is_active = TRUE
@@ -384,8 +384,8 @@ export async function authenticateRequest(
 
     const result = await pool.query(
       `SELECT ${AUTH_USER_COLUMNS}
-       FROM auth_sessions s
-       JOIN users u ON u.user_id = s.user_id
+       FROM public.auth_sessions s
+       JOIN public.users u ON u.user_id = s.user_id
        WHERE s.session_id = $1
          AND s.user_id = $2
          AND s.revoked_at IS NULL
