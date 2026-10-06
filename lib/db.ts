@@ -10,6 +10,7 @@ import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 import {
   readTenantAuthContext,
   TENANT_AUTH_HEADER,
+  type TenantAuthContext,
 } from "@/lib/tenantRequestContext";
 
 function positiveInteger(value: string | undefined, fallback: number): number {
@@ -79,7 +80,7 @@ export class UnscopedDatabaseAccessError extends Error {
   }
 }
 
-async function requestAuthUserId(): Promise<string | null> {
+async function requestAuthContext(): Promise<TenantAuthContext | null> {
   if (!isSupabaseAuthConfigured()) return null;
   try {
     const requestHeaders = await headers();
@@ -91,7 +92,7 @@ async function requestAuthUserId(): Promise<string | null> {
 
 async function applyAuthenticatedRole(
   client: PoolClient,
-  authUserId: string,
+  authContext: TenantAuthContext,
 ): Promise<void> {
   // Supabase's transaction pooler can hand this transaction a PostgreSQL
   // backend that was previously used by a client which changed search_path
@@ -106,18 +107,23 @@ async function applyAuthenticatedRole(
        json_build_object(
          'sub', $1::text,
          'role', 'authenticated',
-         'app_server', TRUE
+         'app_server', TRUE,
+         'workspace_slug', $2::text
        )::text,
        TRUE
      )`,
-    [authUserId],
+    [authContext.authUserId, authContext.workspaceSlug],
   );
   await client.query(
     "SELECT set_config('request.jwt.claim.sub', $1, TRUE)",
-    [authUserId],
+    [authContext.authUserId],
   );
   await client.query(
     "SELECT set_config('request.jwt.claim.role', 'authenticated', TRUE)",
+  );
+  await client.query(
+    "SELECT set_config('request.jwt.claim.workspace_slug', $1, TRUE)",
+    [authContext.workspaceSlug ?? ""],
   );
   // The browser-facing Supabase roles have no direct access to CRM tables.
   // Only the trusted Next.js server assumes this NOLOGIN role after the proxy
@@ -132,18 +138,18 @@ async function runScopedQuery<Row extends QueryResultRow = QueryResultRow>(
   values?: unknown,
 ): Promise<QueryResult<Row>> {
   const args: QueryArguments = [query, values];
-  const authUserId = await requestAuthUserId();
+  const authContext = await requestAuthContext();
   if (!isSupabaseAuthConfigured()) {
     return Reflect.apply(rawTenantPool.query, rawTenantPool, args) as Promise<
       QueryResult<Row>
     >;
   }
-  if (!authUserId) throw new UnscopedDatabaseAccessError();
+  if (!authContext) throw new UnscopedDatabaseAccessError();
 
   const client = await rawTenantPool.connect();
   try {
     await client.query("BEGIN");
-    await applyAuthenticatedRole(client, authUserId);
+    await applyAuthenticatedRole(client, authContext);
     const result = (await Reflect.apply(
       client.query,
       client,
@@ -160,13 +166,13 @@ async function runScopedQuery<Row extends QueryResultRow = QueryResultRow>(
 }
 
 async function connectScopedClient(): Promise<PoolClient> {
-  const authUserId = await requestAuthUserId();
-  if (isSupabaseAuthConfigured() && !authUserId) {
+  const authContext = await requestAuthContext();
+  if (isSupabaseAuthConfigured() && !authContext) {
     throw new UnscopedDatabaseAccessError();
   }
 
   const client = await rawTenantPool.connect();
-  if (!authUserId) return client;
+  if (!authContext) return client;
 
   let contextApplied = false;
   const query = client.query.bind(client);
@@ -186,7 +192,7 @@ async function connectScopedClient(): Promise<PoolClient> {
 
         if (command === "BEGIN" || command === "START") {
           const result = await Reflect.apply(query, client, args);
-          await applyAuthenticatedRole(client, authUserId);
+          await applyAuthenticatedRole(client, authContext);
           contextApplied = true;
           return result;
         }

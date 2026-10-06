@@ -11,6 +11,7 @@ import { createSignedState, readSignedState } from "@/lib/oauthState";
 import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { linkExistingCrmIdentity } from "@/lib/supabase/workspaceProvisioning";
+import { crmUserMatchesRequestWorkspace } from "@/lib/tenantAccess";
 
 const STATE_COOKIE = "sthyra_google_auth_state";
 const PENDING_COOKIE = "sthyra_google_signup_pending";
@@ -51,6 +52,15 @@ export async function GET(request: NextRequest) {
         throw error ?? new Error("Google did not provide a verified email");
       }
       const crmUser = await linkExistingCrmIdentity(data.user.id, email);
+      if (
+        crmUser &&
+        !(await crmUserMatchesRequestWorkspace(request, crmUser.user_id))
+      ) {
+        await supabase.auth.signOut({ scope: "local" });
+        return NextResponse.redirect(
+          destination(request, "/login?oauth_error=workspace_mismatch"),
+        );
+      }
       return NextResponse.redirect(
         destination(request, crmUser ? "/dashboard" : "/signup?google=1"),
       );

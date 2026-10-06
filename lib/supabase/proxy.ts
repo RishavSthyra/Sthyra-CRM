@@ -5,6 +5,38 @@ import {
   createTenantAuthContext,
   TENANT_AUTH_HEADER,
 } from "@/lib/tenantRequestContext";
+import { workspaceSlugFromHostname } from "@/lib/tenantHost";
+
+const LEGACY_AUTH_COOKIE =
+  /^(?:sb-[a-z0-9]+-auth-token(?:\.\d+)?|sthyra_(?:access|refresh)_token)$/i;
+
+function clearLegacySharedAuthCookies(
+  request: NextRequest,
+  response: NextResponse,
+) {
+  const legacyDomain = process.env.AUTH_COOKIE_DOMAIN?.trim();
+  if (!legacyDomain) return;
+
+  const names = new Set(
+    request.cookies
+      .getAll()
+      .map((cookie) => cookie.name)
+      .filter((name) => LEGACY_AUTH_COOKIE.test(name)),
+  );
+  for (const name of names) {
+    for (const path of ["/", "/api/auth"]) {
+      response.cookies.set(name, "", {
+        domain: legacyDomain,
+        expires: new Date(0),
+        httpOnly: true,
+        maxAge: 0,
+        path,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+      });
+    }
+  }
+}
 
 export async function updateSupabaseSession(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
@@ -15,12 +47,10 @@ export async function updateSupabaseSession(request: NextRequest) {
   }
 
   let response = NextResponse.next({ request: { headers: requestHeaders } });
-  const sharedDomain = process.env.AUTH_COOKIE_DOMAIN?.trim();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
-      ...(sharedDomain ? { cookieOptions: { domain: sharedDomain } } : {}),
       cookies: {
         getAll: () => request.cookies.getAll(),
         setAll(cookiesToSet) {
@@ -43,7 +73,11 @@ export async function updateSupabaseSession(request: NextRequest) {
   const { data, error } = await supabase.auth.getClaims();
   const subject = !error && data?.claims?.sub;
   if (typeof subject === "string") {
-    requestHeaders.set(TENANT_AUTH_HEADER, createTenantAuthContext(subject));
+    const workspaceSlug = workspaceSlugFromHostname(request.nextUrl.hostname);
+    requestHeaders.set(
+      TENANT_AUTH_HEADER,
+      createTenantAuthContext(subject, workspaceSlug),
+    );
     const authenticatedResponse = NextResponse.next({
       request: { headers: requestHeaders },
     });
@@ -56,6 +90,8 @@ export async function updateSupabaseSession(request: NextRequest) {
     }
     response = authenticatedResponse;
   }
+
+  clearLegacySharedAuthCookies(request, response);
 
   return response;
 }

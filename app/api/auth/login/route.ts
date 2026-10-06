@@ -12,6 +12,8 @@ import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { linkExistingCrmIdentity } from "@/lib/supabase/workspaceProvisioning";
 import { enforceRateLimits } from "@/lib/rateLimit";
+import { crmUserMatchesRequestWorkspace } from "@/lib/tenantAccess";
+import { workspaceSlugFromHostname } from "@/lib/tenantHost";
 
 export async function POST(request: NextRequest) {
   const ipLimit = await enforceRateLimits(request, [
@@ -47,15 +49,19 @@ export async function POST(request: NextRequest) {
     },
   ]);
   if (accountLimit) return accountLimit;
+  const workspaceSlug = workspaceSlugFromHostname(request.nextUrl.hostname);
   if (isSupabaseAuthConfigured()) {
     try {
       const legacyResult = await adminPool.query(
         `SELECT ${AUTH_USER_COLUMNS}, u.auth_user_id, u.password_hash
          FROM users u
+         JOIN teams team ON team.team_id = u.team_id
+         JOIN companies company ON company.company_id = team.company_id
          WHERE (LOWER(u.email) = LOWER($1) OR LOWER(u.username) = LOWER($1))
            AND u.deleted_at IS NULL
+           AND ($2::text IS NULL OR company.workspace_slug = $2)
          LIMIT 1`,
-        [identifier],
+        [identifier, workspaceSlug],
       );
       const legacyUser = legacyResult.rows[0];
       const email =
@@ -135,6 +141,13 @@ export async function POST(request: NextRequest) {
           { status: 403 },
         );
       }
+      if (!(await crmUserMatchesRequestWorkspace(request, user.user_id))) {
+        await supabase.auth.signOut({ scope: "local" });
+        return NextResponse.json(
+          { error: "This account does not have access to this workspace" },
+          { status: 403 },
+        );
+      }
       await adminPool.query(
         "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE user_id = $1",
         [user.user_id],
@@ -150,10 +163,13 @@ export async function POST(request: NextRequest) {
     const result = await pool.query(
       `SELECT ${AUTH_USER_COLUMNS}, u.password_hash
        FROM users u
+       JOIN teams team ON team.team_id = u.team_id
+       JOIN companies company ON company.company_id = team.company_id
        WHERE (LOWER(u.email) = LOWER($1) OR LOWER(u.username) = LOWER($1))
          AND u.deleted_at IS NULL
+         AND ($2::text IS NULL OR company.workspace_slug = $2)
        LIMIT 1`,
-      [identifier],
+      [identifier, workspaceSlug],
     );
     const user = result.rows[0];
     const passwordMatches = await verifyPassword(

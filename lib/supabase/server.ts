@@ -9,10 +9,8 @@ export async function createSupabaseServerClient() {
   await connection();
   const cookieStore = await cookies();
   const { publishableKey, url } = getSupabasePublicConfig();
-  const sharedDomain = process.env.AUTH_COOKIE_DOMAIN?.trim();
 
   return createServerClient(url, publishableKey, {
-    ...(sharedDomain ? { cookieOptions: { domain: sharedDomain } } : {}),
     cookies: {
       getAll() {
         return cookieStore.getAll();

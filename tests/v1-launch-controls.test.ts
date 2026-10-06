@@ -5,6 +5,14 @@ import {
   normalizeWorkspaceSlug,
   tenantDomainForSlug,
 } from "../lib/tenantDomains";
+import {
+  isTenantApplicationHostname,
+  workspaceSlugFromHostname,
+} from "../lib/tenantHost";
+import {
+  createTenantAuthContext,
+  readTenantAuthContext,
+} from "../lib/tenantRequestContext";
 import { roleHasPermission } from "../lib/authorization";
 import { hashRateLimitSubject } from "../lib/rateLimit";
 import { invitationAccountConflictMessage } from "../lib/invitationPolicy";
@@ -39,6 +47,32 @@ test("tenant hostname uses the configured root", () => {
   process.env.TENANT_DOMAIN_ROOT = "crm.sthyra.com";
   assert.equal(tenantDomainForSlug("Demo Company"), "demo-company.crm.sthyra.com");
   process.env.TENANT_DOMAIN_ROOT = previous;
+});
+
+test("tenant hostname resolves one workspace without confusing sibling hosts", () => {
+  const previous = process.env.TENANT_DOMAIN_ROOT;
+  process.env.TENANT_DOMAIN_ROOT = "crm.sthyra.com";
+  assert.equal(workspaceSlugFromHostname("abhigna.crm.sthyra.com"), "abhigna");
+  assert.equal(workspaceSlugFromHostname("nykaa.crm.sthyra.com"), "nykaa");
+  assert.equal(workspaceSlugFromHostname("crm.sthyra.com"), null);
+  assert.equal(workspaceSlugFromHostname("fake.example.com"), null);
+  assert.equal(isTenantApplicationHostname("abhigna.crm.sthyra.com"), true);
+  assert.equal(isTenantApplicationHostname("crm.sthyra.com"), true);
+  assert.equal(isTenantApplicationHostname("fake.example.com"), false);
+  process.env.TENANT_DOMAIN_ROOT = previous;
+});
+
+test("signed request context binds an auth user to its tenant hostname", () => {
+  const previous = process.env.AUTH_SECRET;
+  process.env.AUTH_SECRET = "test-auth-secret-that-is-at-least-thirty-two-characters";
+  const authUserId = "123e4567-e89b-12d3-a456-426614174000";
+  const context = createTenantAuthContext(authUserId, "abhigna");
+  assert.deepEqual(readTenantAuthContext(context), {
+    authUserId,
+    workspaceSlug: "abhigna",
+  });
+  assert.equal(readTenantAuthContext(context.replace("abhigna", "nykaa")), null);
+  process.env.AUTH_SECRET = previous;
 });
 
 test("audit permission remains super-admin only", () => {

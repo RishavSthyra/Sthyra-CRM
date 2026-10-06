@@ -12,6 +12,7 @@ import { connection, NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { workspaceSlugFromHostname } from "@/lib/tenantHost";
 
 function scrypt(
   password: string,
@@ -270,13 +271,11 @@ export function setAuthCookies(
   refreshToken: string,
 ): void {
   const secure = process.env.NODE_ENV === "production";
-  const sharedDomain = process.env.AUTH_COOKIE_DOMAIN?.trim();
   response.cookies.set(ACCESS_COOKIE, accessToken, {
     httpOnly: true,
     secure,
     sameSite: "strict",
     path: "/",
-    ...(sharedDomain ? { domain: sharedDomain } : {}),
     maxAge: ACCESS_TOKEN_SECONDS,
   });
   response.cookies.set(REFRESH_COOKIE, refreshToken, {
@@ -284,14 +283,12 @@ export function setAuthCookies(
     secure,
     sameSite: "strict",
     path: "/api/auth",
-    ...(sharedDomain ? { domain: sharedDomain } : {}),
     maxAge: REFRESH_TOKEN_DAYS * 24 * 60 * 60,
   });
 }
 
 export function clearAuthCookies(response: NextResponse): void {
   const secure = process.env.NODE_ENV === "production";
-  const sharedDomain = process.env.AUTH_COOKIE_DOMAIN?.trim();
   for (const [name, path] of [
     [ACCESS_COOKIE, "/"],
     [REFRESH_COOKIE, "/api/auth"],
@@ -301,7 +298,6 @@ export function clearAuthCookies(response: NextResponse): void {
       secure,
       sameSite: "strict",
       path,
-      ...(sharedDomain ? { domain: sharedDomain } : {}),
       expires: new Date(0),
       maxAge: 0,
     });
@@ -337,6 +333,10 @@ export async function authenticateRequest(
         };
       }
 
+      const workspaceSlug = workspaceSlugFromHostname(
+        request.nextUrl.hostname,
+      );
+
       const result = await pool.query(
         `SELECT ${AUTH_USER_COLUMNS}
          FROM public.users u
@@ -344,18 +344,25 @@ export async function authenticateRequest(
            ON membership.crm_user_id = u.user_id
           AND membership.auth_user_id = $1
           AND membership.is_active = TRUE
+         JOIN public.companies company
+           ON company.company_id = membership.company_id
          WHERE u.auth_user_id = $1
            AND u.is_active = TRUE
            AND u.deleted_at IS NULL
+           AND ($2::text IS NULL OR company.workspace_slug = $2)
          LIMIT 1`,
-        [authUserId],
+        [authUserId, workspaceSlug],
       );
       if (result.rowCount === 0) {
         return {
           ok: false,
           response: NextResponse.json(
-            { error: "Your account is not connected to an active workspace" },
-            { status: 403 },
+            {
+              error: workspaceSlug
+                ? "Sign in with an account for this workspace"
+                : "Your account is not connected to an active workspace",
+            },
+            { status: workspaceSlug ? 401 : 403 },
           ),
         };
       }
@@ -386,13 +393,20 @@ export async function authenticateRequest(
       `SELECT ${AUTH_USER_COLUMNS}
        FROM public.auth_sessions s
        JOIN public.users u ON u.user_id = s.user_id
+       JOIN public.teams team ON team.team_id = u.team_id
+       JOIN public.companies company ON company.company_id = team.company_id
        WHERE s.session_id = $1
          AND s.user_id = $2
          AND s.revoked_at IS NULL
          AND s.expires_at > CURRENT_TIMESTAMP
          AND u.is_active = TRUE
-         AND u.deleted_at IS NULL`,
-      [payload.sid, payload.sub],
+         AND u.deleted_at IS NULL
+         AND ($3::text IS NULL OR company.workspace_slug = $3)`,
+      [
+        payload.sid,
+        payload.sub,
+        workspaceSlugFromHostname(request.nextUrl.hostname),
+      ],
     );
     if (result.rowCount === 0) {
       return {

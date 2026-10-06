@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import { adminPool } from "@/lib/db";
+import { tenantDomainRootValue } from "@/lib/tenantHost";
 
 const RESERVED_SLUGS = new Set([
   "admin",
@@ -27,12 +28,7 @@ export function normalizeWorkspaceSlug(input: string): string {
 }
 
 export function tenantDomainForSlug(slug: string): string {
-  const root = process.env.TENANT_DOMAIN_ROOT?.trim().toLowerCase() ||
-    "crm.sthyra.com";
-  if (!/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(root)) {
-    throw new Error("TENANT_DOMAIN_ROOT is not a valid domain");
-  }
-  return `${normalizeWorkspaceSlug(slug)}.${root}`;
+  return `${normalizeWorkspaceSlug(slug)}.${tenantDomainRootValue()}`;
 }
 
 export async function createAvailableWorkspaceIdentity(
