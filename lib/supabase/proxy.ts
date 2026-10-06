@@ -24,17 +24,16 @@ function clearLegacySharedAuthCookies(
       .filter((name) => LEGACY_AUTH_COOKIE.test(name)),
   );
   for (const name of names) {
-    for (const path of ["/", "/api/auth"]) {
-      response.cookies.set(name, "", {
-        domain: legacyDomain,
-        expires: new Date(0),
-        httpOnly: true,
-        maxAge: 0,
-        path,
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-      });
-    }
+    const path = name === "sthyra_refresh_token" ? "/api/auth" : "/";
+    response.cookies.set(name, "", {
+      domain: legacyDomain,
+      expires: new Date(0),
+      httpOnly: true,
+      maxAge: 0,
+      path,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    });
   }
 }
 
