@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { PDFDocument } from "pdf-lib";
+import { generateQuotationPdf } from "../lib/quotationPdf";
 import {
   calculateQuotation,
   validateQuotationInput,
@@ -111,4 +113,65 @@ test("quotation validation prevents a discount from exceeding subtotal", () => {
     assert.ok(
       result.errors.includes("discount cannot exceed the quotation subtotal"),
     );
+});
+
+test("quotation PDF renders a valid multi-page business document", async () => {
+  const lineItems = Array.from({ length: 28 }, (_, index) => ({
+    category: index === 0 ? "base_price" : "additional_charge",
+    description:
+      index === 0
+        ? "Apartment base price"
+        : `Additional charge ${index} with enough detail to exercise row wrapping`,
+    quantity: index === 0 ? 1 : 2,
+    unit_price: index === 0 ? 20_000_000 : 25_000,
+    amount: index === 0 ? 20_000_000 : 50_000,
+  }));
+
+  const buffer = await generateQuotationPdf({
+    company_name: "Abhigna Constructions",
+    company_contact_email: "info@example.com",
+    company_phone_number: "+91 90000 00000",
+    quotation_number: "Q-TEST-01",
+    version: 1,
+    title: "Apartment quotation",
+    created_at: "2026-10-07T00:00:00.000Z",
+    valid_until: "2026-10-31",
+    first_name: "Sample",
+    last_name: "Customer",
+    contact_email: "customer@example.com",
+    contact_phone_number: "+91 91111 11111",
+    project_name: "Aadhya Serene",
+    project_code: "AADHYA_SERENE",
+    currency: "INR",
+    line_items: lineItems,
+    subtotal: 21_350_000,
+    discount_amount: 800_000,
+    tax_amount: 3_699_000,
+    total_amount: 24_249_000,
+    tax_breakdown: [{ label: "GST", rate: 18, amount: 3_699_000 }],
+    payment_plan: {
+      template_name: "20 / 80 plan",
+      installments: [
+        {
+          label: "Booking amount",
+          percentage: 20,
+          amount: 4_849_800,
+          trigger: "On acceptance",
+        },
+        {
+          label: "Balance payment",
+          percentage: 80,
+          amount: 19_399_200,
+          trigger: "Before handover",
+        },
+      ],
+    },
+    customer_message: "Thank you for considering our project.",
+    terms_and_conditions: "Prices and availability are subject to confirmation.",
+  });
+
+  assert.equal(buffer.subarray(0, 5).toString(), "%PDF-");
+  const document = await PDFDocument.load(buffer);
+  assert.ok(document.getPageCount() > 1);
+  assert.equal(document.getTitle(), "Q-TEST-01 - Aadhya Serene");
 });
