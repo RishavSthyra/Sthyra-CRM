@@ -19,9 +19,9 @@ export function AuthShell({
   const stepColumns = stepLabels.length === 2 ? "grid-cols-2" : "grid-cols-3";
 
   return (
-    <main className="min-h-dvh overflow-x-hidden bg-black text-white">
-      <div className="grid min-h-dvh w-full lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <aside className="relative flex min-h-[230px] overflow-hidden rounded-b-2xl bg-[radial-gradient(circle_at_16%_10%,rgba(55,151,127,0.42),transparent_34%),linear-gradient(140deg,#1b6151_2%,#09231a_31%,#175243_65%,#124235_82%,#1b6151_100%)] px-5 py-6 sm:min-h-[260px] sm:px-8 sm:py-8 lg:sticky lg:top-0 lg:h-dvh lg:min-h-[640px] lg:rounded-none lg:px-[clamp(28px,3vw,56px)] lg:py-[clamp(28px,5vh,64px)]">
+    <main className="min-h-dvh overflow-x-hidden bg-black text-white lg:h-dvh lg:overflow-hidden">
+      <div className="grid min-h-dvh w-full lg:h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <aside className="relative flex min-h-[230px] overflow-hidden rounded-b-2xl bg-[radial-gradient(circle_at_16%_10%,rgba(55,151,127,0.42),transparent_34%),linear-gradient(140deg,#1b6151_2%,#09231a_31%,#175243_65%,#124235_82%,#1b6151_100%)] px-5 py-6 sm:min-h-[260px] sm:px-8 sm:py-8 lg:h-dvh lg:min-h-0 lg:self-start lg:rounded-none lg:px-[clamp(28px,3vw,56px)] lg:py-[clamp(28px,5vh,64px)]">
           <div
             className={`mt-auto w-full ${
               stepLabels.length === 2
@@ -80,8 +80,8 @@ export function AuthShell({
           </div>
         </aside>
 
-        <section className="flex min-w-0 items-center justify-center px-5 py-8 sm:px-8 sm:py-10 lg:justify-start lg:px-[clamp(40px,5vw,80px)] lg:py-12">
-          <div className="flex w-full max-w-[620px] flex-col">
+        <section className="flex min-w-0 items-center justify-center px-5 py-8 sm:px-8 sm:py-10 lg:h-dvh lg:items-stretch lg:justify-start lg:overflow-y-auto lg:overscroll-contain lg:px-[clamp(40px,5vw,80px)] lg:py-12 [scrollbar-color:#29302d_transparent] [scrollbar-width:thin]">
+          <div className="flex w-full max-w-[620px] flex-col lg:min-h-full lg:justify-center">
             <header>
               <h1 className="font-heading text-[32px] leading-tight font-medium tracking-[-0.01em] sm:text-4xl lg:text-[40px]">
                 {title}

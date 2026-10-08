@@ -1,8 +1,10 @@
 "use client";
 
 import {
+  type Dispatch,
   FormEvent,
   ReactNode,
+  type SetStateAction,
   isValidElement,
   useCallback,
   useEffect,
@@ -609,7 +611,12 @@ export function SettingsWorkspace() {
         setCampaigns((payload(4)?.campaigns as Row[]) ?? []);
         setTags((payload(5)?.tags as Row[]) ?? []);
         setProjects(projectsWithContext);
-        setInvitations((payload(7)?.invitations as Row[]) ?? []);
+        const invitationPayload = payload(7);
+        if (invitationPayload) {
+          setInvitations(
+            (invitationPayload.invitations as Row[] | undefined) ?? [],
+          );
+        }
         const failedRequests = adminResults.filter(
           (result) => result.status === "rejected",
         );
@@ -884,6 +891,7 @@ export function SettingsWorkspace() {
                     sessions={sessions}
                     setAvailability={setAvailability}
                     setClosingReasons={setClosingReasons}
+                    setInvitations={setInvitations}
                     setLeadConfiguration={setLeadConfiguration}
                     setOpportunityStages={setOpportunityStages}
                     setPreferences={setPreferences}
@@ -942,6 +950,7 @@ type PanelProps = {
   sessions: Row[];
   setAvailability: (row: Row) => void;
   setClosingReasons: (rows: Row[]) => void;
+  setInvitations: Dispatch<SetStateAction<Row[]>>;
   setLeadConfiguration: (row: Row) => void;
   setOpportunityStages: (rows: Row[]) => void;
   setPreferences: (row: Row) => void;
@@ -2561,9 +2570,28 @@ function PeoplePanel(props: PanelProps) {
       "POST",
       payload,
       mode === "user" ? "Invitation created" : `${mode} created`,
-      props.loadAll,
+      mode === "user" ? undefined : props.loadAll,
     );
     if (result) {
+      if (mode === "user") {
+        const invitation = result.invitation;
+        if (
+          invitation &&
+          typeof invitation === "object" &&
+          !Array.isArray(invitation)
+        ) {
+          const invitationRow = invitation as Row;
+          props.setInvitations((current) => [
+            invitationRow,
+            ...current.filter(
+              (row) =>
+                String(row.invitation_id) !==
+                String(invitationRow.invitation_id),
+            ),
+          ]);
+          setPendingOpen(true);
+        }
+      }
       setForm({ is_active: true });
       setDialogOpen(false);
     }

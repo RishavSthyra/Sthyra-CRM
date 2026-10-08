@@ -219,27 +219,39 @@ export async function POST(request: NextRequest) {
       invitationUrl: link,
       expiresAt: new Date(created.expires_at),
     });
+    let deliveryFields: Record<string, unknown> = {};
     if (delivery.sent) {
-      await pool
+      const deliveryResult = await pool
         .query(
           `UPDATE workspace_invitations
            SET sent_at=COALESCE(sent_at, CURRENT_TIMESTAMP),
                last_sent_at=CURRENT_TIMESTAMP,
                send_count=send_count+1,
                updated_at=CURRENT_TIMESTAMP
-           WHERE invitation_id=$1`,
+           WHERE invitation_id=$1
+           RETURNING sent_at, last_sent_at, send_count, updated_at`,
           [created.invitation_id],
         )
-        .catch((error) =>
-          console.error("Failed to record invitation delivery", error),
-        );
+        .catch((error) => {
+          console.error("Failed to record invitation delivery", error);
+          return null;
+        });
+      deliveryFields = deliveryResult?.rows[0] ?? {};
     }
+    const invitation = {
+      ...created,
+      ...deliveryFields,
+      role_name: role.rows[0].role_name,
+      role_key: role.rows[0].role_key,
+      team_name: team.rows[0].name,
+      invited_by_name: companyAndInviter.rows[0]?.inviter_name ?? null,
+    };
     return NextResponse.json(
       {
         message: delivery.sent
           ? "Invitation created and emailed"
           : "Invitation created, but the email could not be sent. Copy the link from Pending invitations.",
-        invitation: created,
+        invitation,
         invitation_url: link,
         email_sent: delivery.sent,
         delivery_error: delivery.sent ? undefined : delivery.error,
