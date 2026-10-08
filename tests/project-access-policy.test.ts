@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  hasProjectWideLeadVisibility,
   isCompanyWideProjectRole,
   isLeadershipTeamName,
 } from "../lib/projectAccessPolicy";
@@ -10,6 +11,33 @@ test("only administrative roles receive implicit company-wide project access", (
   assert.equal(isCompanyWideProjectRole("COMPANY_OWNER"), true);
   assert.equal(isCompanyWideProjectRole("company_admin"), true);
   assert.equal(isCompanyWideProjectRole("SALES_EXEC"), false);
+});
+
+test("lead visibility is project-wide only for trusted assignment scopes", () => {
+  assert.equal(
+    hasProjectWideLeadVisibility({
+      roleKey: "SALES_EXEC",
+      teamName: "Sales Team",
+      permissions: ["LEADS_VIEW", "LEADS_UPDATE"],
+    }),
+    false,
+  );
+  assert.equal(
+    hasProjectWideLeadVisibility({
+      roleKey: "SALES_MANAGER",
+      teamName: "Sales Team",
+      permissions: ["LEADS_VIEW", "LEADS_ASSIGN"],
+    }),
+    true,
+  );
+  assert.equal(
+    hasProjectWideLeadVisibility({
+      roleKey: "FINANCE",
+      teamName: "Leadership",
+      permissions: ["LEADS_VIEW"],
+    }),
+    true,
+  );
 });
 
 test("leadership team matching is case and whitespace insensitive", () => {

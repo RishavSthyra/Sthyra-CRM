@@ -11,3 +11,15 @@ export function isCompanyWideProjectRole(roleKey: unknown) {
 export function isLeadershipTeamName(name: unknown) {
   return String(name ?? "").trim().toLowerCase() === "leadership";
 }
+
+export function hasProjectWideLeadVisibility(input: {
+  roleKey: string;
+  teamName: string;
+  permissions: readonly string[];
+}) {
+  return (
+    isCompanyWideProjectRole(input.roleKey) ||
+    isLeadershipTeamName(input.teamName) ||
+    input.permissions.includes("LEADS_ASSIGN")
+  );
+}

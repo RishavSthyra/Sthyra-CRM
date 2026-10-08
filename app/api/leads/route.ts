@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { authenticateRequest } from "@/lib/auth";
 import {
   createLead,
   LeadReferenceError,
@@ -10,33 +9,18 @@ import { isUuid } from "@/lib/permissions";
 import {
   canAccessProject,
   getAccessibleProjectIds,
-  getUserProjectAccess,
 } from "@/lib/projectAccess";
+import {
+  addLeadVisibilityFilter,
+  requireLeadVisibility,
+} from "@/lib/leadVisibility";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 import { parsePagination } from "@/utils/parsePagination";
 
 export async function GET(request: NextRequest) {
-  const authentication = await authenticateRequest(request);
-  if (!authentication.ok) return authentication.response;
-
-  let projectAccess;
-  try {
-    projectAccess = await getUserProjectAccess(
-      authentication.auth.user.user_id,
-    );
-  } catch (error) {
-    console.error("Failed to resolve lead project access", error);
-    return NextResponse.json(
-      { error: "Unable to resolve project access" },
-      { status: 500 },
-    );
-  }
-  if (!projectAccess) {
-    return NextResponse.json(
-      { error: "Your account is not connected to an active company" },
-      { status: 403 },
-    );
-  }
+  const scope = await requireLeadVisibility(request, "LEADS_VIEW");
+  if (!scope.ok) return scope.response;
+  const projectAccess = scope.context.access;
 
   const pagination = parsePagination(request.nextUrl.searchParams);
   if (!pagination.ok) {
@@ -70,6 +54,11 @@ export async function GET(request: NextRequest) {
       filters.push(`l.project_id=ANY($${values.length}::integer[])`);
     }
   }
+  addLeadVisibilityFilter(
+    filters,
+    values,
+    scope.context.leadVisibility,
+  );
   const statuses = [
     "active",
     "qualified",
@@ -242,8 +231,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const authentication = await authenticateRequest(request);
-  if (!authentication.ok) return authentication.response;
+  const scope = await requireLeadVisibility(request, "LEADS_CREATE");
+  if (!scope.ok) return scope.response;
 
   let body: unknown;
   try {
@@ -261,20 +250,8 @@ export async function POST(request: NextRequest) {
       { status: 422 },
     );
   }
-  let projectAccess;
-  try {
-    projectAccess = await getUserProjectAccess(
-      authentication.auth.user.user_id,
-    );
-  } catch (error) {
-    console.error("Failed to resolve lead project access", error);
-    return NextResponse.json(
-      { error: "Unable to resolve project access" },
-      { status: 500 },
-    );
-  }
+  const projectAccess = scope.context.access;
   if (
-    !projectAccess ||
     !validation.data.project_id ||
     !canAccessProject(projectAccess, validation.data.project_id)
   ) {

@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { authenticateRequest } from "@/lib/auth";
+import { requireLeadVisibility } from "@/lib/leadVisibility";
 import { parsePagination } from "@/utils/parsePagination";
 
 export async function GET(request: NextRequest) {
-  const authentication = await authenticateRequest(request);
-  if (!authentication.ok) {
-    return authentication.response;
-  }
+  const scope = await requireLeadVisibility(request, "LEADS_VIEW");
+  if (!scope.ok) return scope.response;
   const pagination = parsePagination(request.nextUrl.searchParams);
   if (!pagination.ok) {
     return NextResponse.json({ error: pagination.error }, { status: 400 });
@@ -24,7 +22,7 @@ export async function GET(request: NextRequest) {
   if (status && !statuses.includes(status)) {
     return NextResponse.json({ error: "Invalid lead status" }, { status: 400 });
   }
-  const values: unknown[] = [authentication.auth.user.user_id];
+  const values: unknown[] = [scope.context.userId];
   const filters = ["l.current_owner_user_id=$1"];
   if (status) {
     values.push(status);

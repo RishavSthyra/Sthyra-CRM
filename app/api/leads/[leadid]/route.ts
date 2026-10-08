@@ -2,10 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { addOwnershipHistory } from "@/lib/leadHistory";
 import { parseLeadId, replaceLeadTags, validateLeadPayload } from "@/lib/leads";
+import {
+  addLeadVisibilityFilter,
+  canUpdateLead,
+  requireLeadVisibility,
+} from "@/lib/leadVisibility";
 
 type Context = { params: Promise<{ leadid: string }> };
 
-export async function GET(_request: NextRequest, context: Context) {
+export async function GET(request: NextRequest, context: Context) {
+  const scope = await requireLeadVisibility(request, "LEADS_VIEW");
+  if (!scope.ok) return scope.response;
   const leadId = parseLeadId((await context.params).leadid);
   if (!leadId) {
     return NextResponse.json(
@@ -14,6 +21,13 @@ export async function GET(_request: NextRequest, context: Context) {
     );
   }
   try {
+    const values: unknown[] = [leadId];
+    const filters = ["l.lead_id=$1"];
+    addLeadVisibilityFilter(
+      filters,
+      values,
+      scope.context.leadVisibility,
+    );
     const result = await pool.query(
       `SELECT l.*, TO_JSONB(c) AS contact,
               CASE WHEN s.stage_id IS NULL THEN NULL ELSE JSONB_BUILD_OBJECT(
@@ -29,8 +43,8 @@ export async function GET(_request: NextRequest, context: Context) {
        FROM leads l JOIN contacts c ON c.contact_id=l.contact_id
        LEFT JOIN project_lead_stages s ON s.stage_id=l.stage_id
        LEFT JOIN opportunities o ON o.lead_id=l.lead_id
-       WHERE l.lead_id=$1`,
-      [leadId],
+       WHERE ${filters.join(" AND ")}`,
+      values,
     );
     if (!result.rowCount) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
@@ -59,12 +73,17 @@ export async function GET(_request: NextRequest, context: Context) {
 }
 
 export async function PATCH(request: NextRequest, context: Context) {
+  const scope = await requireLeadVisibility(request, "LEADS_UPDATE");
+  if (!scope.ok) return scope.response;
   const leadId = parseLeadId((await context.params).leadid);
   if (!leadId) {
     return NextResponse.json(
       { error: "leadId must be a valid UUID" },
       { status: 400 },
     );
+  }
+  if (!(await canUpdateLead(leadId, scope.context.leadVisibility))) {
+    return NextResponse.json({ error: "Lead not found" }, { status: 404 });
   }
   let body: unknown;
   try {
@@ -92,6 +111,16 @@ export async function PATCH(request: NextRequest, context: Context) {
           "contact_id and project_id cannot be changed after lead creation",
       },
       { status: 422 },
+    );
+  }
+  if (
+    !scope.context.leadVisibility.canViewProjectWide &&
+    (validation.data.current_owner_user_id !== undefined ||
+      validation.data.current_team_id !== undefined)
+  ) {
+    return NextResponse.json(
+      { error: "Lead assignment permission is required to change ownership" },
+      { status: 403 },
     );
   }
   const client = await pool.connect();

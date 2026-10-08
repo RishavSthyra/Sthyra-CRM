@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 import { parsePagination } from "@/utils/parsePagination";
+import { requireLeadVisibility } from "@/lib/leadVisibility";
 
 export async function GET(request: NextRequest) {
+  const scope = await requireLeadVisibility(request, "LEADS_VIEW");
+  if (!scope.ok) return scope.response;
   const pagination = parsePagination(request.nextUrl.searchParams);
   if (!pagination.ok) {
     return NextResponse.json({ error: pagination.error }, { status: 400 });
