@@ -203,12 +203,12 @@ export async function handleTransferAction(
         { status: 403 },
       );
     }
-    if (["accept", "reject"].includes(action) && !recipient && !admin) {
+    if (["accept", "reject"].includes(action) && !recipient) {
       await client.query("ROLLBACK");
       return NextResponse.json(
         {
           error:
-            "Only the recipient or an administrator can decide this transfer",
+            "Only the transfer recipient can accept or reject this transfer",
         },
         { status: 403 },
       );

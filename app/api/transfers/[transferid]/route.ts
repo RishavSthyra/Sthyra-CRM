@@ -21,7 +21,11 @@ export async function GET(request: NextRequest, context: Context) {
   try {
     const result = await pool.query(
       `SELECT ${TRANSFER_COLUMNS}, p.project_name,
-        COALESCE(o.opportunity_name, BTRIM(CONCAT_WS(' ',c.first_name,c.last_name))) AS subject_name,
+        COALESCE(
+          NULLIF(BTRIM(o.opportunity_name), ''),
+          NULLIF(BTRIM(CONCAT_WS(' ',c.first_name,c.last_name)), ''),
+          tr.subject_name_snapshot
+        ) AS subject_name,
         CASE WHEN recipient.user_id IS NULL THEN NULL ELSE JSONB_BUILD_OBJECT(
           'user_id', recipient.user_id, 'first_name', recipient.first_name,
           'last_name', recipient.last_name, 'email', recipient.email

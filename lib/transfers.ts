@@ -7,8 +7,7 @@ import { validateText } from "@/utils/validateText";
 
 type Queryable = Pick<Pool | PoolClient, "query">;
 type ValidationResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; errors: string[] };
+  { ok: true; data: T } | { ok: false; errors: string[] };
 
 export const TRANSFER_COLUMNS = `
   tr.transfer_id, tr.company_id, tr.project_id, tr.subject_type,
@@ -18,7 +17,7 @@ export const TRANSFER_COLUMNS = `
   tr.validation_errors, tr.requested_by, tr.validated_by, tr.decided_by,
   tr.validated_at, tr.submitted_at, tr.accepted_at, tr.rejected_at,
   tr.cancelled_at, tr.expired_at, tr.force_assigned_at, tr.expires_at,
-  tr.created_at, tr.updated_at
+  tr.subject_name_snapshot, tr.created_at, tr.updated_at
 `;
 
 export type TransferInput = {
@@ -115,7 +114,8 @@ export function validateTransferPayload(
     if (Number(Boolean(targetUser)) + Number(Boolean(targetTeam)) !== 1)
       errors.push("Exactly one transfer recipient is required");
   } else {
-    if (!Object.keys(body).length) errors.push("At least one field is required");
+    if (!Object.keys(body).length)
+      errors.push("At least one field is required");
     if (body.lead_id !== undefined || body.opportunity_id !== undefined)
       errors.push("The transfer subject cannot be changed");
     if (
@@ -145,6 +145,7 @@ export function validateTransferPayload(
 export type TransferSubject = Record<string, unknown> & {
   subject_type: "lead" | "opportunity";
   subject_id: string;
+  subject_name: string;
   company_id: number;
   project_id: number;
   current_owner_user_id: string | null;
@@ -159,8 +160,16 @@ export async function getTransferSubject(
   if (input.lead_id) {
     const result = await client.query(
       `SELECT l.*, p.company_id, 'lead'::text AS subject_type,
-              l.lead_id AS subject_id
-       FROM leads l JOIN projects p ON p.project_id=l.project_id
+              l.lead_id AS subject_id,
+              COALESCE(
+                NULLIF(BTRIM(CONCAT_WS(' ', c.first_name, c.last_name)), ''),
+                NULLIF(BTRIM(c.email), ''),
+                NULLIF(BTRIM(c.phone_number), ''),
+                'Lead'
+              ) AS subject_name
+       FROM leads l
+       JOIN projects p ON p.project_id=l.project_id
+       JOIN contacts c ON c.contact_id=l.contact_id
        WHERE l.lead_id=$1${lock ? " FOR UPDATE OF l" : ""}`,
       [input.lead_id],
     );
@@ -169,8 +178,15 @@ export async function getTransferSubject(
   if (input.opportunity_id) {
     const result = await client.query(
       `SELECT o.*, 'opportunity'::text AS subject_type,
-              o.opportunity_id AS subject_id
-       FROM opportunities o WHERE o.opportunity_id=$1${lock ? " FOR UPDATE" : ""}`,
+              o.opportunity_id AS subject_id,
+              COALESCE(
+                NULLIF(BTRIM(o.opportunity_name), ''),
+                NULLIF(BTRIM(CONCAT_WS(' ', c.first_name, c.last_name)), ''),
+                'Opportunity'
+              ) AS subject_name
+       FROM opportunities o
+       JOIN contacts c ON c.contact_id=o.contact_id
+       WHERE o.opportunity_id=$1${lock ? " FOR UPDATE OF o" : ""}`,
       [input.opportunity_id],
     );
     return (result.rows[0] as TransferSubject | undefined) ?? null;
@@ -245,7 +261,10 @@ export async function copyTransferChecklist(
   transferId: string,
   templateId: string | null,
 ): Promise<void> {
-  await client.query("DELETE FROM transfer_checklist_items WHERE transfer_id=$1", [transferId]);
+  await client.query(
+    "DELETE FROM transfer_checklist_items WHERE transfer_id=$1",
+    [transferId],
+  );
   if (!templateId) return;
   await client.query(
     `INSERT INTO transfer_checklist_items (
@@ -299,8 +318,7 @@ export async function getTransferValidationErrors(
   );
   const subject = await getTransferSubject(client, {
     lead_id: (transfer.lead_id as string | null) ?? undefined,
-    opportunity_id:
-      (transfer.opportunity_id as string | null) ?? undefined,
+    opportunity_id: (transfer.opportunity_id as string | null) ?? undefined,
   });
   if (!subject) errors.push("Transfer subject no longer exists");
   else {
@@ -314,7 +332,10 @@ export async function getTransferValidationErrors(
       subject.current_team_id === transfer.to_team_id
     )
       errors.push("The transfer recipient already owns this record");
-    if (subject.subject_type === "lead" && ["closed", "duplicate", "invalid"].includes(String(subject.status)))
+    if (
+      subject.subject_type === "lead" &&
+      ["closed", "duplicate", "invalid"].includes(String(subject.status))
+    )
       errors.push(`A ${String(subject.status)} lead cannot be transferred`);
     if (subject.subject_type === "opportunity" && subject.status === "closed")
       errors.push("A closed opportunity cannot be transferred");
@@ -401,7 +422,12 @@ export function validateTransferTemplate(
 ): ValidationResult<TransferTemplateInput> {
   if (!isObject(body) || Array.isArray(body))
     return { ok: false, errors: ["Request body must be a JSON object"] };
-  const allowed = new Set(["project_id", "template_name", "description", "applies_to"]);
+  const allowed = new Set([
+    "project_id",
+    "template_name",
+    "description",
+    "applies_to",
+  ]);
   const errors = Object.keys(body)
     .filter((key) => !allowed.has(key))
     .map((key) => `Unknown field: ${key}`);
@@ -412,14 +438,30 @@ export function validateTransferTemplate(
       errors.push("project_id must be a positive integer or null");
     else projectId = Number(body.project_id);
   }
-  const name = validateText(body.template_name, "template_name", 150, false, errors);
-  const description = validateText(body.description, "description", 5000, true, errors);
+  const name = validateText(
+    body.template_name,
+    "template_name",
+    150,
+    false,
+    errors,
+  );
+  const description = validateText(
+    body.description,
+    "description",
+    5000,
+    true,
+    errors,
+  );
   const appliesTo = body.applies_to;
-  if (appliesTo !== undefined && !["lead", "opportunity", "both"].includes(String(appliesTo)))
+  if (
+    appliesTo !== undefined &&
+    !["lead", "opportunity", "both"].includes(String(appliesTo))
+  )
     errors.push("applies_to must be lead, opportunity, or both");
   if (!partial) {
     if (!name) errors.push("template_name is required");
-  } else if (!Object.keys(body).length) errors.push("At least one field is required");
+  } else if (!Object.keys(body).length)
+    errors.push("At least one field is required");
   return errors.length
     ? { ok: false, errors }
     : {
@@ -441,7 +483,9 @@ export type TemplateItemInput = {
   is_required: boolean;
 };
 
-export function validateTemplateItems(body: unknown): ValidationResult<TemplateItemInput[]> {
+export function validateTemplateItems(
+  body: unknown,
+): ValidationResult<TemplateItemInput[]> {
   if (!isObject(body) || Array.isArray(body) || !Array.isArray(body.items))
     return { ok: false, errors: ["items must be an array"] };
   const rootUnknown = Object.keys(body).filter((key) => key !== "items");
@@ -453,21 +497,49 @@ export function validateTemplateItems(body: unknown): ValidationResult<TemplateI
       return;
     }
     const unknown = Object.keys(raw).filter(
-      (key) => !["item_id", "label", "description", "position", "is_required"].includes(key),
+      (key) =>
+        ![
+          "item_id",
+          "label",
+          "description",
+          "position",
+          "is_required",
+        ].includes(key),
     );
     unknown.forEach((key) => errors.push(`items[${index}].${key} is unknown`));
     const itemErrors: string[] = [];
-    const itemId = uuid(raw.item_id, `items[${index}].item_id`, false, itemErrors) ?? undefined;
-    const label = validateText(raw.label, `items[${index}].label`, 250, false, itemErrors);
-    const description = validateText(raw.description, `items[${index}].description`, 5000, true, itemErrors);
+    const itemId =
+      uuid(raw.item_id, `items[${index}].item_id`, false, itemErrors) ??
+      undefined;
+    const label = validateText(
+      raw.label,
+      `items[${index}].label`,
+      250,
+      false,
+      itemErrors,
+    );
+    const description = validateText(
+      raw.description,
+      `items[${index}].description`,
+      5000,
+      true,
+      itemErrors,
+    );
     const position = raw.position ?? index + 1;
     if (!Number.isSafeInteger(position) || Number(position) <= 0)
       itemErrors.push(`items[${index}].position must be a positive integer`);
     const required = raw.is_required ?? true;
-    if (typeof required !== "boolean") itemErrors.push(`items[${index}].is_required must be boolean`);
+    if (typeof required !== "boolean")
+      itemErrors.push(`items[${index}].is_required must be boolean`);
     errors.push(...itemErrors);
     if (!itemErrors.length)
-      items.push({ item_id: itemId, label: label as string, description: description ?? null, position: Number(position), is_required: required as boolean });
+      items.push({
+        item_id: itemId,
+        label: label as string,
+        description: description ?? null,
+        position: Number(position),
+        is_required: required as boolean,
+      });
   });
   if (new Set(items.map((item) => item.position)).size !== items.length)
     errors.push("Item positions must be unique");

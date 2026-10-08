@@ -13,7 +13,6 @@ import {
   RefreshCw,
   Search,
   Send,
-  ShieldCheck,
   X,
   XCircle,
 } from "lucide-react";
@@ -1480,15 +1479,6 @@ export function TransferWorkspace() {
                       <>
                         {(requester || admin) && (
                           <button
-                            className="flex h-9 items-center gap-1.5 rounded-lg border border-white/[0.11] px-3 text-xs text-[#d6dbd8] hover:bg-white/[0.05]"
-                            onClick={() => setAction("validate")}
-                            type="button"
-                          >
-                            <ShieldCheck className="size-3.5" /> Validate
-                          </button>
-                        )}
-                        {(requester || admin) && (
-                          <button
                             className="flex h-9 items-center gap-1.5 rounded-lg bg-[#2b8d70] px-3 text-xs font-semibold text-white hover:bg-[#34a482]"
                             onClick={() => setAction("submit")}
                             type="button"
@@ -1499,7 +1489,12 @@ export function TransferWorkspace() {
                       </>
                     ) : detail.status === "submitted" ? (
                       <>
-                        {(recipient || admin) && (
+                        {requester && !recipient && (
+                          <span className="mr-auto text-xs text-[#8f9792]">
+                            Awaiting recipient decision
+                          </span>
+                        )}
+                        {recipient && (
                           <button
                             className="flex h-9 items-center gap-1.5 rounded-lg bg-[#2b8d70] px-3 text-xs font-semibold text-white hover:bg-[#34a482]"
                             onClick={() => setAction("accept")}
@@ -1508,7 +1503,7 @@ export function TransferWorkspace() {
                             <Check className="size-3.5" /> Accept
                           </button>
                         )}
-                        {(recipient || admin) && (
+                        {recipient && (
                           <button
                             className="flex h-9 items-center gap-1.5 rounded-lg border border-[#bb665f]/30 px-3 text-xs text-[#e99a93] hover:bg-[#3a201e]"
                             onClick={() => setAction("reject")}
@@ -1529,15 +1524,17 @@ export function TransferWorkspace() {
                           Cancel
                         </button>
                       )}
-                    {ACTIVE_STATUSES.includes(detail.status) && admin && (
-                      <button
-                        className="ml-auto h-9 px-3 text-xs font-medium text-[#e2b578] hover:text-[#f3cc98]"
-                        onClick={() => setAction("force-assign")}
-                        type="button"
-                      >
-                        Force assign
-                      </button>
-                    )}
+                    {ACTIVE_STATUSES.includes(detail.status) &&
+                      admin &&
+                      !requester && (
+                        <button
+                          className="ml-auto h-9 px-3 text-xs font-medium text-[#e2b578] hover:text-[#f3cc98]"
+                          onClick={() => setAction("force-assign")}
+                          type="button"
+                        >
+                          Force assign
+                        </button>
+                      )}
                     {ACTIVE_STATUSES.includes(detail.status) &&
                       admin &&
                       detail.expires_at &&

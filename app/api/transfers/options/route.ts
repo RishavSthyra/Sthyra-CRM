@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { requireOperationsContext } from "@/lib/operationsAccess";
+import { requireLeadVisibility } from "@/lib/leadVisibility";
 import { canAccessProject } from "@/lib/projectAccess";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 
 export async function GET(request: NextRequest) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requireLeadVisibility(request, "LEADS_VIEW");
   if (!scope.ok) return scope.response;
 
   const projectId = parsePositiveInteger(
@@ -53,17 +53,15 @@ export async function GET(request: NextRequest) {
                AND (
                  $2::boolean=TRUE
                  OR l.current_owner_user_id=$3
-                 OR l.current_team_id=(
-                   SELECT team_id FROM users WHERE user_id=$3
-                 )
-                 OR (l.current_owner_user_id IS NULL AND l.current_team_id IS NULL)
+                 OR l.current_team_id=$4
                )
              ORDER BY l.updated_at DESC, l.lead_id DESC
              LIMIT 200`,
             [
               projectId,
-              scope.context.access.canViewAllProjects,
-              scope.context.userId,
+              scope.context.leadVisibility.canViewProjectWide,
+              scope.context.leadVisibility.userId,
+              scope.context.leadVisibility.teamId,
             ],
           )
         : await pool.query(
@@ -86,10 +84,7 @@ export async function GET(request: NextRequest) {
                AND (
                  $2::boolean=TRUE
                  OR o.current_owner_user_id=$3
-                 OR o.current_team_id=(
-                   SELECT team_id FROM users WHERE user_id=$3
-                 )
-                 OR (o.current_owner_user_id IS NULL AND o.current_team_id IS NULL)
+                 OR o.current_team_id=$4
                )
                AND NOT EXISTS (
                  SELECT 1 FROM transfers transfer
@@ -100,8 +95,9 @@ export async function GET(request: NextRequest) {
              LIMIT 200`,
             [
               projectId,
-              scope.context.access.canViewAllProjects,
-              scope.context.userId,
+              scope.context.leadVisibility.canViewProjectWide,
+              scope.context.leadVisibility.userId,
+              scope.context.leadVisibility.teamId,
             ],
           );
 
