@@ -882,6 +882,7 @@ function OpportunityCard({
 export function OpportunityWorkspace() {
   const router = useRouter();
   const lastLoadedOpportunitiesQueryRef = useRef<string | null>(null);
+  const stageChangeInFlightRef = useRef(new Set<string>());
   const [context, setContext] = useState<ProjectContext | null>(null);
   const [projectFilter, setProjectFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("open");
@@ -1118,23 +1119,110 @@ export function OpportunityWorkspace() {
     const current = opportunities.find(
       (item) => item.opportunity_id === opportunityId,
     );
-    if (!current || current.stage_key === stageKey || current.status !== "open")
+    if (
+      !current ||
+      current.stage_key === stageKey ||
+      current.status !== "open" ||
+      stageChangeInFlightRef.current.has(opportunityId)
+    )
       return;
-    setActionBusy(true);
+
+    const targetStage = stages.find((stage) => stage.key === stageKey);
+    const optimisticProbability =
+      targetStage?.probability ?? current.probability;
+    const optimisticUpdatedAt = new Date().toISOString();
+    stageChangeInFlightRef.current.add(opportunityId);
+    setOpportunities((items) =>
+      items.map((item) =>
+        item.opportunity_id === opportunityId
+          ? {
+              ...item,
+              stage_key: stageKey,
+              probability: optimisticProbability,
+              updated_at: optimisticUpdatedAt,
+            }
+          : item,
+      ),
+    );
+    setDetail((currentDetail) =>
+      currentDetail?.opportunity_id === opportunityId
+        ? {
+            ...currentDetail,
+            stage_key: stageKey,
+            probability: optimisticProbability,
+            updated_at: optimisticUpdatedAt,
+          }
+        : currentDetail,
+    );
+
     try {
-      await api(`/api/opportunities/${opportunityId}/change-stage`, {
+      const payload = await api<{
+        opportunity?: Pick<
+          Opportunity,
+          "stage_key" | "probability" | "updated_at"
+        >;
+      }>(`/api/opportunities/${opportunityId}/change-stage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stage_key: stageKey }),
       });
+      const confirmedStage = payload.opportunity?.stage_key ?? stageKey;
+      const confirmedProbability = Number(
+        payload.opportunity?.probability ?? optimisticProbability,
+      );
+      const confirmedUpdatedAt =
+        payload.opportunity?.updated_at ?? optimisticUpdatedAt;
+      setOpportunities((items) =>
+        items.map((item) =>
+          item.opportunity_id === opportunityId
+            ? {
+                ...item,
+                stage_key: confirmedStage,
+                probability: confirmedProbability,
+                updated_at: confirmedUpdatedAt,
+              }
+            : item,
+        ),
+      );
+      setDetail((currentDetail) =>
+        currentDetail?.opportunity_id === opportunityId
+          ? {
+              ...currentDetail,
+              stage_key: confirmedStage,
+              probability: confirmedProbability,
+              updated_at: confirmedUpdatedAt,
+            }
+          : currentDetail,
+      );
       toast.success(`Moved to ${stageLabel(stageKey, stages)}`);
-      await refreshSelected();
     } catch (cause) {
+      setOpportunities((items) =>
+        items.map((item) =>
+          item.opportunity_id === opportunityId
+            ? {
+                ...item,
+                stage_key: current.stage_key,
+                probability: current.probability,
+                updated_at: current.updated_at,
+              }
+            : item,
+        ),
+      );
+      setDetail((currentDetail) =>
+        currentDetail?.opportunity_id === opportunityId
+          ? {
+              ...currentDetail,
+              stage_key: current.stage_key,
+              probability: current.probability,
+              updated_at: current.updated_at,
+            }
+          : currentDetail,
+      );
       toast.error(
         cause instanceof Error ? cause.message : "Unable to change stage",
       );
     } finally {
-      setActionBusy(false);
+      stageChangeInFlightRef.current.delete(opportunityId);
     }
   }
 

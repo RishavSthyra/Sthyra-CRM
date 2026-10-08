@@ -397,15 +397,19 @@ function CreateTransferDrawer({
       >
         <header className="flex items-start justify-between bg-[#111] px-6 pt-6 pb-4">
           <div>
-            <p className="text-[10px] font-semibold tracking-[0.15em] text-[#69716d] uppercase">
-              Transfer lead
-            </p>
-            <h2 className="mt-2 text-xl font-semibold text-white">
+            <h2 className="text-xl font-semibold text-white">
               {subject.subject_name}
             </h2>
             <p className="mt-1 text-sm text-[#7d8581]">
               {subject.email || "No email"} ·{" "}
               {subject.stage_name ?? label(subject.status)}
+            </p>
+            <p className="mt-2 text-xs text-[#69716d]">
+              {subject.owner_first_name || subject.owner_last_name
+                ? `Owned by ${name(subject.owner_first_name, subject.owner_last_name)}`
+                : subject.owner_team_name
+                  ? `Owned by ${subject.owner_team_name}`
+                  : "Currently unassigned"}
             </p>
           </div>
           <button
@@ -422,22 +426,8 @@ function CreateTransferDrawer({
           className="flex-1 overflow-y-auto bg-[#0b0b0b] p-6"
           onSubmit={submit}
         >
-          <section className="flex items-center justify-between gap-5 pb-3">
-            <span className="text-[10px] tracking-[0.08em] text-[#68706c] uppercase">
-              Current ownership
-            </span>
-            <p className="text-right text-sm font-medium text-[#dce1de]">
-              {subject.owner_first_name || subject.owner_last_name
-                ? name(subject.owner_first_name, subject.owner_last_name)
-                : (subject.owner_team_name ?? "Unassigned")}
-            </p>
-          </section>
-
-          <section className="pt-6">
-            <h3 className="text-[10px] font-semibold tracking-[0.12em] text-[#68706c] uppercase">
-              Destination
-            </h3>
-            <div className="mt-4 grid grid-cols-2 gap-4 max-[560px]:grid-cols-1">
+          <section>
+            <div className="grid grid-cols-2 gap-4 max-[560px]:grid-cols-1">
               <label>
                 <span className="mb-2 block text-xs text-[#9da5a1]">
                   Send to
@@ -488,11 +478,8 @@ function CreateTransferDrawer({
             </div>
           </section>
 
-          <section className="mt-8">
-            <h3 className="text-[10px] font-semibold tracking-[0.12em] text-[#68706c] uppercase">
-              Transfer settings
-            </h3>
-            <div className="mt-4 grid grid-cols-2 gap-4 max-[560px]:grid-cols-1">
+          <section className="mt-7">
+            <div className="grid grid-cols-2 gap-4 max-[560px]:grid-cols-1">
               <label>
                 <span className="mb-2 block text-xs text-[#9da5a1]">
                   Checklist
@@ -531,10 +518,7 @@ function CreateTransferDrawer({
             </div>
           </section>
 
-          <section className="mt-8 space-y-4">
-            <h3 className="text-[10px] font-semibold tracking-[0.12em] text-[#68706c] uppercase">
-              Handoff context
-            </h3>
+          <section className="mt-7 space-y-4">
             <label className="block">
               <span className="mb-2 block text-xs text-[#9da5a1]">Reason</span>
               <input
