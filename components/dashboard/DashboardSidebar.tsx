@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import {
@@ -80,7 +80,6 @@ function NavItem({
 
 export function DashboardSidebar() {
   const pathname = usePathname();
-  const router = useRouter();
   const [unreadCount, setUnreadCount] = useState(0);
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -131,8 +130,7 @@ export function DashboardSidebar() {
         credentials: "include",
       });
       if (!response.ok) throw new Error(await getApiError(response));
-      router.replace("/login");
-      router.refresh();
+      window.location.replace("/login");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to log out");
       setLoggingOut(false);
