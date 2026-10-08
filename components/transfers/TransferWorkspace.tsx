@@ -395,7 +395,7 @@ function CreateTransferDrawer({
         className="fixed inset-y-0 right-0 z-[90] flex w-full max-w-[620px] flex-col overflow-hidden border-l border-[#2c2c2c] bg-[#111] shadow-[-30px_0_90px_rgba(0,0,0,.6)] max-[560px]:max-w-full"
         role="dialog"
       >
-        <header className="flex items-start justify-between border-b border-[#2c2c2c] bg-[#111] px-6 py-5">
+        <header className="flex items-start justify-between bg-[#111] px-6 pt-6 pb-4">
           <div>
             <p className="text-[10px] font-semibold tracking-[0.15em] text-[#69716d] uppercase">
               Transfer lead
@@ -422,7 +422,7 @@ function CreateTransferDrawer({
           className="flex-1 overflow-y-auto bg-[#0b0b0b] p-6"
           onSubmit={submit}
         >
-          <section className="flex items-center justify-between gap-5 border-b border-[#2c2c2c] pb-5">
+          <section className="flex items-center justify-between gap-5 pb-3">
             <span className="text-[10px] tracking-[0.08em] text-[#68706c] uppercase">
               Current ownership
             </span>
@@ -433,7 +433,7 @@ function CreateTransferDrawer({
             </p>
           </section>
 
-          <section className="pt-5">
+          <section className="pt-6">
             <h3 className="text-[10px] font-semibold tracking-[0.12em] text-[#68706c] uppercase">
               Destination
             </h3>
@@ -488,7 +488,7 @@ function CreateTransferDrawer({
             </div>
           </section>
 
-          <section className="mt-6 border-t border-[#2c2c2c] pt-5">
+          <section className="mt-8">
             <h3 className="text-[10px] font-semibold tracking-[0.12em] text-[#68706c] uppercase">
               Transfer settings
             </h3>
@@ -531,7 +531,7 @@ function CreateTransferDrawer({
             </div>
           </section>
 
-          <section className="mt-6 space-y-4 border-t border-[#2c2c2c] pt-5">
+          <section className="mt-8 space-y-4">
             <h3 className="text-[10px] font-semibold tracking-[0.12em] text-[#68706c] uppercase">
               Handoff context
             </h3>
@@ -555,7 +555,7 @@ function CreateTransferDrawer({
             </label>
           </section>
 
-          <div className="mt-6 flex justify-end gap-3 border-t border-[#2c2c2c] pt-5">
+          <div className="mt-8 flex justify-end gap-3 pb-2">
             <button
               className="h-10 px-4 text-sm text-[#9da5a1] hover:text-white"
               onClick={onClose}
