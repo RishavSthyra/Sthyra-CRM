@@ -837,7 +837,7 @@ function OpportunityCard({
   const contact = personName(opportunity.first_name, opportunity.last_name);
   return (
     <button
-      className="group m-2 w-[calc(100%-16px)] cursor-grab rounded-[10px] border border-[#2c2c2c] bg-[#111] p-3.5 text-left transition hover:border-[#3b3b3b] hover:bg-[#151515] active:cursor-grabbing"
+      className="group w-full cursor-grab border-b border-[#2c2c2c] bg-[#0d0d0d] px-4 py-4 text-left transition hover:bg-[#151515] active:cursor-grabbing"
       draggable={opportunity.status === "open"}
       onClick={() => onOpen(opportunity)}
       onDragStart={(event) => {
