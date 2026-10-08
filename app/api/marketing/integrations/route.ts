@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { requireOperationsContext } from "@/lib/operationsAccess";
+import { requirePermission } from "@/lib/authorization";
 import { isObject } from "@/utils/isObject";
 
 export async function GET(request: NextRequest) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "WORKSPACE_MANAGE");
   if (!scope.ok) return scope.response;
   try {
     const result = await pool.query(
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "WORKSPACE_MANAGE");
   if (!scope.ok) return scope.response;
   if (!scope.context.access.canViewAllProjects) return NextResponse.json({ error: "Company administrator access is required" }, { status: 403 });
   let body: unknown;
@@ -54,4 +54,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unable to create marketing integration" }, { status: 500 });
   }
 }
-

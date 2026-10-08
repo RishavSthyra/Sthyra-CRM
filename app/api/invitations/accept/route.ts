@@ -2,10 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import pool, { adminPool } from "@/lib/db";
 import {
   AUTH_USER_COLUMNS,
-  createAuthenticatedSession,
   hashPassword,
   hashToken,
-  setAuthCookies,
 } from "@/lib/auth";
 import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
 import { isObject } from "@/utils/isObject";
@@ -257,9 +255,6 @@ export async function POST(request: NextRequest) {
        WHERE invitation_id=$1`,
       [invitation.invitation_id, userId],
     );
-    const tokens = useSupabase
-      ? null
-      : await createAuthenticatedSession(client, request, userId);
     const user = await client.query(
       `SELECT ${AUTH_USER_COLUMNS} FROM users u WHERE u.user_id=$1`,
       [userId],
@@ -280,9 +275,6 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
     response.headers.set("Cache-Control", "no-store");
-    if (!useSupabase && tokens) {
-      setAuthCookies(response, tokens.accessToken, tokens.refreshToken);
-    }
     return response;
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);

@@ -12,9 +12,11 @@ import { getApiError } from "@/lib/clientAuth";
 export function EmailVerification({
   email,
   initialOtpLength,
+  next = "dashboard",
 }: {
   email: string;
   initialOtpLength: number;
+  next?: "dashboard" | "login";
 }) {
   const router = useRouter();
   const [token, setToken] = useState("");
@@ -60,6 +62,15 @@ export function EmailVerification({
       const result = (await response.json()) as {
         workspace_domain?: string | null;
       };
+      if (next === "login") {
+        await fetch("/api/auth/logout", {
+          method: "POST",
+          credentials: "include",
+        }).catch(() => undefined);
+        toast.success("Email verified. Sign in to continue.");
+        router.replace("/login?invited=1");
+        return true;
+      }
       toast.success("Email verified. Welcome to Sthyra CRM.");
       window.setTimeout(() => {
         if (

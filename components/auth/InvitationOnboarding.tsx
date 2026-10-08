@@ -132,13 +132,16 @@ export function InvitationOnboarding({ token }: { token: string }) {
             ? Number(result.otp_length)
             : 8;
         router.replace(
-          `/verify-email?email=${encodeURIComponent(result.email ?? invitation?.email ?? "")}&length=${otpLength}`,
+          `/verify-email?email=${encodeURIComponent(result.email ?? invitation?.email ?? "")}&length=${otpLength}&next=login`,
         );
         return;
       }
-      toast.success("Welcome to your workspace.");
-      router.replace("/dashboard");
-      router.refresh();
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      }).catch(() => undefined);
+      toast.success("Account created. Sign in to continue.");
+      router.replace("/login?invited=1");
     } catch (cause) {
       const message =
         cause instanceof Error ? cause.message : "Unable to accept invitation";

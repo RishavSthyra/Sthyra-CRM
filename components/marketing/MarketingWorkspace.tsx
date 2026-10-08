@@ -15,6 +15,7 @@ import {
   Settings2,
   X,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import {
@@ -28,6 +29,7 @@ import {
 } from "recharts";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { fetchWithSession } from "@/lib/clientAuth";
+import { canAccessWorkspaceModule } from "@/lib/moduleAccess";
 
 type Tab =
   "overview" | "touchpoints" | "forms" | "integrations" | "conversions";
@@ -164,6 +166,8 @@ function SelectControl({
 }
 
 export function MarketingWorkspace() {
+  const router = useRouter();
+  const [authorized, setAuthorized] = useState<boolean | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [overview, setOverview] = useState<Overview | null>(null);
   const [forms, setForms] = useState<RecordValue[]>([]);
@@ -175,6 +179,40 @@ export function MarketingWorkspace() {
   const [formDialog, setFormDialog] = useState(false);
   const [integrationDialog, setIntegrationDialog] = useState(false);
   const [credentials, setCredentials] = useState<RecordValue | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void fetchWithSession("/api/auth/project-context", { cache: "no-store" })
+      .then(async (response) => {
+        if (!active) return;
+        if (response.status === 401) {
+          router.replace("/login");
+          return;
+        }
+        if (!response.ok) {
+          setAuthorized(false);
+          router.replace("/dashboard");
+          return;
+        }
+        const context = (await response.json()) as {
+          role_key?: string;
+          permissions?: string[];
+        };
+        const allowed = canAccessWorkspaceModule(
+          context.role_key,
+          context.permissions,
+          "marketing",
+        );
+        setAuthorized(allowed);
+        if (!allowed) router.replace("/dashboard");
+      })
+      .catch(() => {
+        if (active) setAuthorized(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [router]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -232,9 +270,10 @@ export function MarketingWorkspace() {
   }, [days, project]);
 
   useEffect(() => {
+    if (!authorized) return;
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
-  }, [load]);
+  }, [authorized, load]);
 
   const summary = overview?.summary ?? {};
   const chartData = useMemo(
@@ -282,6 +321,10 @@ export function MarketingWorkspace() {
       success: "Conversion queued",
       error: (cause) => cause.message,
     });
+  }
+
+  if (authorized !== true) {
+    return <main className="min-h-dvh bg-black" />;
   }
 
   return (

@@ -8,8 +8,8 @@ import {
 import { parseUuid } from "@/lib/operations";
 import {
   canAccessOperationsEntity,
-  requireOperationsContext,
 } from "@/lib/operationsAccess";
+import { requirePermission } from "@/lib/authorization";
 import { isObject } from "@/utils/isObject";
 import { validateText } from "@/utils/validateText";
 import { queueMarketingConversion } from "@/lib/marketing";
@@ -42,7 +42,7 @@ export async function changeOpportunityStage(
   request: NextRequest,
   rawOpportunityId: string,
 ) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "OPPORTUNITIES_MANAGE");
   if (!scope.ok) return scope.response;
   const opportunityId = parseUuid(rawOpportunityId);
   if (!opportunityId)
@@ -163,7 +163,7 @@ export async function closeOpportunity(
   request: NextRequest,
   rawOpportunityId: string,
 ) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "OPPORTUNITIES_MANAGE");
   if (!scope.ok) return scope.response;
   const opportunityId = parseUuid(rawOpportunityId);
   if (!opportunityId)
@@ -309,7 +309,7 @@ export async function reopenOpportunity(
   request: NextRequest,
   rawOpportunityId: string,
 ) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "OPPORTUNITIES_MANAGE");
   if (!scope.ok) return scope.response;
   const opportunityId = parseUuid(rawOpportunityId);
   if (!opportunityId)

@@ -4,14 +4,14 @@ import { getOpportunity } from "@/lib/opportunities";
 import { parseUuid } from "@/lib/operations";
 import {
   canAccessOperationsEntity,
-  requireOperationsContext,
 } from "@/lib/operationsAccess";
+import { requirePermission } from "@/lib/authorization";
 
 export async function requireOpportunity(
   request: NextRequest,
   rawOpportunityId: string,
 ) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "OPPORTUNITIES_MANAGE");
   if (!scope.ok) return scope;
   const opportunityId = parseUuid(rawOpportunityId);
   if (!opportunityId)
@@ -63,4 +63,3 @@ export async function requireOpportunity(
     };
   }
 }
-

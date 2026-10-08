@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { requireOperationsContext } from "@/lib/operationsAccess";
+import { requirePermission } from "@/lib/authorization";
 import { isUuid } from "@/lib/permissions";
 
 type Context = { params: Promise<{ jobid: string }> };
 
 export async function POST(request: NextRequest, context: Context) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "WORKSPACE_MANAGE");
   if (!scope.ok) return scope.response;
   if (!scope.context.access.canViewAllProjects) return NextResponse.json({ error: "Company administrator access is required" }, { status: 403 });
   const id = (await context.params).jobid;
@@ -27,4 +27,3 @@ export async function POST(request: NextRequest, context: Context) {
     return NextResponse.json({ error: "Unable to retry conversion" }, { status: 500 });
   }
 }
-

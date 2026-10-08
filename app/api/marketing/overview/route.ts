@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { requireOperationsContext } from "@/lib/operationsAccess";
+import { requirePermission } from "@/lib/authorization";
 import { getAccessibleProjectIds } from "@/lib/projectAccess";
 
 export async function GET(request: NextRequest) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "WORKSPACE_MANAGE");
   if (!scope.ok) return scope.response;
   const companyId = scope.context.access.company.company_id;
   const projectIds = getAccessibleProjectIds(scope.context.access);
@@ -96,4 +96,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unable to load marketing analytics" }, { status: 500 });
   }
 }
-

@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { requireOperationsContext } from "@/lib/operationsAccess";
+import { requirePermission } from "@/lib/authorization";
 import { isUuid } from "@/lib/permissions";
 import { isObject } from "@/utils/isObject";
 
 type Context = { params: Promise<{ integrationid: string }> };
 
 export async function PATCH(request: NextRequest, context: Context) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "WORKSPACE_MANAGE");
   if (!scope.ok) return scope.response;
   if (!scope.context.access.canViewAllProjects) return NextResponse.json({ error: "Company administrator access is required" }, { status: 403 });
   const id = (await context.params).integrationid;
@@ -53,4 +53,3 @@ export async function PATCH(request: NextRequest, context: Context) {
     return NextResponse.json({ error: "Unable to update marketing integration" }, { status: 500 });
   }
 }
-

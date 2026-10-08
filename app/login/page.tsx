@@ -22,6 +22,9 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("invited") === "1") {
+      return;
+    }
     let active = true;
     void fetchWithSession("/api/auth/me", { cache: "no-store" }).then(
       (response) => {

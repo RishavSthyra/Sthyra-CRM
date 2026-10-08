@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { OPPORTUNITY_COLUMNS } from "@/lib/opportunities";
-import { requireOperationsContext } from "@/lib/operationsAccess";
+import { requirePermission } from "@/lib/authorization";
 import { parseUuid } from "@/lib/operations";
 import { getAccessibleProjectIds } from "@/lib/projectAccess";
 import { parsePagination } from "@/utils/parsePagination";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 
 export async function GET(request: NextRequest) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "OPPORTUNITIES_MANAGE");
   if (!scope.ok) return scope.response;
   const pagination = parsePagination(request.nextUrl.searchParams);
   if (!pagination.ok)

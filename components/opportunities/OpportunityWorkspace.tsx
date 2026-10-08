@@ -43,6 +43,7 @@ import {
   type ManagedQuotation,
 } from "@/components/opportunities/QuotationManager";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
+import { canAccessWorkspaceModule } from "@/lib/moduleAccess";
 
 type Project = {
   project_id: number;
@@ -53,6 +54,8 @@ type Project = {
 type ProjectContext = {
   company?: { company_name?: string };
   can_view_all_projects?: boolean;
+  role_key?: string;
+  permissions?: string[];
   projects?: Project[];
 };
 
@@ -914,6 +917,16 @@ export function OpportunityWorkspace() {
     void api<ProjectContext>("/api/auth/project-context")
       .then((payload) => {
         if (!active) return;
+        if (
+          !canAccessWorkspaceModule(
+            payload.role_key,
+            payload.permissions,
+            "opportunities",
+          )
+        ) {
+          router.replace("/dashboard");
+          return;
+        }
         setContext(payload);
         const projects = payload.projects ?? [];
         const requested = new URLSearchParams(window.location.search).get(

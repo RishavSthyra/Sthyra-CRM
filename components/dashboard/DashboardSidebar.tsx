@@ -22,19 +22,65 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
+import {
+  canAccessWorkspaceModule,
+  type WorkspaceModule,
+} from "@/lib/moduleAccess";
 
-const primaryItems = [
+type NavigationItem = {
+  href: string;
+  icon: LucideIcon;
+  label: string;
+  module?: WorkspaceModule;
+};
+
+const primaryItems: NavigationItem[] = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-  { href: "/leads", icon: UserRoundPlus, label: "Leads" },
-  { href: "/opportunities", icon: Target, label: "Deals" },
-  { href: "/activity", icon: ChartNoAxesColumnIncreasing, label: "Activity" },
-  { href: "/calendar", icon: CalendarDays, label: "Calendar" },
-  { href: "/inventory", icon: ClipboardCheck, label: "Inventory" },
-  { href: "/marketing", icon: Megaphone, label: "Marketing" },
+  { href: "/leads", icon: UserRoundPlus, label: "Leads", module: "leads" },
+  {
+    href: "/opportunities",
+    icon: Target,
+    label: "Deals",
+    module: "opportunities",
+  },
+  {
+    href: "/activity",
+    icon: ChartNoAxesColumnIncreasing,
+    label: "Activity",
+    module: "activity",
+  },
+  {
+    href: "/calendar",
+    icon: CalendarDays,
+    label: "Calendar",
+    module: "calendar",
+  },
+  {
+    href: "/inventory",
+    icon: ClipboardCheck,
+    label: "Inventory",
+    module: "inventory",
+  },
+  {
+    href: "/marketing",
+    icon: Megaphone,
+    label: "Marketing",
+    module: "marketing",
+  },
 ];
-const secondaryItems = [
-  { href: "/transfers", icon: ArrowRightLeft, label: "Transfers" },
-  { href: "/team-members", icon: UsersRound, label: "Team Members" },
+const secondaryItems: NavigationItem[] = [
+  {
+    href: "/transfers",
+    icon: ArrowRightLeft,
+    label: "Transfers",
+    module: "transfers",
+  },
+  {
+    href: "/team-members",
+    icon: UsersRound,
+    label: "Team Members",
+    module: "people",
+  },
 ];
 
 function NavItem({
@@ -82,6 +128,45 @@ export function DashboardSidebar() {
   const pathname = usePathname();
   const [unreadCount, setUnreadCount] = useState(0);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [access, setAccess] = useState<{
+    roleKey: string;
+    permissions: string[];
+  } | null>(null);
+
+  const canShow = useCallback(
+    (item: NavigationItem) =>
+      !item.module ||
+      (access !== null &&
+        canAccessWorkspaceModule(
+          access.roleKey,
+          access.permissions,
+          item.module,
+        )),
+    [access],
+  );
+
+  useEffect(() => {
+    let active = true;
+    void fetchWithSession("/api/auth/project-context", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const body = (await response.json()) as {
+          role_key?: string;
+          permissions?: string[];
+        };
+        if (!active) return;
+        setAccess({
+          roleKey: String(body.role_key ?? ""),
+          permissions: Array.isArray(body.permissions)
+            ? body.permissions.map(String)
+            : [],
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const loadUnreadCount = useCallback(async () => {
     try {
@@ -160,7 +245,7 @@ export function DashboardSidebar() {
           aria-label="Workspace navigation"
           className="flex flex-col items-center gap-0.5"
         >
-          {primaryItems.map((item) => (
+          {primaryItems.filter(canShow).map((item) => (
             <NavItem
               active={isActive(item.href)}
               href={item.href}
@@ -170,7 +255,7 @@ export function DashboardSidebar() {
             />
           ))}
           <div className="my-1.5 h-px w-8 bg-white/[0.12]" />
-          {secondaryItems.map((item) => (
+          {secondaryItems.filter(canShow).map((item) => (
             <NavItem
               active={isActive(item.href)}
               href={item.href}

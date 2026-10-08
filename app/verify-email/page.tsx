@@ -11,6 +11,7 @@ type VerifyEmailPageProps = {
   searchParams: Promise<{
     email?: string | string[];
     length?: string | string[];
+    next?: string | string[];
   }>;
 };
 
@@ -26,7 +27,14 @@ async function VerificationContent({ searchParams }: VerifyEmailPageProps) {
     requestedLength <= 10
       ? requestedLength
       : 8;
-  return <EmailVerification email={email} initialOtpLength={otpLength} />;
+  const next = params.next === "login" ? "login" : "dashboard";
+  return (
+    <EmailVerification
+      email={email}
+      initialOtpLength={otpLength}
+      next={next}
+    />
+  );
 }
 
 export default function VerifyEmailPage({

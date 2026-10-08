@@ -4,7 +4,7 @@ import {
   createMarketingSecret,
   hashMarketingSecret,
 } from "@/lib/marketing";
-import { requireOperationsContext } from "@/lib/operationsAccess";
+import { requirePermission } from "@/lib/authorization";
 import { canAccessProject } from "@/lib/projectAccess";
 import { isUuid } from "@/lib/permissions";
 import { isObject } from "@/utils/isObject";
@@ -38,7 +38,7 @@ function originList(value: unknown) {
 }
 
 export async function GET(request: NextRequest) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "WORKSPACE_MANAGE");
   if (!scope.ok) return scope.response;
   try {
     const result = await pool.query(
@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "WORKSPACE_MANAGE");
   if (!scope.ok) return scope.response;
   if (!scope.context.access.canViewAllProjects) {
     return NextResponse.json(
