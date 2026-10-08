@@ -987,8 +987,8 @@ export default function LeadsPage() {
             </div>
           </div>
         </section>
-        <div className="relative my-4 flex min-w-0 items-center gap-2">
-          <label className="group flex h-11 flex-[1_1_320px] items-center gap-2.5 rounded-[10px] border border-[#2c2c2c] bg-[#111] px-3.5 text-[#8a8d93] max-[1550px]:flex-[0_0_44px] max-[1550px]:cursor-text max-[1550px]:justify-center max-[1550px]:overflow-hidden max-[1550px]:px-0 max-[1550px]:transition-all max-[1550px]:focus-within:flex-[0_0_260px] max-[1550px]:focus-within:justify-start max-[1550px]:focus-within:px-3.5 max-[1550px]:has-[input:not(:placeholder-shown)]:flex-[0_0_260px] max-[1550px]:has-[input:not(:placeholder-shown)]:justify-start max-[1550px]:has-[input:not(:placeholder-shown)]:px-3.5 max-[560px]:focus-within:flex-[0_0_calc(100%-96px)] max-[560px]:has-[input:not(:placeholder-shown)]:flex-[0_0_calc(100%-96px)]">
+        <div className="relative my-4 grid min-w-0 grid-cols-[minmax(240px,1fr)_minmax(0,auto)_auto] items-center gap-2 max-[1280px]:grid-cols-[minmax(0,1fr)_auto]">
+          <label className="flex h-11 min-w-0 items-center gap-2.5 rounded-[10px] border border-[#2c2c2c] bg-[#111] px-3.5 text-[#8a8d93] max-[1280px]:col-span-2">
             <span
               aria-hidden="true"
               className="flex size-4 shrink-0 items-center justify-center"
@@ -996,7 +996,7 @@ export default function LeadsPage() {
               <Search aria-hidden className="size-4" strokeWidth={1.8} />
             </span>
             <input
-              className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#f5f5f5] outline-none max-[1550px]:w-0 max-[1550px]:flex-none max-[1550px]:opacity-0 max-[1550px]:transition-all max-[1550px]:group-focus-within:flex-1 max-[1550px]:group-focus-within:opacity-100"
+              className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#f5f5f5] outline-none"
               onChange={(event) => {
                 setSearch(event.target.value);
                 setPage(1);
@@ -1005,18 +1005,24 @@ export default function LeadsPage() {
               value={search}
             />
           </label>
-          <div className="flex w-max min-w-0 flex-[0_1_auto] overflow-x-auto rounded-[10px] border border-[#2c2c2c] bg-[#191919] p-[3px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            aria-label="Lead lifecycle stages"
+            className="flex min-w-0 max-w-full overflow-x-auto rounded-[10px] border border-[#2c2c2c] bg-[#191919] p-[3px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            role="tablist"
+          >
             {[
               { stage_key: "all", stage_name: "All" },
               ...visiblePipelineStages,
             ].map((item) => (
               <button
+                aria-selected={stage === item.stage_key}
                 className={`h-9 shrink-0 rounded-[7px] border-0 px-3.5 text-xs whitespace-nowrap transition max-[1550px]:px-[11px] ${stage === item.stage_key ? "bg-[#3b3b3b] text-[#f5f5f5]" : "bg-transparent text-[#b4b4b4]"}`}
                 key={item.stage_key}
                 onClick={() => {
                   setStage(item.stage_key);
                   setPage(1);
                 }}
+                role="tab"
                 type="button"
               >
                 {item.stage_name}

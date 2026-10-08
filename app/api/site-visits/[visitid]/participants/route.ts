@@ -106,8 +106,10 @@ export async function PUT(request: NextRequest, context: Context) {
       { status: 422 },
     );
   const client = await pool.connect();
+  let transactionOpen = false;
   try {
     await client.query("BEGIN");
+    transactionOpen = true;
     for (const participant of validation.data) {
       if (participant.user_id) {
         const user = await client.query(
@@ -168,17 +170,28 @@ export async function PUT(request: NextRequest, context: Context) {
       "UPDATE site_visits SET attendee_count=$2, updated_at=CURRENT_TIMESTAMP WHERE visit_id=$1",
       [access.visitId, validation.data.length],
     );
-    await client.query("COMMIT");
-    const result = await pool.query(
-      "SELECT * FROM site_visit_participants WHERE visit_id=$1 ORDER BY created_at",
+    const result = await client.query(
+      `SELECT svp.*, u.first_name AS user_first_name, u.last_name AS user_last_name,
+       u.email AS user_email, c.first_name AS contact_first_name,
+       c.last_name AS contact_last_name, c.email AS contact_email,
+       c.phone_number AS contact_phone
+       FROM site_visit_participants svp
+       LEFT JOIN users u ON u.user_id=svp.user_id
+       LEFT JOIN contacts c ON c.contact_id=svp.contact_id
+       WHERE svp.visit_id=$1
+       ORDER BY CASE svp.participant_role WHEN 'organizer' THEN 1 WHEN 'host' THEN 2 ELSE 3 END,
+       svp.created_at`,
       [access.visitId],
     );
+    await client.query("COMMIT");
+    transactionOpen = false;
     return NextResponse.json({
       message: "Site visit participants replaced",
       participants: result.rows,
     });
   } catch (error) {
-    await client.query("ROLLBACK").catch(() => undefined);
+    if (transactionOpen)
+      await client.query("ROLLBACK").catch(() => undefined);
     console.error("Failed to replace site visit participants", error);
     return NextResponse.json(
       { error: "Unable to replace site visit participants" },
