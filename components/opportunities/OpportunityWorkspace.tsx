@@ -837,7 +837,7 @@ function OpportunityCard({
   const contact = personName(opportunity.first_name, opportunity.last_name);
   return (
     <button
-      className="group w-full cursor-grab border-b border-white/[0.07] px-3 py-4 text-left transition hover:bg-white/[0.025] active:cursor-grabbing"
+      className="group m-2 w-[calc(100%-16px)] cursor-grab rounded-[10px] border border-[#2c2c2c] bg-[#111] p-3.5 text-left transition hover:border-[#3b3b3b] hover:bg-[#151515] active:cursor-grabbing"
       draggable={opportunity.status === "open"}
       onClick={() => onOpen(opportunity)}
       onDragStart={(event) => {
@@ -851,25 +851,25 @@ function OpportunityCard({
     >
       <div className="flex items-start justify-between gap-3">
         <span className="min-w-0">
-          <strong className="block truncate text-sm font-semibold text-[#e9ecea]">
+          <strong className="block truncate text-[13px] font-semibold text-[#f1f1f1]">
             {contact}
           </strong>
-          <span className="mt-1 block truncate text-[11px] text-[#6f7773]">
+          <span className="mt-1 block truncate text-[10px] text-[#8a8d93]">
             {opportunity.project_name}
           </span>
         </span>
-        <ChevronRight className="mt-0.5 size-4 shrink-0 text-[#4f5753] transition group-hover:translate-x-0.5 group-hover:text-[#8f9792]" />
+        <ChevronRight className="mt-0.5 size-4 shrink-0 text-[#5d625f] transition group-hover:translate-x-0.5 group-hover:text-[#b4b4b4]" />
       </div>
       <div className="mt-3 flex items-end justify-between gap-3">
         <span>
-          <strong className="block text-sm font-semibold text-[#dfe3e0]">
+          <strong className="block text-xs font-semibold text-[#e1e3e2]">
             {formatMoney(opportunity.amount)}
           </strong>
-          <span className="mt-1 block text-[10px] text-[#69716d]">
+          <span className="mt-1 block text-[10px] text-[#777d7a]">
             {opportunity.probability}% probability
           </span>
         </span>
-        <span className="text-right text-[10px] text-[#69716d]">
+        <span className="text-right text-[10px] text-[#777d7a]">
           {opportunity.expected_close_date
             ? formatDate(opportunity.expected_close_date)
             : "No close date"}
@@ -1224,88 +1224,32 @@ export function OpportunityWorkspace() {
     );
   }, [unitQuery, units]);
 
+  const selectedProject = context?.projects?.find(
+    (project) => String(project.project_id) === projectFilter,
+  );
+
   return (
-    <main className="min-h-dvh bg-[#050706] text-[#f5f5f5]">
+    <main className="min-h-dvh bg-black text-[#f5f5f5]">
       <DashboardSidebar />
-      <section className="ml-[96px] min-h-dvh py-7 pr-7 pb-8 max-[780px]:py-5 max-[780px]:pr-4 max-[560px]:ml-[84px] max-[560px]:px-3">
-        <header className="flex flex-wrap items-end justify-between gap-5 pb-6">
+      <section className="ml-[96px] min-h-dvh py-8 pr-8 pb-12 max-[780px]:py-5 max-[780px]:pr-4 max-[560px]:ml-[84px] max-[560px]:px-3">
+        <header className="flex flex-wrap items-end justify-between gap-5">
           <div>
-            <p className="text-[11px] text-[#6e7672]">
-              {context?.company?.company_name ?? "Workspace"} / Revenue
+            <p className="text-xs text-[#5b5b5b]">
+              {context?.company?.company_name ?? "Workspace"} / Deals
             </p>
-            <h1 className="mt-2 font-[var(--font-bricolage)] text-[clamp(30px,3vw,42px)] font-medium tracking-[-0.035em]">
-              Opportunities
+            <h1 className="mt-3 font-[var(--font-bricolage)] text-[clamp(32px,3.2vw,44px)] font-medium tracking-[-0.035em]">
+              Deals
             </h1>
-            <p className="mt-2 text-sm text-[#8b928f]">
-              Qualified demand, inventory choices and every next step in one
-              view.
+            <p className="mt-2 text-sm text-[#b4b4b4]">
+              Every qualified relationship. One clear path to close.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              aria-label="Refresh opportunities"
-              className="grid size-9 place-items-center text-[#747c78] transition hover:text-white"
-              disabled={refreshing}
-              onClick={() => void loadOpportunities(true)}
-              type="button"
-            >
-              <RefreshCw
-                className={`size-4 ${refreshing ? "animate-spin" : ""}`}
-              />
-            </button>
-            <div className="flex items-center gap-5">
-              <button
-                className={`flex h-9 items-center gap-1.5 border-b-2 px-0.5 text-xs transition ${view === "pipeline" ? "border-[#4bc49f] text-white" : "border-transparent text-[#747c78] hover:text-[#c3c9c5]"}`}
-                onClick={() => setView("pipeline")}
-                type="button"
-              >
-                <KanbanSquare className="size-3.5" /> Pipeline
-              </button>
-              <button
-                className={`flex h-9 items-center gap-1.5 border-b-2 px-0.5 text-xs transition ${view === "list" ? "border-[#4bc49f] text-white" : "border-transparent text-[#747c78] hover:text-[#c3c9c5]"}`}
-                onClick={() => setView("list")}
-                type="button"
-              >
-                <LayoutList className="size-3.5" /> List
-              </button>
-            </div>
-          </div>
-        </header>
-
-        <section className="grid grid-cols-4 border-y border-white/[0.08] max-[860px]:grid-cols-2 max-[520px]:grid-cols-1">
-          {[
-            ["Open opportunities", String(metrics.open)],
-            ["Pipeline value", formatMoney(metrics.pipeline)],
-            ["Weighted value", formatMoney(metrics.weighted)],
-            ["Visible records", String(metrics.total)],
-          ].map(([label, metric], index) => (
-            <div
-              className={`py-4 ${index ? "border-l border-white/[0.08] pl-5 max-[520px]:border-l-0 max-[520px]:pl-0" : ""}`}
-              key={label}
-            >
-              <span className="block text-[10px] font-medium tracking-[0.04em] text-[#68706c] uppercase">
-                {label}
-              </span>
-              <strong className="mt-1.5 block text-lg font-semibold tracking-[-0.01em] text-[#edf0ee]">
-                {metric}
-              </strong>
-            </div>
-          ))}
-        </section>
-
-        <section className="flex flex-wrap items-center gap-3 border-b border-white/[0.08] py-4">
-          <label className="relative min-w-[260px] flex-1">
-            <Search className="absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-[#68706c]" />
-            <input
-              className="h-10 w-full border-0 border-b border-white/[0.12] bg-transparent pr-3 pl-10 text-xs text-white outline-none placeholder:text-[#5b625e] focus:border-[#50c4a2]/60"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search opportunity, contact or email"
-              value={query}
-            />
-          </label>
-          <label className="relative">
+          <label className="relative block min-w-[240px]">
+            <span className="mb-2 block text-[11px] font-medium text-[#777]">
+              Project
+            </span>
             <select
-              className="h-10 min-w-44 appearance-none border-0 border-b border-white/[0.12] bg-transparent pr-9 pl-1 text-xs text-[#d7dcda] outline-none focus:border-[#50c4a2]/60"
+              className="h-11 w-full appearance-none rounded-[10px] border border-[#363636] bg-[#151515] pr-10 pl-4 text-sm text-[#d8d8d8] outline-none transition focus:border-[#50c4a2]/70"
               onChange={(event) => {
                 setProjectFilter(event.target.value);
                 if (event.target.value !== "all")
@@ -1325,11 +1269,84 @@ export function OpportunityWorkspace() {
                 </option>
               ))}
             </select>
-            <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-3.5 -translate-y-1/2 text-[#747c78]" />
+            <ChevronDown className="pointer-events-none absolute right-3 bottom-3.5 size-4 text-[#777]" />
           </label>
-          <label className="relative">
+        </header>
+
+        <section className="mt-7 overflow-hidden rounded-2xl border border-[#2c2c2c] bg-[#080808]">
+          <header className="border-b border-[#2c2c2c] bg-[#191919] px-4 py-3 text-sm font-medium text-[#dedede]">
+            Overview
+          </header>
+          <div className="grid grid-cols-4 max-[900px]:grid-cols-2 max-[520px]:grid-cols-1">
+            {[
+              [
+                "Open deals",
+                String(metrics.open),
+                "Active sales opportunities",
+              ],
+              [
+                "Pipeline value",
+                formatMoney(metrics.pipeline),
+                "Total value before weighting",
+              ],
+              [
+                "Weighted value",
+                formatMoney(metrics.weighted),
+                "Probability-adjusted value",
+              ],
+              [
+                "Visible deals",
+                String(metrics.total),
+                "Current filtered results",
+              ],
+            ].map(([label, metric, description], index) => (
+              <div
+                className={`min-w-0 px-4 py-4 ${index ? "border-l border-[#2c2c2c] max-[520px]:border-t max-[520px]:border-l-0" : ""} ${index === 2 ? "max-[900px]:border-l-0" : ""} ${index > 1 ? "max-[900px]:border-t max-[900px]:border-[#2c2c2c]" : ""}`}
+                key={label}
+              >
+                <span className="block text-[11px] text-[#929292]">
+                  {label}
+                </span>
+                <strong className="mt-2 block truncate text-2xl font-semibold tracking-[-0.025em] text-white">
+                  {metric}
+                </strong>
+                <span className="mt-1 block text-[11px] text-[#707070]">
+                  {description}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="my-4 grid min-w-0 grid-cols-[minmax(240px,1fr)_auto_auto] items-center gap-2 max-[900px]:grid-cols-[minmax(0,1fr)_auto] max-[600px]:grid-cols-1">
+          <label className="relative min-w-0 max-[900px]:col-span-2 max-[600px]:col-span-1">
+            <Search className="absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-[#777]" />
+            <input
+              className="h-11 w-full rounded-[10px] border border-[#2c2c2c] bg-[#111] pr-3 pl-10 text-sm text-white outline-none transition placeholder:text-[#666] focus:border-[#50c4a2]/70"
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search deals by name, contact or email"
+              value={query}
+            />
+          </label>
+          <div className="flex h-11 items-center rounded-[10px] border border-[#2c2c2c] bg-[#191919] p-1 max-[600px]:w-full">
+            <button
+              className={`flex h-8 items-center justify-center gap-1.5 rounded-md px-3 text-xs transition max-[600px]:flex-1 ${view === "pipeline" ? "bg-[#3b3b3b] text-white" : "text-[#999] hover:text-white"}`}
+              onClick={() => setView("pipeline")}
+              type="button"
+            >
+              <KanbanSquare className="size-3.5" /> Pipeline
+            </button>
+            <button
+              className={`flex h-8 items-center justify-center gap-1.5 rounded-md px-3 text-xs transition max-[600px]:flex-1 ${view === "list" ? "bg-[#3b3b3b] text-white" : "text-[#999] hover:text-white"}`}
+              onClick={() => setView("list")}
+              type="button"
+            >
+              <LayoutList className="size-3.5" /> List
+            </button>
+          </div>
+          <label className="relative min-w-[145px]">
             <select
-              className="h-10 min-w-32 appearance-none border-0 border-b border-white/[0.12] bg-transparent pr-9 pl-1 text-xs text-[#d7dcda] outline-none focus:border-[#50c4a2]/60"
+              className="h-11 w-full appearance-none rounded-[10px] border border-[#2c2c2c] bg-[#191919] pr-9 pl-3 text-xs text-[#d0d0d0] outline-none transition focus:border-[#50c4a2]/70"
               onChange={(event) => setStatusFilter(event.target.value)}
               value={statusFilter}
             >
@@ -1337,116 +1354,134 @@ export function OpportunityWorkspace() {
               <option value="open">Open</option>
               <option value="closed">Closed</option>
             </select>
-            <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-3.5 -translate-y-1/2 text-[#747c78]" />
+            <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-3.5 -translate-y-1/2 text-[#777]" />
           </label>
         </section>
 
-        {loading ? (
-          <div className="flex min-h-[420px] items-center justify-center gap-3 text-sm text-[#747c78]">
-            <LoaderCircle className="size-5 animate-spin" /> Loading
-            opportunities…
-          </div>
-        ) : error ? (
-          <EmptyState
-            action={() => void loadOpportunities()}
-            actionLabel="Try again"
-            description={error}
-            icon={CircleAlert}
-            title="Opportunities could not be loaded"
-          />
-        ) : !opportunities.length ? (
-          <EmptyState
-            description="An opportunity is created automatically and exactly once when a lead is qualified."
-            icon={Target}
-            title="No opportunities match these filters"
-          />
-        ) : view === "pipeline" ? (
-          <section className="overflow-x-auto pt-5 [scrollbar-color:#303633_transparent] [scrollbar-width:thin]">
-            <div className="grid min-w-max auto-cols-[285px] grid-flow-col border-y border-white/[0.08]">
-              {pipelineStages.map((stage) => {
-                const items = opportunities.filter(
-                  (opportunity) => opportunity.stage_key === stage.key,
-                );
-                const value = items.reduce(
-                  (sum, item) => sum + Number(item.amount ?? 0),
-                  0,
-                );
-                return (
-                  <div
-                    className="min-h-[520px] border-l border-white/[0.08] first:border-l-0"
-                    key={stage.key}
-                    onDragOver={(event) => {
-                      event.preventDefault();
-                      event.dataTransfer.dropEffect = "move";
-                    }}
-                    onDrop={(event: DragEvent<HTMLDivElement>) => {
-                      event.preventDefault();
-                      const id = event.dataTransfer.getData(
-                        "text/opportunity-id",
-                      );
-                      if (id) void changeStage(id, stage.key);
-                    }}
-                  >
-                    <header className="border-b border-white/[0.08] px-3 py-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="flex items-center gap-2 text-xs font-semibold text-[#dfe3e0]">
-                          <i
-                            className="size-2 rounded-full"
-                            style={{ backgroundColor: stage.color }}
-                          />
-                          {stage.label}
-                        </span>
-                        <span className="text-[10px] tabular-nums text-[#69716d]">
-                          {items.length}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-[11px] text-[#68706c]">
-                        {formatMoney(value)}
-                      </p>
-                    </header>
-                    <div>
-                      {items.map((opportunity) => (
-                        <OpportunityCard
-                          key={opportunity.opportunity_id}
-                          onOpen={openOpportunity}
-                          opportunity={opportunity}
-                        />
-                      ))}
-                      {!items.length && (
-                        <p className="px-3 py-5 text-[11px] text-[#4f5753]">
-                          No opportunities
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+        <section className="overflow-hidden rounded-2xl border border-[#2c2c2c] bg-[#080808]">
+          <header className="flex items-center justify-between gap-4 border-b border-[#2c2c2c] bg-[#191919] px-4 py-3">
+            <strong className="truncate text-sm font-medium text-[#dedede]">
+              {selectedProject
+                ? `${selectedProject.project_name} deals`
+                : "All deals"}
+            </strong>
+            <button
+              aria-label="Refresh deals"
+              className="grid size-8 shrink-0 place-items-center rounded-md border border-[#363636] bg-[#262626] text-[#999] transition hover:text-white disabled:cursor-wait"
+              disabled={refreshing}
+              onClick={() => void loadOpportunities(true)}
+              type="button"
+            >
+              <RefreshCw
+                className={`size-3.5 ${refreshing ? "animate-spin" : ""}`}
+              />
+            </button>
+          </header>
+
+          {loading ? (
+            <div className="flex min-h-[420px] items-center justify-center gap-3 text-sm text-[#777]">
+              <LoaderCircle className="size-5 animate-spin" /> Loading deals…
             </div>
-          </section>
-        ) : (
-          <section className="pt-5">
-            <div className="overflow-x-auto border-y border-white/[0.08]">
+          ) : error ? (
+            <EmptyState
+              action={() => void loadOpportunities()}
+              actionLabel="Try again"
+              description={error}
+              icon={CircleAlert}
+              title="Deals could not be loaded"
+            />
+          ) : !opportunities.length ? (
+            <EmptyState
+              description="A deal is created automatically when a lead is qualified."
+              icon={Target}
+              title="No deals match these filters"
+            />
+          ) : view === "pipeline" ? (
+            <div className="overflow-x-auto [scrollbar-color:#303633_transparent] [scrollbar-width:thin]">
+              <div className="grid min-w-max auto-cols-[285px] grid-flow-col">
+                {pipelineStages.map((stage) => {
+                  const items = opportunities.filter(
+                    (opportunity) => opportunity.stage_key === stage.key,
+                  );
+                  const value = items.reduce(
+                    (sum, item) => sum + Number(item.amount ?? 0),
+                    0,
+                  );
+                  return (
+                    <div
+                      className="min-h-[520px] border-l border-[#2c2c2c] first:border-l-0"
+                      key={stage.key}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                      }}
+                      onDrop={(event: DragEvent<HTMLDivElement>) => {
+                        event.preventDefault();
+                        const id = event.dataTransfer.getData(
+                          "text/opportunity-id",
+                        );
+                        if (id) void changeStage(id, stage.key);
+                      }}
+                    >
+                      <header className="border-b border-[#2c2c2c] bg-[#111] px-3 py-3.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="flex items-center gap-2 text-xs font-semibold text-[#dfe3e0]">
+                            <i
+                              className="size-2 rounded-full"
+                              style={{ backgroundColor: stage.color }}
+                            />
+                            {stage.label}
+                          </span>
+                          <span className="text-[10px] tabular-nums text-[#69716d]">
+                            {items.length}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-[11px] text-[#68706c]">
+                          {formatMoney(value)}
+                        </p>
+                      </header>
+                      <div>
+                        {items.map((opportunity) => (
+                          <OpportunityCard
+                            key={opportunity.opportunity_id}
+                            onOpen={openOpportunity}
+                            opportunity={opportunity}
+                          />
+                        ))}
+                        {!items.length && (
+                          <p className="px-3 py-5 text-[11px] text-[#4f5753]">
+                            No deals
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
               <table className="w-full min-w-[960px] border-collapse text-left">
-                <thead className="bg-white/[0.025] text-[10px] tracking-[0.08em] text-[#68706c] uppercase">
+                <thead className="bg-[#080808] text-[10px] tracking-[0.08em] text-[#777] uppercase">
                   <tr>
-                    <th className="px-4 py-3 font-semibold">Opportunity</th>
-                    <th className="px-4 py-3 font-semibold">Project</th>
-                    <th className="px-4 py-3 font-semibold">Stage</th>
-                    <th className="px-4 py-3 font-semibold">Value</th>
-                    <th className="px-4 py-3 font-semibold">Probability</th>
-                    <th className="px-4 py-3 font-semibold">Expected close</th>
-                    <th className="px-4 py-3 font-semibold">Owner</th>
-                    <th className="w-10 px-4 py-3" />
+                    <th className="h-10 px-4 font-semibold">Deal</th>
+                    <th className="h-10 px-4 font-semibold">Project</th>
+                    <th className="h-10 px-4 font-semibold">Stage</th>
+                    <th className="h-10 px-4 font-semibold">Value</th>
+                    <th className="h-10 px-4 font-semibold">Probability</th>
+                    <th className="h-10 px-4 font-semibold">Expected close</th>
+                    <th className="h-10 px-4 font-semibold">Owner</th>
+                    <th className="h-10 w-10 px-4" />
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/[0.07]">
+                <tbody>
                   {opportunities.map((opportunity) => (
                     <tr
-                      className="cursor-pointer transition hover:bg-white/[0.025]"
+                      className="cursor-pointer border-t border-[#2c2c2c] transition hover:bg-[#101010]"
                       key={opportunity.opportunity_id}
                       onClick={() => openOpportunity(opportunity)}
                     >
-                      <td className="px-4 py-4">
+                      <td className="h-[72px] px-4 py-3">
                         <strong className="block text-sm text-[#e4e8e5]">
                           {personName(
                             opportunity.first_name,
@@ -1457,33 +1492,33 @@ export function OpportunityWorkspace() {
                           {opportunity.email ?? opportunity.opportunity_name}
                         </span>
                       </td>
-                      <td className="px-4 py-4 text-xs text-[#aab1ad]">
+                      <td className="h-[72px] px-4 py-3 text-xs text-[#aab1ad]">
                         {opportunity.project_name}
                       </td>
-                      <td className="px-4 py-4">
-                        <span className="rounded-full border border-white/[0.09] bg-white/[0.04] px-2.5 py-1 text-[10px] text-[#b7bdb9]">
+                      <td className="h-[72px] px-4 py-3">
+                        <span className="rounded-full border border-[#363636] bg-[#191919] px-2.5 py-1 text-[10px] text-[#b7bdb9]">
                           {opportunity.status === "closed"
                             ? opportunity.outcome
                             : stageLabel(opportunity.stage_key, pipelineStages)}
                         </span>
                       </td>
-                      <td className="px-4 py-4 text-xs font-semibold text-[#dfe3e0]">
+                      <td className="h-[72px] px-4 py-3 text-xs font-semibold text-[#dfe3e0]">
                         {formatMoney(opportunity.amount)}
                       </td>
-                      <td className="px-4 py-4 text-xs text-[#9da5a1]">
+                      <td className="h-[72px] px-4 py-3 text-xs text-[#9da5a1]">
                         {opportunity.probability}%
                       </td>
-                      <td className="px-4 py-4 text-xs text-[#9da5a1]">
+                      <td className="h-[72px] px-4 py-3 text-xs text-[#9da5a1]">
                         {formatDate(opportunity.expected_close_date)}
                       </td>
-                      <td className="px-4 py-4 text-xs text-[#9da5a1]">
+                      <td className="h-[72px] px-4 py-3 text-xs text-[#9da5a1]">
                         {personName(
                           opportunity.owner_first_name,
                           opportunity.owner_last_name,
                           opportunity.team_name ?? "Unassigned",
                         )}
                       </td>
-                      <td className="px-4 py-4">
+                      <td className="h-[72px] px-4 py-3">
                         <ChevronRight className="size-4 text-[#555d59]" />
                       </td>
                     </tr>
@@ -1491,31 +1526,30 @@ export function OpportunityWorkspace() {
                 </tbody>
               </table>
             </div>
-          </section>
-        )}
+          )}
+        </section>
       </section>
 
       {selectedId && (
         <>
           <button
-            aria-label="Close opportunity details"
-            className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-[2px]"
+            aria-label="Close deal details"
+            className="fixed inset-0 z-[80] bg-black/75"
             onClick={closeDrawer}
             type="button"
           />
-          <aside className="fixed inset-y-3 right-3 z-[70] flex w-[min(860px,calc(100vw-112px))] flex-col overflow-hidden rounded-2xl border border-white/[0.12] bg-[#0e1210] shadow-[-30px_0_90px_rgba(0,0,0,.55)] max-[560px]:inset-2 max-[560px]:w-auto">
+          <aside className="fixed inset-y-0 right-0 z-[90] flex w-full max-w-[860px] flex-col overflow-hidden border-l border-[#2c2c2c] bg-[#111] shadow-[-30px_0_90px_rgba(0,0,0,.6)] max-[560px]:max-w-full">
             {detailLoading || !detail ? (
               <div className="flex flex-1 items-center justify-center gap-3 text-sm text-[#7d8581]">
-                <LoaderCircle className="size-5 animate-spin" /> Loading
-                opportunity…
+                <LoaderCircle className="size-5 animate-spin" /> Loading deal…
               </div>
             ) : (
               <>
-                <header className="shrink-0 border-b border-white/[0.09] px-6 pt-5">
+                <header className="shrink-0 border-b border-[#2c2c2c] bg-[#111] px-6 pt-5">
                   <div className="flex items-start justify-between gap-5 pb-5">
                     <div className="min-w-0">
-                      <p className="text-[10px] font-semibold tracking-[0.16em] text-[#69716d] uppercase">
-                        Opportunity
+                      <p className="text-[10px] font-semibold tracking-[0.16em] text-[#777] uppercase">
+                        Deal
                       </p>
                       <h2 className="mt-2 truncate font-[var(--font-bricolage)] text-2xl font-semibold tracking-[-0.025em] text-white">
                         {detail.opportunity_name}
@@ -1534,18 +1568,18 @@ export function OpportunityWorkspace() {
                     </div>
                     <button
                       aria-label="Close"
-                      className="grid size-9 shrink-0 place-items-center rounded-lg text-[#89918d] hover:bg-white/[0.06] hover:text-white"
+                      className="grid size-9 shrink-0 place-items-center rounded-lg border border-[#2c2c2c] bg-[#191919] text-[#999] hover:bg-[#262626] hover:text-white"
                       onClick={closeDrawer}
                       type="button"
                     >
                       <X className="size-5" />
                     </button>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 border-t border-white/[0.07] py-3">
+                  <div className="flex flex-wrap items-center gap-2 border-t border-[#2c2c2c] py-3">
                     {detail.status === "open" ? (
                       <>
                         <button
-                          className="flex h-9 items-center gap-1.5 rounded-lg border border-white/[0.11] px-3 text-xs font-medium text-[#d6dbd8] hover:bg-white/[0.05]"
+                          className="flex h-9 items-center gap-1.5 rounded-lg border border-[#363636] bg-[#191919] px-3 text-xs font-medium text-[#d6dbd8] hover:bg-[#262626]"
                           onClick={() => setDialog("edit")}
                           type="button"
                         >
@@ -1553,7 +1587,7 @@ export function OpportunityWorkspace() {
                         </button>
                         <label className="relative">
                           <select
-                            className="h-9 appearance-none rounded-lg border border-white/[0.11] bg-[#111512] pr-8 pl-3 text-xs text-[#d6dbd8] outline-none"
+                            className="h-9 appearance-none rounded-lg border border-[#363636] bg-[#191919] pr-8 pl-3 text-xs text-[#d6dbd8] outline-none"
                             disabled={actionBusy}
                             onChange={(event) =>
                               void changeStage(
@@ -1576,12 +1610,12 @@ export function OpportunityWorkspace() {
                           onClick={() => setDialog("close")}
                           type="button"
                         >
-                          <CircleCheck className="size-3.5" /> Close opportunity
+                          <CircleCheck className="size-3.5" /> Close deal
                         </button>
                       </>
                     ) : (
                       <button
-                        className="flex h-9 items-center gap-1.5 rounded-lg border border-white/[0.11] px-3 text-xs font-medium text-[#d6dbd8] hover:bg-white/[0.05]"
+                        className="flex h-9 items-center gap-1.5 rounded-lg border border-[#363636] bg-[#191919] px-3 text-xs font-medium text-[#d6dbd8] hover:bg-[#262626]"
                         disabled={actionBusy}
                         onClick={() => void reopenOpportunity()}
                         type="button"
@@ -1590,7 +1624,7 @@ export function OpportunityWorkspace() {
                       </button>
                     )}
                     <Link
-                      className="ml-auto flex h-9 items-center gap-1.5 rounded-lg border border-white/[0.1] px-3 text-xs text-[#aab1ad] hover:bg-white/[0.05] hover:text-white"
+                      className="ml-auto flex h-9 items-center gap-1.5 rounded-lg border border-[#363636] bg-[#191919] px-3 text-xs text-[#aab1ad] hover:bg-[#262626] hover:text-white"
                       href={`/leads?lead_id=${detail.lead_id}`}
                     >
                       View lead <ExternalLink className="size-3.5" />
@@ -1618,7 +1652,7 @@ export function OpportunityWorkspace() {
                   </nav>
                 </header>
 
-                <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6 [scrollbar-color:#303733_transparent] [scrollbar-width:thin]">
+                <div className="min-h-0 flex-1 overflow-y-auto bg-[#0b0b0b] px-6 py-6 [scrollbar-color:#303733_transparent] [scrollbar-width:thin]">
                   {relatedLoading && drawerTab !== "overview" && (
                     <div className="flex min-h-56 items-center justify-center gap-2 text-sm text-[#727a76]">
                       <LoaderCircle className="size-4 animate-spin" /> Loading…
