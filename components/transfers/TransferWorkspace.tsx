@@ -202,7 +202,7 @@ const DEFAULT_TRANSFER_EXPIRY = new Date(
 );
 
 const fieldClass =
-  "h-11 w-full rounded-lg border border-white/[0.11] bg-[#0b0e0c] px-3.5 text-sm text-[#e8ece9] outline-none transition placeholder:text-[#59605d] focus:border-[#55c8a6]/55 focus:ring-2 focus:ring-[#55c8a6]/10 disabled:opacity-50";
+  "h-11 w-full rounded-[10px] border border-[#2c2c2c] bg-[#111] px-3.5 text-sm text-[#e8ece9] outline-none transition placeholder:text-[#666] focus:border-[#55c8a6]/60 disabled:opacity-50";
 const selectClass = `${fieldClass} appearance-none pr-10`;
 
 function name(
@@ -386,16 +386,16 @@ function CreateTransferDrawer({
     <>
       <button
         aria-label="Close transfer panel"
-        className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-[2px]"
+        className="fixed inset-0 z-[80] bg-black/75"
         onClick={onClose}
         type="button"
       />
       <aside
         aria-modal="true"
-        className="fixed inset-y-3 right-3 z-[90] flex w-[min(620px,calc(100vw-112px))] flex-col overflow-hidden rounded-2xl border border-white/[0.12] bg-[#0e1210] shadow-[-30px_0_90px_rgba(0,0,0,.58)] max-[560px]:inset-2 max-[560px]:w-auto"
+        className="fixed inset-y-0 right-0 z-[90] flex w-full max-w-[620px] flex-col overflow-hidden border-l border-[#2c2c2c] bg-[#111] shadow-[-30px_0_90px_rgba(0,0,0,.6)] max-[560px]:max-w-full"
         role="dialog"
       >
-        <header className="flex items-start justify-between border-b border-white/[0.09] px-6 py-5">
+        <header className="flex items-start justify-between border-b border-[#2c2c2c] bg-[#111] px-6 py-5">
           <div>
             <p className="text-[10px] font-semibold tracking-[0.15em] text-[#69716d] uppercase">
               Transfer lead
@@ -410,7 +410,7 @@ function CreateTransferDrawer({
           </div>
           <button
             aria-label="Close"
-            className="grid size-9 place-items-center text-[#87908b] hover:text-white"
+            className="grid size-9 place-items-center rounded-lg border border-[#2c2c2c] bg-[#191919] text-[#999] hover:bg-[#262626] hover:text-white"
             onClick={onClose}
             type="button"
           >
@@ -418,8 +418,11 @@ function CreateTransferDrawer({
           </button>
         </header>
 
-        <form className="flex-1 overflow-y-auto p-6" onSubmit={submit}>
-          <section className="flex items-center justify-between gap-5 border-b border-white/[0.08] pb-5">
+        <form
+          className="flex-1 overflow-y-auto bg-[#0b0b0b] p-6"
+          onSubmit={submit}
+        >
+          <section className="flex items-center justify-between gap-5 border-b border-[#2c2c2c] pb-5">
             <span className="text-[10px] tracking-[0.08em] text-[#68706c] uppercase">
               Current ownership
             </span>
@@ -485,7 +488,7 @@ function CreateTransferDrawer({
             </div>
           </section>
 
-          <section className="mt-6 border-t border-white/[0.08] pt-5">
+          <section className="mt-6 border-t border-[#2c2c2c] pt-5">
             <h3 className="text-[10px] font-semibold tracking-[0.12em] text-[#68706c] uppercase">
               Transfer settings
             </h3>
@@ -528,7 +531,7 @@ function CreateTransferDrawer({
             </div>
           </section>
 
-          <section className="mt-6 space-y-4 border-t border-white/[0.08] pt-5">
+          <section className="mt-6 space-y-4 border-t border-[#2c2c2c] pt-5">
             <h3 className="text-[10px] font-semibold tracking-[0.12em] text-[#68706c] uppercase">
               Handoff context
             </h3>
@@ -552,7 +555,7 @@ function CreateTransferDrawer({
             </label>
           </section>
 
-          <div className="mt-6 flex justify-end gap-3 border-t border-white/[0.08] pt-5">
+          <div className="mt-6 flex justify-end gap-3 border-t border-[#2c2c2c] pt-5">
             <button
               className="h-10 px-4 text-sm text-[#9da5a1] hover:text-white"
               onClick={onClose}
@@ -1052,25 +1055,25 @@ export function TransferWorkspace() {
   );
 
   return (
-    <main className="min-h-dvh bg-[#050706] text-[#f5f5f5]">
+    <main className="min-h-dvh bg-black text-[#f5f5f5]">
       <DashboardSidebar />
-      <section className="ml-[96px] min-h-dvh py-7 pr-7 pb-8 max-[780px]:py-5 max-[780px]:pr-4 max-[560px]:ml-[84px] max-[560px]:px-3">
-        <header className="flex flex-wrap items-end justify-between gap-5 pb-6">
+      <section className="ml-[96px] min-h-dvh py-8 pr-8 pb-12 max-[780px]:py-5 max-[780px]:pr-4 max-[560px]:ml-[84px] max-[560px]:px-3">
+        <header className="flex flex-wrap items-end justify-between gap-5">
           <div>
-            <p className="text-[11px] text-[#6e7672]">
+            <p className="text-xs text-[#5b5b5b]">
               {context?.company?.company_name ?? "Workspace"} / Ownership
             </p>
-            <h1 className="mt-2 font-[var(--font-bricolage)] text-[clamp(30px,3vw,42px)] font-medium tracking-[-0.035em]">
+            <h1 className="mt-3 font-[var(--font-bricolage)] text-[clamp(32px,3.2vw,44px)] font-medium tracking-[-0.035em]">
               Transfers
             </h1>
-            <p className="mt-2 text-sm text-[#8b928f]">
+            <p className="mt-2 text-sm text-[#b4b4b4]">
               Controlled handoffs with recipient validation and an auditable
               checklist.
             </p>
           </div>
           <button
             aria-label={`Refresh ${workspaceTab}`}
-            className="grid size-10 place-items-center text-[#747c78] hover:text-white"
+            className="grid size-11 place-items-center rounded-[10px] border border-[#363636] bg-[#191919] text-[#999] transition hover:bg-[#262626] hover:text-white"
             disabled={refreshing}
             onClick={() =>
               void (workspaceTab === "leads"
@@ -1085,13 +1088,13 @@ export function TransferWorkspace() {
           </button>
         </header>
 
-        <nav className="flex gap-7 border-b border-white/[0.08]">
+        <nav className="mt-7 flex items-center gap-1 overflow-x-auto rounded-xl border border-[#2c2c2c] bg-[#191919] p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {[
             ["leads", "Leads"],
             ["transfers", "Transfers"],
           ].map(([tab, tabLabel]) => (
             <button
-              className={`h-11 border-b-2 text-sm font-medium ${workspaceTab === tab ? "border-[#55cdaa] text-white" : "border-transparent text-[#737b77] hover:text-[#c5cbc7]"}`}
+              className={`h-10 min-w-28 shrink-0 rounded-lg px-4 text-sm font-medium transition ${workspaceTab === tab ? "bg-[#3b3b3b] text-white" : "text-[#999] hover:bg-[#242424] hover:text-white"}`}
               key={tab}
               onClick={() => {
                 setWorkspaceTab(tab as "leads" | "transfers");
@@ -1111,40 +1114,52 @@ export function TransferWorkspace() {
 
         {workspaceTab === "transfers" ? (
           <>
-            <section className="grid grid-cols-4 border-b border-white/[0.08] max-[760px]:grid-cols-2">
-              {[
-                ["Active", metrics.active],
-                ["Awaiting decision", metrics.awaiting],
-                ["Completed", metrics.accepted],
-                ["Overdue", metrics.overdue],
-              ].map(([metricLabel, value], index) => (
-                <div
-                  className={`py-4 ${index ? "border-l border-white/[0.08] pl-5" : ""} ${index === 2 ? "max-[760px]:border-l-0 max-[760px]:pl-0" : ""}`}
-                  key={metricLabel}
-                >
-                  <span className="text-[10px] font-medium tracking-[0.05em] text-[#68706c] uppercase">
-                    {metricLabel}
-                  </span>
-                  <strong className="mt-1.5 block text-lg text-[#edf0ee]">
-                    {value}
-                  </strong>
-                </div>
-              ))}
+            <section className="mt-4 overflow-hidden rounded-2xl border border-[#2c2c2c] bg-[#080808]">
+              <header className="border-b border-[#2c2c2c] bg-[#191919] px-4 py-3 text-sm font-medium text-[#dedede]">
+                Overview
+              </header>
+              <div className="grid grid-cols-4 max-[760px]:grid-cols-2 max-[520px]:grid-cols-1">
+                {[
+                  ["Active", metrics.active, "Transfers in progress"],
+                  [
+                    "Awaiting decision",
+                    metrics.awaiting,
+                    "Ready for recipient action",
+                  ],
+                  ["Completed", metrics.accepted, "Accepted handoffs"],
+                  ["Overdue", metrics.overdue, "Past their expiry time"],
+                ].map(([metricLabel, value, description], index) => (
+                  <div
+                    className={`min-w-0 px-4 py-4 ${index ? "border-l border-[#2c2c2c] max-[520px]:border-l-0" : ""} ${index === 2 ? "max-[760px]:border-l-0" : ""} ${index > 1 ? "max-[760px]:border-t max-[760px]:border-[#2c2c2c]" : ""} ${index ? "max-[520px]:border-t max-[520px]:border-[#2c2c2c]" : ""}`}
+                    key={metricLabel}
+                  >
+                    <span className="text-[11px] font-medium text-[#929292]">
+                      {metricLabel}
+                    </span>
+                    <strong className="mt-2 block text-2xl font-semibold tracking-[-0.03em] text-white">
+                      {value}
+                    </strong>
+                    <span className="mt-1 block text-[11px] text-[#707070]">
+                      {description}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </section>
 
-            <section className="flex flex-wrap items-center gap-4 border-b border-white/[0.08] py-4">
+            <section className="my-4 flex flex-wrap items-center gap-2">
               <label className="relative min-w-[260px] flex-1">
-                <Search className="absolute top-1/2 left-1 size-4 -translate-y-1/2 text-[#68706c]" />
+                <Search className="absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-[#777]" />
                 <input
-                  className="h-10 w-full border-0 border-b border-white/[0.12] bg-transparent pr-3 pl-8 text-xs text-white outline-none placeholder:text-[#59605d] focus:border-[#50c4a2]/60"
+                  className="h-11 w-full rounded-[10px] border border-[#2c2c2c] bg-[#111] pr-3 pl-10 text-sm text-white outline-none transition placeholder:text-[#666] focus:border-[#50c4a2]/70"
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search record, project, recipient or reason"
                   value={query}
                 />
               </label>
-              <label className="relative">
+              <label className="relative max-[650px]:w-full">
                 <select
-                  className="h-10 min-w-44 appearance-none border-0 border-b border-white/[0.12] bg-transparent pr-8 pl-1 text-xs text-[#d7dcda] outline-none"
+                  className="h-11 min-w-44 appearance-none rounded-[10px] border border-[#2c2c2c] bg-[#191919] pr-9 pl-3 text-xs text-[#d7dcda] outline-none transition focus:border-[#50c4a2]/70 max-[650px]:w-full"
                   onChange={(event) => {
                     setProjectFilter(event.target.value);
                     if (event.target.value !== "all")
@@ -1166,9 +1181,9 @@ export function TransferWorkspace() {
                 </select>
                 <ChevronDown className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-[#747c78]" />
               </label>
-              <label className="relative">
+              <label className="relative max-[650px]:w-full">
                 <select
-                  className="h-10 min-w-32 appearance-none border-0 border-b border-white/[0.12] bg-transparent pr-8 pl-1 text-xs text-[#d7dcda] outline-none"
+                  className="h-11 min-w-32 appearance-none rounded-[10px] border border-[#2c2c2c] bg-[#191919] pr-9 pl-3 text-xs text-[#d7dcda] outline-none transition focus:border-[#50c4a2]/70 max-[650px]:w-full"
                   onChange={(event) => setTypeFilter(event.target.value)}
                   value={typeFilter}
                 >
@@ -1178,9 +1193,9 @@ export function TransferWorkspace() {
                 </select>
                 <ChevronDown className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-[#747c78]" />
               </label>
-              <label className="relative">
+              <label className="relative max-[650px]:w-full">
                 <select
-                  className="h-10 min-w-36 appearance-none border-0 border-b border-white/[0.12] bg-transparent pr-8 pl-1 text-xs text-[#d7dcda] outline-none"
+                  className="h-11 min-w-36 appearance-none rounded-[10px] border border-[#2c2c2c] bg-[#191919] pr-9 pl-3 text-xs text-[#d7dcda] outline-none transition focus:border-[#50c4a2]/70 max-[650px]:w-full"
                   onChange={(event) => setStatusFilter(event.target.value)}
                   value={statusFilter}
                 >
@@ -1199,114 +1214,126 @@ export function TransferWorkspace() {
               </label>
             </section>
 
-            {loading ? (
-              <div className="flex min-h-80 items-center justify-center gap-3 text-sm text-[#747c78]">
-                <LoaderCircle className="size-5 animate-spin" /> Loading
-                transfers…
-              </div>
-            ) : error ? (
-              <div className="flex min-h-80 flex-col items-center justify-center text-center">
-                <CircleAlert className="size-6 text-[#8d9691]" />
-                <p className="mt-4 text-sm font-semibold">
-                  Transfers could not be loaded
-                </p>
-                <p className="mt-1 text-xs text-[#747c78]">{error}</p>
-                <button
-                  className="mt-4 text-xs font-semibold text-[#68d2b1]"
-                  onClick={() => void loadTransfers()}
-                  type="button"
-                >
-                  Try again
-                </button>
-              </div>
-            ) : !visibleTransfers.length ? (
-              <div className="flex min-h-80 flex-col items-center justify-center text-center">
-                <Send className="size-6 text-[#737b77]" />
-                <p className="mt-4 text-sm font-semibold text-[#dfe3e0]">
-                  No transfers match these filters
-                </p>
-                <p className="mt-1 text-xs text-[#707874]">
-                  Create a controlled ownership handoff when a lead or
-                  opportunity changes hands.
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto pt-5">
-                <table className="w-full min-w-[980px] border-collapse border-y border-white/[0.08] text-left">
-                  <thead className="text-[10px] tracking-[0.08em] text-[#68706c] uppercase">
-                    <tr>
-                      <th className="px-4 py-3 font-semibold">Record</th>
-                      <th className="px-4 py-3 font-semibold">Project</th>
-                      <th className="px-4 py-3 font-semibold">Recipient</th>
-                      <th className="px-4 py-3 font-semibold">Requested by</th>
-                      <th className="px-4 py-3 font-semibold">Status</th>
-                      <th className="px-4 py-3 font-semibold">Expires</th>
-                      <th className="w-10 px-4 py-3" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/[0.07]">
-                    {visibleTransfers.map((transfer) => (
-                      <tr
-                        className="cursor-pointer transition hover:bg-white/[0.025]"
-                        key={transfer.transfer_id}
-                        onClick={() => {
-                          setDrawerTab("overview");
-                          setSelectedId(transfer.transfer_id);
-                        }}
-                      >
-                        <td className="px-4 py-4">
-                          <strong className="block text-sm text-[#e5e9e6]">
-                            {transfer.subject_name || "Unnamed record"}
-                          </strong>
-                          <span className="mt-1 block text-[10px] text-[#6f7773] capitalize">
-                            {transfer.subject_type}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4 text-xs text-[#a4aca8]">
-                          {transfer.project_name}
-                        </td>
-                        <td className="px-4 py-4 text-xs text-[#d1d6d3]">
-                          {recipientLabel(transfer)}
-                        </td>
-                        <td className="px-4 py-4 text-xs text-[#929a96]">
-                          {name(
-                            transfer.requester_first_name,
-                            transfer.requester_last_name,
-                          )}
-                        </td>
-                        <td className="px-4 py-4">
-                          <span
-                            className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-medium ${statusTone(transfer.status)}`}
-                          >
-                            {label(transfer.status)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4 text-xs text-[#929a96]">
-                          {formatDate(transfer.expires_at, true)}
-                        </td>
-                        <td className="px-4 py-4 text-[#59615d]">→</td>
+            <section className="overflow-hidden rounded-2xl border border-[#2c2c2c] bg-[#080808]">
+              <header className="flex items-center justify-between gap-4 border-b border-[#2c2c2c] bg-[#191919] px-4 py-3">
+                <strong className="text-sm font-medium text-[#dedede]">
+                  Ownership transfers
+                </strong>
+                <span className="text-[11px] text-[#777]">
+                  {visibleTransfers.length} records
+                </span>
+              </header>
+              {loading ? (
+                <div className="flex min-h-80 items-center justify-center gap-3 text-sm text-[#747c78]">
+                  <LoaderCircle className="size-5 animate-spin" /> Loading
+                  transfers…
+                </div>
+              ) : error ? (
+                <div className="flex min-h-80 flex-col items-center justify-center text-center">
+                  <CircleAlert className="size-6 text-[#8d9691]" />
+                  <p className="mt-4 text-sm font-semibold">
+                    Transfers could not be loaded
+                  </p>
+                  <p className="mt-1 text-xs text-[#747c78]">{error}</p>
+                  <button
+                    className="mt-4 text-xs font-semibold text-[#68d2b1]"
+                    onClick={() => void loadTransfers()}
+                    type="button"
+                  >
+                    Try again
+                  </button>
+                </div>
+              ) : !visibleTransfers.length ? (
+                <div className="flex min-h-80 flex-col items-center justify-center text-center">
+                  <Send className="size-6 text-[#737b77]" />
+                  <p className="mt-4 text-sm font-semibold text-[#dfe3e0]">
+                    No transfers match these filters
+                  </p>
+                  <p className="mt-1 text-xs text-[#707874]">
+                    Create a controlled ownership handoff when a lead or
+                    opportunity changes hands.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[980px] border-collapse text-left">
+                    <thead className="bg-[#080808] text-[10px] tracking-[0.08em] text-[#777] uppercase">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">Record</th>
+                        <th className="px-4 py-3 font-semibold">Project</th>
+                        <th className="px-4 py-3 font-semibold">Recipient</th>
+                        <th className="px-4 py-3 font-semibold">
+                          Requested by
+                        </th>
+                        <th className="px-4 py-3 font-semibold">Status</th>
+                        <th className="px-4 py-3 font-semibold">Expires</th>
+                        <th className="w-10 px-4 py-3" />
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                    </thead>
+                    <tbody className="divide-y divide-[#2c2c2c]">
+                      {visibleTransfers.map((transfer) => (
+                        <tr
+                          className="h-[72px] cursor-pointer transition hover:bg-[#101010]"
+                          key={transfer.transfer_id}
+                          onClick={() => {
+                            setDrawerTab("overview");
+                            setSelectedId(transfer.transfer_id);
+                          }}
+                        >
+                          <td className="px-4 py-4">
+                            <strong className="block text-sm text-[#e5e9e6]">
+                              {transfer.subject_name || "Unnamed record"}
+                            </strong>
+                            <span className="mt-1 block text-[10px] text-[#6f7773] capitalize">
+                              {transfer.subject_type}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 text-xs text-[#a4aca8]">
+                            {transfer.project_name}
+                          </td>
+                          <td className="px-4 py-4 text-xs text-[#d1d6d3]">
+                            {recipientLabel(transfer)}
+                          </td>
+                          <td className="px-4 py-4 text-xs text-[#929a96]">
+                            {name(
+                              transfer.requester_first_name,
+                              transfer.requester_last_name,
+                            )}
+                          </td>
+                          <td className="px-4 py-4">
+                            <span
+                              className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-medium ${statusTone(transfer.status)}`}
+                            >
+                              {label(transfer.status)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 text-xs text-[#929a96]">
+                            {formatDate(transfer.expires_at, true)}
+                          </td>
+                          <td className="px-4 py-4 text-[#59615d]">→</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
           </>
         ) : (
           <>
-            <section className="flex flex-wrap items-center gap-4 border-b border-white/[0.08] py-4">
+            <section className="my-4 flex flex-wrap items-center gap-2">
               <label className="relative min-w-[260px] flex-1">
-                <Search className="absolute top-1/2 left-1 size-4 -translate-y-1/2 text-[#68706c]" />
+                <Search className="absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-[#777]" />
                 <input
-                  className="h-10 w-full border-0 border-b border-white/[0.12] bg-transparent pr-3 pl-8 text-xs text-white outline-none placeholder:text-[#59605d] focus:border-[#50c4a2]/60"
+                  className="h-11 w-full rounded-[10px] border border-[#2c2c2c] bg-[#111] pr-3 pl-10 text-sm text-white outline-none transition placeholder:text-[#666] focus:border-[#50c4a2]/70"
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Search leads by name, email, stage or owner"
                   value={query}
                 />
               </label>
-              <label className="relative">
+              <label className="relative max-[650px]:w-full">
                 <select
-                  className="h-10 min-w-52 appearance-none border-0 border-b border-white/[0.12] bg-transparent pr-8 pl-1 text-xs text-[#d7dcda] outline-none"
+                  className="h-11 min-w-52 appearance-none rounded-[10px] border border-[#2c2c2c] bg-[#191919] pr-9 pl-3 text-xs text-[#d7dcda] outline-none transition focus:border-[#50c4a2]/70 max-[650px]:w-full"
                   onChange={(event) => {
                     setProjectFilter(event.target.value);
                     setSelectedLeadId(null);
@@ -1327,115 +1354,121 @@ export function TransferWorkspace() {
               </label>
             </section>
 
-            <div className="flex items-center justify-between border-b border-white/[0.08] py-4 text-xs text-[#707874]">
-              <span>
-                Select a lead to prepare an ownership transfer in the side
-                panel.
-              </span>
-              <span>{visibleLeads.length} leads</span>
-            </div>
+            <section className="overflow-hidden rounded-2xl border border-[#2c2c2c] bg-[#080808]">
+              <header className="flex items-center justify-between gap-4 border-b border-[#2c2c2c] bg-[#191919] px-4 py-3 text-xs text-[#888]">
+                <span>
+                  Select a lead to prepare an ownership transfer in the side
+                  panel.
+                </span>
+                <span>{visibleLeads.length} leads</span>
+              </header>
 
-            {leadLoading ? (
-              <div className="flex min-h-80 items-center justify-center gap-3 text-sm text-[#747c78]">
-                <LoaderCircle className="size-5 animate-spin" /> Loading leads…
-              </div>
-            ) : leadError ? (
-              <div className="flex min-h-80 flex-col items-center justify-center text-center">
-                <CircleAlert className="size-6 text-[#8d9691]" />
-                <p className="mt-4 text-sm font-semibold">
-                  Leads could not be loaded
-                </p>
-                <p className="mt-1 text-xs text-[#747c78]">{leadError}</p>
-                <button
-                  className="mt-4 text-xs font-semibold text-[#68d2b1]"
-                  onClick={() => void loadLeads()}
-                  type="button"
-                >
-                  Try again
-                </button>
-              </div>
-            ) : !visibleLeads.length ? (
-              <div className="flex min-h-80 flex-col items-center justify-center text-center">
-                <Send className="size-6 text-[#737b77]" />
-                <p className="mt-4 text-sm font-semibold text-[#dfe3e0]">
-                  No leads found
-                </p>
-                <p className="mt-1 text-xs text-[#707874]">
-                  No leads match the current project and search.
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto pt-5">
-                <table className="w-full min-w-[900px] border-collapse border-y border-white/[0.08] text-left">
-                  <thead className="text-[10px] tracking-[0.08em] text-[#68706c] uppercase">
-                    <tr>
-                      <th className="px-4 py-3 font-semibold">Lead</th>
-                      <th className="px-4 py-3 font-semibold">Contact</th>
-                      <th className="px-4 py-3 font-semibold">Stage</th>
-                      <th className="px-4 py-3 font-semibold">Owner</th>
-                      <th className="w-32 px-4 py-3 font-semibold">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/[0.07]">
-                    {visibleLeads.map((lead) => (
-                      <tr
-                        className="cursor-pointer transition hover:bg-white/[0.025]"
-                        key={lead.subject_id}
-                        onClick={() => {
-                          if (lead.active_transfer_id) {
-                            setWorkspaceTab("transfers");
-                            setDrawerTab("overview");
-                            setSelectedId(lead.active_transfer_id);
-                            return;
-                          }
-                          setSelectedLeadId(lead.subject_id);
-                        }}
-                      >
-                        <td className="px-4 py-4">
-                          <strong className="block text-sm text-[#e5e9e6]">
-                            {lead.subject_name || "Unnamed lead"}
-                          </strong>
-                          <span className="mt-1 block font-mono text-[10px] text-[#626a66]">
-                            {lead.subject_id.slice(0, 8)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4 text-xs text-[#9ca4a0]">
-                          <span className="block">{lead.email || "—"}</span>
-                          {lead.phone_number && (
-                            <span className="mt-1 block text-[10px] text-[#626a66]">
-                              {lead.phone_number}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className="inline-flex rounded-full border border-white/[0.1] bg-white/[0.04] px-2.5 py-1 text-[10px] text-[#b2b9b5]">
-                            {lead.stage_name ?? label(lead.status)}
-                          </span>
-                          {lead.temperature && (
-                            <span className="ml-2 text-[10px] text-[#777f7b]">
-                              {label(lead.temperature)}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-4 text-xs text-[#b7beba]">
-                          {lead.owner_first_name || lead.owner_last_name
-                            ? name(lead.owner_first_name, lead.owner_last_name)
-                            : (lead.owner_team_name ?? "Unassigned")}
-                        </td>
-                        <td className="px-4 py-4">
-                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#67ceb0]">
-                            {lead.active_transfer_id
-                              ? `View ${label(lead.active_transfer_status)}`
-                              : "Transfer"}{" "}
-                            <ArrowRight className="size-3.5" />
-                          </span>
-                        </td>
+              {leadLoading ? (
+                <div className="flex min-h-80 items-center justify-center gap-3 text-sm text-[#747c78]">
+                  <LoaderCircle className="size-5 animate-spin" /> Loading
+                  leads…
+                </div>
+              ) : leadError ? (
+                <div className="flex min-h-80 flex-col items-center justify-center text-center">
+                  <CircleAlert className="size-6 text-[#8d9691]" />
+                  <p className="mt-4 text-sm font-semibold">
+                    Leads could not be loaded
+                  </p>
+                  <p className="mt-1 text-xs text-[#747c78]">{leadError}</p>
+                  <button
+                    className="mt-4 text-xs font-semibold text-[#68d2b1]"
+                    onClick={() => void loadLeads()}
+                    type="button"
+                  >
+                    Try again
+                  </button>
+                </div>
+              ) : !visibleLeads.length ? (
+                <div className="flex min-h-80 flex-col items-center justify-center text-center">
+                  <Send className="size-6 text-[#737b77]" />
+                  <p className="mt-4 text-sm font-semibold text-[#dfe3e0]">
+                    No leads found
+                  </p>
+                  <p className="mt-1 text-xs text-[#707874]">
+                    No leads match the current project and search.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[900px] border-collapse text-left">
+                    <thead className="bg-[#080808] text-[10px] tracking-[0.08em] text-[#777] uppercase">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">Lead</th>
+                        <th className="px-4 py-3 font-semibold">Contact</th>
+                        <th className="px-4 py-3 font-semibold">Stage</th>
+                        <th className="px-4 py-3 font-semibold">Owner</th>
+                        <th className="w-32 px-4 py-3 font-semibold">Action</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                    </thead>
+                    <tbody className="divide-y divide-[#2c2c2c]">
+                      {visibleLeads.map((lead) => (
+                        <tr
+                          className="h-[72px] cursor-pointer transition hover:bg-[#101010]"
+                          key={lead.subject_id}
+                          onClick={() => {
+                            if (lead.active_transfer_id) {
+                              setWorkspaceTab("transfers");
+                              setDrawerTab("overview");
+                              setSelectedId(lead.active_transfer_id);
+                              return;
+                            }
+                            setSelectedLeadId(lead.subject_id);
+                          }}
+                        >
+                          <td className="px-4 py-4">
+                            <strong className="block text-sm text-[#e5e9e6]">
+                              {lead.subject_name || "Unnamed lead"}
+                            </strong>
+                            <span className="mt-1 block font-mono text-[10px] text-[#626a66]">
+                              {lead.subject_id.slice(0, 8)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 text-xs text-[#9ca4a0]">
+                            <span className="block">{lead.email || "—"}</span>
+                            {lead.phone_number && (
+                              <span className="mt-1 block text-[10px] text-[#626a66]">
+                                {lead.phone_number}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-4">
+                            <span className="inline-flex rounded-full border border-white/[0.1] bg-white/[0.04] px-2.5 py-1 text-[10px] text-[#b2b9b5]">
+                              {lead.stage_name ?? label(lead.status)}
+                            </span>
+                            {lead.temperature && (
+                              <span className="ml-2 text-[10px] text-[#777f7b]">
+                                {label(lead.temperature)}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-4 py-4 text-xs text-[#b7beba]">
+                            {lead.owner_first_name || lead.owner_last_name
+                              ? name(
+                                  lead.owner_first_name,
+                                  lead.owner_last_name,
+                                )
+                              : (lead.owner_team_name ?? "Unassigned")}
+                          </td>
+                          <td className="px-4 py-4">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#67ceb0]">
+                              {lead.active_transfer_id
+                                ? `View ${label(lead.active_transfer_status)}`
+                                : "Transfer"}{" "}
+                              <ArrowRight className="size-3.5" />
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
           </>
         )}
       </section>
@@ -1458,11 +1491,11 @@ export function TransferWorkspace() {
         <>
           <button
             aria-label="Close transfer details"
-            className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-[2px]"
+            className="fixed inset-0 z-[80] bg-black/75"
             onClick={() => setSelectedId(null)}
             type="button"
           />
-          <aside className="fixed inset-y-3 right-3 z-[70] flex w-[min(760px,calc(100vw-112px))] flex-col overflow-hidden rounded-2xl border border-white/[0.12] bg-[#0e1210] shadow-[-30px_0_90px_rgba(0,0,0,.58)] max-[560px]:inset-2 max-[560px]:w-auto">
+          <aside className="fixed inset-y-0 right-0 z-[90] flex w-full max-w-[760px] flex-col overflow-hidden border-l border-[#2c2c2c] bg-[#111] shadow-[-30px_0_90px_rgba(0,0,0,.6)] max-[560px]:max-w-full">
             {detailLoading || !detail ? (
               <div className="flex flex-1 items-center justify-center gap-3 text-sm text-[#7d8581]">
                 <LoaderCircle className="size-5 animate-spin" /> Loading
@@ -1470,7 +1503,7 @@ export function TransferWorkspace() {
               </div>
             ) : (
               <>
-                <header className="shrink-0 border-b border-white/[0.09] px-6 pt-5">
+                <header className="shrink-0 border-b border-[#2c2c2c] bg-[#111] px-6 pt-5">
                   <div className="flex items-start justify-between gap-4 pb-5">
                     <div className="min-w-0">
                       <p className="text-[10px] font-semibold tracking-[0.16em] text-[#69716d] uppercase">
@@ -1491,7 +1524,7 @@ export function TransferWorkspace() {
                     </div>
                     <button
                       aria-label="Close"
-                      className="grid size-9 place-items-center text-[#89918d] hover:text-white"
+                      className="grid size-9 place-items-center rounded-lg border border-[#2c2c2c] bg-[#191919] text-[#999] hover:bg-[#262626] hover:text-white"
                       onClick={() => setSelectedId(null)}
                       type="button"
                     >
@@ -1499,7 +1532,7 @@ export function TransferWorkspace() {
                     </button>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2 border-t border-white/[0.07] py-3">
+                  <div className="flex flex-wrap items-center gap-2 border-t border-[#2c2c2c] py-3">
                     {detail.status === "draft" ||
                     detail.status === "validated" ? (
                       <>
@@ -1597,7 +1630,7 @@ export function TransferWorkspace() {
                   </nav>
                 </header>
 
-                <div className="flex-1 overflow-y-auto px-6 py-6 [scrollbar-color:#303633_transparent] [scrollbar-width:thin]">
+                <div className="flex-1 overflow-y-auto bg-[#0b0b0b] px-6 py-6 [scrollbar-color:#303633_transparent] [scrollbar-width:thin]">
                   {drawerTab === "overview" && (
                     <div className="space-y-8">
                       <section>
