@@ -8,6 +8,7 @@ import {
   validateRolePayload,
 } from "@/lib/roles";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
+import { RETIRED_SYSTEM_ROLE_KEYS } from "@/lib/systemRoles";
 
 export async function GET(request: NextRequest) {
   const scope = await requirePermission(request, "PEOPLE_MANAGE");
@@ -40,8 +41,12 @@ export async function GET(request: NextRequest) {
 
   const filters: string[] = [
     "(is_system_role=TRUE OR company_id=$1)",
+    "NOT (is_system_role=TRUE AND role_key=ANY($2::text[]))",
   ];
-  const values: unknown[] = [scope.context.access.company.company_id];
+  const values: unknown[] = [
+    scope.context.access.company.company_id,
+    [...RETIRED_SYSTEM_ROLE_KEYS],
+  ];
 
   if (includeInactiveValue !== "true") filters.push("is_active = TRUE");
 

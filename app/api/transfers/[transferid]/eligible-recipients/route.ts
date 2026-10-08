@@ -17,7 +17,7 @@ export async function GET(request: NextRequest, context: Context) {
          WHERE t.company_id=$1 AND u.is_active=TRUE AND u.deleted_at IS NULL
            AND t.is_active=TRUE AND r.is_active=TRUE
            AND (
-             r.role_key IN ('COMPANY_OWNER','COMPANY_ADMIN','SUPER_ADMIN')
+             r.role_key = 'SUPER_ADMIN'
              OR EXISTS (SELECT 1 FROM user_projects up WHERE up.user_id=u.user_id AND up.project_id=$2)
              OR EXISTS (SELECT 1 FROM team_projects tp WHERE tp.team_id=u.team_id AND tp.project_id=$2)
            )
@@ -41,4 +41,3 @@ export async function GET(request: NextRequest, context: Context) {
     return NextResponse.json({ error: "Unable to retrieve eligible recipients" }, { status: 500 });
   }
 }
-

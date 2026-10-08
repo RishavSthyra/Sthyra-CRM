@@ -112,7 +112,7 @@ export async function GET(request: NextRequest) {
            AND u.deleted_at IS NULL AND team.is_active=TRUE
            AND role.is_active=TRUE
            AND (
-             role.role_key IN ('COMPANY_OWNER','COMPANY_ADMIN','SUPER_ADMIN')
+             role.role_key = 'SUPER_ADMIN'
              OR EXISTS (
                SELECT 1 FROM user_projects user_project
                WHERE user_project.user_id=u.user_id

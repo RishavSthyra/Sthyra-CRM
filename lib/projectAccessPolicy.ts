@@ -1,11 +1,7 @@
-const COMPANY_WIDE_ROLES = new Set([
-  "SUPER_ADMIN",
-  "COMPANY_OWNER",
-  "COMPANY_ADMIN",
-]);
+import { isSuperAdminRole } from "@/lib/systemRoles";
 
 export function isCompanyWideProjectRole(roleKey: unknown) {
-  return COMPANY_WIDE_ROLES.has(String(roleKey ?? "").toUpperCase());
+  return isSuperAdminRole(roleKey);
 }
 
 export function isLeadershipTeamName(name: unknown) {

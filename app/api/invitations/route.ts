@@ -9,6 +9,7 @@ import { isUuid } from "@/lib/permissions";
 import { isObject } from "@/utils/isObject";
 import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
 import { invitationAccountConflictMessage } from "@/lib/invitationPolicy";
+import { isSuperAdminRole } from "@/lib/systemRoles";
 import { requirePermission } from "@/lib/authorization";
 import {
   requireProjectAccessManager,
@@ -172,11 +173,7 @@ export async function POST(request: NextRequest) {
     }
     const actorRoleKey = scope.context.access.roleKey;
     const forbiddenRole =
-      (selectedRoleKey === "SUPER_ADMIN" && actorRoleKey !== "SUPER_ADMIN") ||
-      (selectedRoleKey === "COMPANY_OWNER" &&
-        !["SUPER_ADMIN", "COMPANY_OWNER"].includes(actorRoleKey)) ||
-      (selectedRoleKey === "COMPANY_ADMIN" &&
-        !["SUPER_ADMIN", "COMPANY_OWNER", "COMPANY_ADMIN"].includes(actorRoleKey));
+      isSuperAdminRole(selectedRoleKey) && !isSuperAdminRole(actorRoleKey);
     if (forbiddenRole) {
       await client.query("ROLLBACK");
       return NextResponse.json(

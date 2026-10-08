@@ -3,6 +3,7 @@ import pool from "@/lib/db";
 import { parseUserId } from "@/lib/users";
 import { validateSingleUuidField } from "@/lib/userRelations";
 import { requirePermission } from "@/lib/authorization";
+import { isSuperAdminRole } from "@/lib/systemRoles";
 
 type UserContext = {
   params: Promise<{ userid: string }>;
@@ -98,11 +99,7 @@ export async function PUT(request: NextRequest, context: UserContext) {
     const selectedRoleKey = String(roleResult.rows[0].role_key);
     const actorRoleKey = scope.context.access.roleKey;
     const forbiddenRole =
-      (selectedRoleKey === "SUPER_ADMIN" && actorRoleKey !== "SUPER_ADMIN") ||
-      (selectedRoleKey === "COMPANY_OWNER" &&
-        !["SUPER_ADMIN", "COMPANY_OWNER"].includes(actorRoleKey)) ||
-      (selectedRoleKey === "COMPANY_ADMIN" &&
-        !["SUPER_ADMIN", "COMPANY_OWNER", "COMPANY_ADMIN"].includes(actorRoleKey));
+      isSuperAdminRole(selectedRoleKey) && !isSuperAdminRole(actorRoleKey);
     if (forbiddenRole) {
       await client.query("ROLLBACK");
       return NextResponse.json(

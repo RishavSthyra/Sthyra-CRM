@@ -5,7 +5,7 @@ import { requireOperationsContext } from "@/lib/operationsAccess";
 import { canAccessProject } from "@/lib/projectAccess";
 
 const DEMO_SEED = "activity-showcase-v1";
-const ADMIN_ROLES = new Set(["COMPANY_OWNER", "COMPANY_ADMIN", "SUPER_ADMIN"]);
+const ADMIN_ROLES = new Set(["SUPER_ADMIN"]);
 
 const callSubjects = [
   "Initial qualification call",

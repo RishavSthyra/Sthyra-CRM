@@ -1,5 +1,6 @@
 import type { Pool, PoolClient } from "pg";
 import { isUuid } from "@/lib/permissions";
+import { SUPER_ADMIN_ROLE_KEY } from "@/lib/systemRoles";
 import { isObject } from "@/utils/isObject";
 import { validateText } from "@/utils/validateText";
 
@@ -28,11 +29,7 @@ export const DELIVERY_COLUMNS = `
   nd.sent_at, nd.failed_at, nd.created_at, nd.updated_at
 `;
 
-export const ADMIN_ROLE_KEYS = new Set([
-  "COMPANY_OWNER",
-  "COMPANY_ADMIN",
-  "SUPER_ADMIN",
-]);
+export const ADMIN_ROLE_KEYS = new Set([SUPER_ADMIN_ROLE_KEY]);
 
 export function parseNotificationUuid(value: string): string | null {
   return isUuid(value) ? value.toLowerCase() : null;

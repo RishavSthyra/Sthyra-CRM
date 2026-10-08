@@ -8,9 +8,10 @@ import {
 } from "../lib/projectAccessPolicy";
 import { validateProjectIds } from "../lib/userRelations";
 
-test("only administrative roles receive implicit company-wide project access", () => {
-  assert.equal(isCompanyWideProjectRole("COMPANY_OWNER"), true);
-  assert.equal(isCompanyWideProjectRole("company_admin"), true);
+test("only Super Admin receives implicit company-wide project access", () => {
+  assert.equal(isCompanyWideProjectRole("SUPER_ADMIN"), true);
+  assert.equal(isCompanyWideProjectRole("COMPANY_OWNER"), false);
+  assert.equal(isCompanyWideProjectRole("company_admin"), false);
   assert.equal(isCompanyWideProjectRole("SALES_EXEC"), false);
 });
 
@@ -46,14 +47,14 @@ test("leadership team matching is case and whitespace insensitive", () => {
   assert.equal(isLeadershipTeamName("Sales Team"), false);
 });
 
-test("audit logs are available to company leaders and Leadership team members", () => {
+test("audit logs are available to Super Admin and Leadership team members", () => {
   assert.equal(
-    hasAuditLogAccess({ roleKey: "COMPANY_OWNER", teamName: "Sales" }),
+    hasAuditLogAccess({ roleKey: "SUPER_ADMIN", teamName: "Sales" }),
     true,
   );
   assert.equal(
     hasAuditLogAccess({ roleKey: "COMPANY_ADMIN", teamName: "Operations" }),
-    true,
+    false,
   );
   assert.equal(
     hasAuditLogAccess({ roleKey: "CUSTOM", teamName: " Leadership " }),

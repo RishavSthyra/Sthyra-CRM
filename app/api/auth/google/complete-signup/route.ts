@@ -124,13 +124,16 @@ export async function POST(request: NextRequest) {
     await client.query("BEGIN");
     await client.query(
       `INSERT INTO roles (role_key, role_name, description, is_system_role)
-       VALUES ('COMPANY_OWNER', 'Company Owner', 'Initial owner of a company workspace', TRUE)
+       VALUES (
+         'SUPER_ADMIN', 'Super Admin',
+         'Highest-authority workspace administrator with unrestricted access', TRUE
+       )
        ON CONFLICT DO NOTHING`,
     );
     const role = await client.query(
-      "SELECT role_id FROM roles WHERE role_key='COMPANY_OWNER' AND is_active=TRUE",
+      "SELECT role_id FROM roles WHERE role_key='SUPER_ADMIN' AND is_active=TRUE",
     );
-    if (!role.rowCount) throw new Error("COMPANY_OWNER role is unavailable");
+    if (!role.rowCount) throw new Error("SUPER_ADMIN role is unavailable");
     const companyResult = await client.query(
       `INSERT INTO companies (
          company_name, company_legal_name, established_on,

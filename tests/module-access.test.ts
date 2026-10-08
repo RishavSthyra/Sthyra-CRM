@@ -35,11 +35,15 @@ test("explicit permissions reveal only their matching modules", () => {
 
 test("workspace administrators retain full module navigation", () => {
   assert.equal(
-    canAccessWorkspaceModule("COMPANY_OWNER", [], "marketing"),
+    canAccessWorkspaceModule("SUPER_ADMIN", [], "marketing"),
     true,
   );
   assert.equal(
     canAccessWorkspaceModule("SUPER_ADMIN", [], "opportunities"),
     true,
+  );
+  assert.equal(
+    canAccessWorkspaceModule("COMPANY_OWNER", [], "marketing"),
+    false,
   );
 });

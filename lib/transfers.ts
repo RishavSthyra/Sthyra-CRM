@@ -221,7 +221,7 @@ export async function validateTransferReferences(
        WHERE u.user_id=$1 AND t.company_id=$2 AND u.is_active=TRUE
          AND u.deleted_at IS NULL AND t.is_active=TRUE AND r.is_active=TRUE
          AND (
-           r.role_key IN ('COMPANY_OWNER','COMPANY_ADMIN','SUPER_ADMIN')
+           r.role_key = 'SUPER_ADMIN'
            OR EXISTS (SELECT 1 FROM user_projects up WHERE up.user_id=u.user_id AND up.project_id=$3)
            OR EXISTS (SELECT 1 FROM team_projects tp WHERE tp.team_id=u.team_id AND tp.project_id=$3)
          )`,

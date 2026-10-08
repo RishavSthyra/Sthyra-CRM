@@ -1,10 +1,5 @@
 import pool from "@/lib/db";
-
-const COMPANY_WIDE_PROJECT_ROLES = new Set([
-  "COMPANY_OWNER",
-  "COMPANY_ADMIN",
-  "SUPER_ADMIN",
-]);
+import { isSuperAdminRole } from "@/lib/systemRoles";
 
 export type AccessibleProject = {
   project_id: number;
@@ -63,7 +58,7 @@ export async function getUserProjectAccess(
     team_id: string;
     team_name: string;
   };
-  const canViewAllProjects = COMPANY_WIDE_PROJECT_ROLES.has(row.role_key);
+  const canViewAllProjects = isSuperAdminRole(row.role_key);
   const projects = await pool.query(
     `SELECT
        p.project_id,

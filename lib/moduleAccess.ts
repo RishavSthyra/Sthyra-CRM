@@ -1,8 +1,4 @@
-export const ADMIN_ROLE_KEYS = new Set([
-  "COMPANY_OWNER",
-  "COMPANY_ADMIN",
-  "SUPER_ADMIN",
-]);
+import { isSuperAdminRole } from "@/lib/systemRoles";
 
 export type WorkspaceModule =
   | "leads"
@@ -30,7 +26,6 @@ export function canAccessWorkspaceModule(
   permissions: readonly string[] | null | undefined,
   module: WorkspaceModule,
 ): boolean {
-  const normalizedRole = roleKey?.trim().toUpperCase() ?? "";
-  if (ADMIN_ROLE_KEYS.has(normalizedRole)) return true;
+  if (isSuperAdminRole(roleKey)) return true;
   return (permissions ?? []).includes(MODULE_PERMISSIONS[module]);
 }

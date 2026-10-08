@@ -5,12 +5,7 @@ import {
   requireOperationsContext,
 } from "@/lib/operationsAccess";
 import { hasAuditLogAccess } from "@/lib/projectAccessPolicy";
-
-const LEGACY_ADMIN_ROLES = new Set([
-  "COMPANY_OWNER",
-  "COMPANY_ADMIN",
-  "SUPER_ADMIN",
-]);
+import { isSuperAdminRole } from "@/lib/systemRoles";
 
 export async function getUserPermissionKeys(userId: string): Promise<string[]> {
   const result = await pool.query<{ permission_key: string }>(
@@ -33,9 +28,8 @@ export function roleHasPermission(
   permissionKeys: readonly string[],
   requiredPermission: string,
 ): boolean {
-  if (roleKey === "SUPER_ADMIN") return true;
   return (
-    LEGACY_ADMIN_ROLES.has(roleKey) || permissionKeys.includes(requiredPermission)
+    isSuperAdminRole(roleKey) || permissionKeys.includes(requiredPermission)
   );
 }
 
@@ -70,7 +64,7 @@ export async function requireSuperAdmin(
 ): Promise<PermissionContextResult> {
   const scope = await requireOperationsContext(request);
   if (!scope.ok) return scope;
-  if (scope.context.access.roleKey !== "SUPER_ADMIN") {
+  if (!isSuperAdminRole(scope.context.access.roleKey)) {
     return {
       ok: false,
       response: NextResponse.json(

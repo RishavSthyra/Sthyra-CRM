@@ -4,7 +4,7 @@ import { recordActivity } from "@/lib/activities";
 import { requireOperationsContext } from "@/lib/operationsAccess";
 import { canAccessProject } from "@/lib/projectAccess";
 
-const ADMIN_ROLES = new Set(["COMPANY_OWNER", "COMPANY_ADMIN", "SUPER_ADMIN"]);
+const ADMIN_ROLES = new Set(["SUPER_ADMIN"]);
 
 const TITLES = {
   call: [
