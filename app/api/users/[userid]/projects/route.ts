@@ -3,6 +3,7 @@ import pool from "@/lib/db";
 import { PROJECT_COLUMNS, serializeProject } from "@/lib/projects";
 import { validateProjectIds } from "@/lib/userRelations";
 import { parseUserId } from "@/lib/users";
+import { requireProjectAccessManager } from "@/lib/projectAccessAdministration";
 
 type UserContext = {
   params: Promise<{ userid: string }>;
@@ -30,7 +31,9 @@ async function getDirectProjects(
   return result.rows.map(serializeProject);
 }
 
-export async function GET(_request: NextRequest, context: UserContext) {
+export async function GET(request: NextRequest, context: UserContext) {
+  const scope = await requireProjectAccessManager(request);
+  if (!scope.ok) return scope.response;
   const { userid } = await context.params;
   const userId = parseUserId(userid);
   if (userId === null) {
@@ -39,8 +42,11 @@ export async function GET(_request: NextRequest, context: UserContext) {
 
   try {
     const userResult = await pool.query(
-      "SELECT user_id FROM users WHERE user_id = $1 AND deleted_at IS NULL",
-      [userId],
+      `SELECT u.user_id
+       FROM users u
+       JOIN teams t ON t.team_id = u.team_id
+       WHERE u.user_id = $1 AND u.deleted_at IS NULL AND t.company_id = $2`,
+      [userId, scope.context.access.company.company_id],
     );
     if (userResult.rowCount === 0) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -56,6 +62,8 @@ export async function GET(_request: NextRequest, context: UserContext) {
 }
 
 export async function PUT(request: NextRequest, context: UserContext) {
+  const scope = await requireProjectAccessManager(request);
+  if (!scope.ok) return scope.response;
   const { userid } = await context.params;
   const userId = parseUserId(userid);
   if (userId === null) {
@@ -84,8 +92,12 @@ export async function PUT(request: NextRequest, context: UserContext) {
   try {
     await client.query("BEGIN");
     const userResult = await client.query(
-      "SELECT user_id FROM users WHERE user_id = $1 AND deleted_at IS NULL FOR UPDATE",
-      [userId],
+      `SELECT u.user_id
+       FROM users u
+       JOIN teams t ON t.team_id = u.team_id
+       WHERE u.user_id = $1 AND u.deleted_at IS NULL AND t.company_id = $2
+       FOR UPDATE OF u`,
+      [userId, scope.context.access.company.company_id],
     );
     if (userResult.rowCount === 0) {
       await client.query("ROLLBACK");
@@ -94,8 +106,9 @@ export async function PUT(request: NextRequest, context: UserContext) {
 
     if (validation.projectIds.length > 0) {
       const projectResult = await client.query(
-        "SELECT project_id FROM projects WHERE project_id = ANY($1::integer[])",
-        [validation.projectIds],
+        `SELECT project_id FROM projects
+         WHERE project_id = ANY($1::integer[]) AND company_id = $2 AND is_active = TRUE`,
+        [validation.projectIds, scope.context.access.company.company_id],
       );
       const existingIds = new Set(
         projectResult.rows.map((row: { project_id: number }) => Number(row.project_id)),

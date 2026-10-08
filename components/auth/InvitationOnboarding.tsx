@@ -4,7 +4,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { Building2, LoaderCircle, ShieldCheck, UsersRound } from "lucide-react";
+import {
+  Building2,
+  FolderKanban,
+  LoaderCircle,
+  ShieldCheck,
+  UsersRound,
+} from "lucide-react";
 import {
   AuthField,
   FormMessage,
@@ -21,6 +27,8 @@ type Invitation = {
   company_code: string;
   role_name: string;
   team_name: string;
+  role_key: string;
+  projects: { project_id: number; project_name: string; project_code: string }[];
   expires_at: string;
 };
 
@@ -172,16 +180,25 @@ export function InvitationOnboarding({ token }: { token: string }) {
       )}
       {invitation && (
         <>
-          <div className="mb-6 grid grid-cols-3 overflow-hidden rounded-xl border border-white/10 bg-white/[0.025] max-[520px]:grid-cols-1">
+          <div className="mb-6 grid grid-cols-2 overflow-hidden rounded-xl border border-white/10 bg-white/[0.025] max-[520px]:grid-cols-1">
             {[
               [Building2, "Company", invitation.company_name],
               [ShieldCheck, "Role", invitation.role_name],
               [UsersRound, "Team", invitation.team_name],
+              [
+                FolderKanban,
+                "Projects",
+                invitation.projects.length
+                  ? invitation.projects
+                      .map((project) => project.project_name)
+                      .join(", ")
+                  : "Company-wide access",
+              ],
             ].map(([Icon, label, value], index) => {
               const ItemIcon = Icon as typeof Building2;
               return (
                 <div
-                  className={`p-4 ${index ? "border-l border-white/10 max-[520px]:border-t max-[520px]:border-l-0" : ""}`}
+                  className={`p-4 ${index % 2 ? "border-l border-white/10 max-[520px]:border-l-0" : ""} ${index > 1 ? "border-t border-white/10" : ""} ${index > 0 ? "max-[520px]:border-t" : ""}`}
                   key={String(label)}
                 >
                   <ItemIcon

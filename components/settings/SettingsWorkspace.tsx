@@ -21,6 +21,7 @@ import {
   Ban,
   Building2,
   CheckCircle2,
+  Check,
   ChevronDown,
   CircleGauge,
   ClipboardList,
@@ -55,6 +56,10 @@ import {
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 import { generateCodeFromName } from "@/utils/generateCodeFromName";
+import {
+  isCompanyWideProjectRole,
+  isLeadershipTeamName,
+} from "@/lib/projectAccessPolicy";
 
 type Row = Record<string, unknown>;
 type Project = {
@@ -2500,9 +2505,146 @@ function ProjectsPanel(props: PanelProps) {
   );
 }
 
+function ProjectMultiSelect({
+  projects,
+  selected,
+  inherited = [],
+  onChange,
+}: {
+  projects: Row[];
+  selected: number[];
+  inherited?: number[];
+  onChange: (projectIds: number[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const selectedSet = new Set(selected);
+  const inheritedSet = new Set(inherited);
+  const activeProjects = projects.filter((project) => project.is_active !== false);
+  const visibleProjects = activeProjects.filter((project) => {
+    const needle = search.trim().toLowerCase();
+    return (
+      !needle ||
+      String(project.project_name ?? "").toLowerCase().includes(needle) ||
+      String(project.project_code ?? "").toLowerCase().includes(needle)
+    );
+  });
+  const totalCount = new Set([...selected, ...inherited]).size;
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#0b0e0d]">
+      <button
+        aria-expanded={open}
+        className="flex h-11 w-full items-center justify-between gap-3 px-3.5 text-left"
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        <span className="flex min-w-0 items-center gap-2.5">
+          <FolderKanban className="size-4 shrink-0 text-[#66bea0]" strokeWidth={1.7} />
+          <span className="truncate text-xs text-[#e5e9e7]">
+            {totalCount
+              ? `${totalCount} ${totalCount === 1 ? "project" : "projects"} selected`
+              : "Choose projects"}
+          </span>
+        </span>
+        <ChevronDown
+          className={`size-4 shrink-0 text-[#79817e] transition ${open ? "rotate-180" : ""}`}
+          strokeWidth={1.7}
+        />
+      </button>
+      {open && (
+        <div className="border-t border-white/[0.08]">
+          <div className="flex items-center gap-2 border-b border-white/[0.07] px-3 py-2.5">
+            <Search className="size-3.5 text-[#69716e]" strokeWidth={1.8} />
+            <input
+              className="min-w-0 flex-1 border-0 bg-transparent text-[11px] text-white outline-none placeholder:text-[#59605e]"
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Find a project"
+              value={search}
+            />
+            <button
+              className="text-[9px] font-medium text-[#69c4a4] hover:text-[#8bd7bc]"
+              onClick={() =>
+                onChange(
+                  activeProjects
+                    .map((project) => Number(project.project_id))
+                    .filter((projectId) => !inheritedSet.has(projectId)),
+                )
+              }
+              type="button"
+            >
+              Select all
+            </button>
+            {selected.length > 0 && (
+              <button
+                className="text-[9px] text-[#828a87] hover:text-white"
+                onClick={() => onChange([])}
+                type="button"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <div className="max-h-52 overflow-y-auto p-1.5 [scrollbar-width:thin]">
+            {visibleProjects.map((project) => {
+              const projectId = Number(project.project_id);
+              const isInherited = inheritedSet.has(projectId);
+              const checked = selectedSet.has(projectId) || isInherited;
+              return (
+                <button
+                  aria-pressed={checked}
+                  className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition ${
+                    checked ? "bg-[#173c31]/65" : "hover:bg-white/[0.04]"
+                  } ${isInherited ? "cursor-default" : ""}`}
+                  key={projectId}
+                  onClick={() => {
+                    if (isInherited) return;
+                    onChange(
+                      selectedSet.has(projectId)
+                        ? selected.filter((id) => id !== projectId)
+                        : [...selected, projectId],
+                    );
+                  }}
+                  type="button"
+                >
+                  <span
+                    className={`flex size-4 shrink-0 items-center justify-center rounded border ${
+                      checked
+                        ? "border-[#4daf8e] bg-[#369274] text-white"
+                        : "border-white/20 bg-black/20"
+                    }`}
+                  >
+                    {checked && <Check className="size-3" strokeWidth={2.5} />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[11px] font-medium text-[#e0e5e2]">
+                      {value(project, "project_name")}
+                    </span>
+                    <span className="mt-0.5 block truncate text-[9px] text-[#6f7774]">
+                      {value(project, "project_code")}
+                    </span>
+                  </span>
+                  {isInherited && (
+                    <span className="shrink-0 text-[9px] text-[#6fb99f]">Via team</span>
+                  )}
+                </button>
+              );
+            })}
+            {!visibleProjects.length && (
+              <p className="px-3 py-6 text-center text-[10px] text-[#68706d]">
+                No projects found.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PeoplePanel(props: PanelProps) {
   const [mode, setMode] = useState<"user" | "team" | "role">("user");
-  const [form, setForm] = useState<Row>({ is_active: true });
+  const [form, setForm] = useState<Row>({ is_active: true, project_ids: [] });
   const [dialogOpen, setDialogOpen] = useState(false);
   const [pendingOpen, setPendingOpen] = useState(true);
   const [query, setQuery] = useState("");
@@ -2516,6 +2658,14 @@ function PeoplePanel(props: PanelProps) {
     new Set(),
   );
   const [permissionBusy, setPermissionBusy] = useState(false);
+  const [projectAccess, setProjectAccess] = useState<{
+    kind: "user" | "team";
+    id: string;
+    name: string;
+    selected: number[];
+    inherited: number[];
+  } | null>(null);
+  const [projectAccessBusy, setProjectAccessBusy] = useState(false);
 
   useEffect(() => {
     if (!dialogOpen) return;
@@ -2536,7 +2686,7 @@ function PeoplePanel(props: PanelProps) {
   }, [permissionRole]);
 
   const openCreate = () => {
-    setForm({ is_active: true });
+    setForm({ is_active: true, project_ids: [] });
     setDialogOpen(true);
   };
 
@@ -2547,6 +2697,7 @@ function PeoplePanel(props: PanelProps) {
       email: form.email,
       role_id: form.role_id,
       team_id: form.team_id,
+      project_ids: form.project_ids ?? [],
     };
     if (mode === "team") {
       url = "/api/teams";
@@ -2555,6 +2706,9 @@ function PeoplePanel(props: PanelProps) {
         name: form.name,
         team_type: form.team_type,
         description: form.description || null,
+        ...(canManageProjectAccess
+          ? { project_ids: form.project_ids ?? [] }
+          : {}),
       };
     }
     if (mode === "role") {
@@ -2592,7 +2746,7 @@ function PeoplePanel(props: PanelProps) {
           setPendingOpen(true);
         }
       }
-      setForm({ is_active: true });
+      setForm({ is_active: true, project_ids: [] });
       setDialogOpen(false);
     }
   };
@@ -2613,6 +2767,94 @@ function PeoplePanel(props: PanelProps) {
           "name",
         )
       : "No team";
+  const currentTeam = props.teams.find(
+    (team) => String(team.team_id) === String(props.user.team_id),
+  );
+  const canManageProjectAccess =
+    isLeadershipTeamName(currentTeam?.name);
+  const selectedRole = props.roles.find(
+    (role) => String(role.role_id) === String(form.role_id),
+  );
+  const companyWideInvitation = isCompanyWideProjectRole(
+    selectedRole?.role_key,
+  );
+  const selectedFormProjects = Array.isArray(form.project_ids)
+    ? form.project_ids.map(Number).filter(Number.isSafeInteger)
+    : [];
+  const invitationProjectNames = (row: Row) => {
+    if (!Array.isArray(row.projects) || row.projects.length === 0) {
+      return isCompanyWideProjectRole(row.role_key)
+        ? "Company-wide"
+        : "No projects";
+    }
+    return row.projects
+      .map((project) =>
+        typeof project === "object" && project !== null
+          ? String((project as Row).project_name ?? "")
+          : "",
+      )
+      .filter(Boolean)
+      .join(", ");
+  };
+  const openProjectAccess = async (kind: "user" | "team", row: Row) => {
+    if (!canManageProjectAccess) return;
+    const id = String(kind === "user" ? row.user_id : row.team_id);
+    setProjectAccessBusy(true);
+    try {
+      const directRequest = props.api(
+        `/api/${kind === "user" ? "users" : "teams"}/${id}/projects`,
+      );
+      const [direct, effective] = await Promise.all([
+        directRequest,
+        kind === "user"
+          ? props.api(`/api/users/${id}/effective-projects`)
+          : Promise.resolve({ projects: [] }),
+      ]);
+      const directIds = ((direct.projects as Row[]) ?? []).map((project) =>
+        Number(project.project_id),
+      );
+      const effectiveIds = ((effective.projects as Row[]) ?? []).map((project) =>
+        Number(project.project_id),
+      );
+      setProjectAccess({
+        kind,
+        id,
+        name: kind === "user" ? displayName(row) : String(row.name ?? "Team"),
+        selected: directIds,
+        inherited: effectiveIds.filter((projectId) => !directIds.includes(projectId)),
+      });
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Unable to load project access",
+      );
+    } finally {
+      setProjectAccessBusy(false);
+    }
+  };
+  const saveProjectAccess = async () => {
+    if (!projectAccess) return;
+    setProjectAccessBusy(true);
+    try {
+      await props.api(
+        `/api/${projectAccess.kind === "user" ? "users" : "teams"}/${projectAccess.id}/projects`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project_ids: projectAccess.selected }),
+        },
+      );
+      toast.success(
+        `${projectAccess.kind === "user" ? "Member" : "Team"} project access updated`,
+      );
+      setProjectAccess(null);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Unable to save project access",
+      );
+    } finally {
+      setProjectAccessBusy(false);
+    }
+  };
   const displayName = (row: Row) =>
     `${String(row.first_name ?? "")} ${String(row.last_name ?? "")}`.trim() ||
     String(row.username ?? row.email ?? "Unnamed member");
@@ -2817,8 +3059,14 @@ function PeoplePanel(props: PanelProps) {
             </div>
           )}
           <button
-            className="inline-flex h-9 items-center justify-center rounded-lg border border-[#3a9e7e] bg-[#2c8a6e] px-4 text-[10px] font-semibold text-white transition hover:bg-[#35a080]"
+            className="inline-flex h-9 items-center justify-center rounded-lg border border-[#3a9e7e] bg-[#2c8a6e] px-4 text-[10px] font-semibold text-white transition hover:bg-[#35a080] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/[0.04] disabled:text-[#69716e]"
+            disabled={mode === "user" && !canManageProjectAccess}
             onClick={openCreate}
+            title={
+              mode === "user" && !canManageProjectAccess
+                ? "Only Leadership team members can invite people and configure project access"
+                : undefined
+            }
             type="button"
           >
             +{" "}
@@ -2844,6 +3092,9 @@ function PeoplePanel(props: PanelProps) {
                   <th className="px-4 py-3.5">Team</th>
                   <th className="px-4 py-3.5">Status</th>
                   <th className="px-4 py-3.5">Joining date</th>
+                  {canManageProjectAccess && (
+                    <th className="px-4 py-3.5">Project access</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -2876,13 +3127,36 @@ function PeoplePanel(props: PanelProps) {
                     <td className="px-4 py-3.5">
                       {formatDate(row.created_at)}
                     </td>
+                    {canManageProjectAccess && (
+                      <td className="px-4 py-3.5">
+                        {isCompanyWideProjectRole(
+                          props.roles.find(
+                            (role) =>
+                              String(role.role_id) === String(row.role_id),
+                          )?.role_key,
+                        ) ? (
+                          <span className="text-[10px] text-[#69a993]">
+                            Company-wide
+                          </span>
+                        ) : (
+                          <button
+                            className="rounded-lg border border-white/10 px-3 py-1.5 text-[10px] text-[#b9bfbd] transition hover:border-[#4ea98b]/60 hover:text-white disabled:opacity-40"
+                            disabled={projectAccessBusy}
+                            onClick={() => void openProjectAccess("user", row)}
+                            type="button"
+                          >
+                            Manage
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {!visibleUsers.length && (
                   <tr>
                     <td
                       className="px-4 py-12 text-center text-[11px] text-[#646c69]"
-                      colSpan={7}
+                      colSpan={canManageProjectAccess ? 8 : 7}
                     >
                       No members match your search.
                     </td>
@@ -2909,6 +3183,24 @@ function PeoplePanel(props: PanelProps) {
                     </span>
                   ),
                 },
+                ...(canManageProjectAccess
+                  ? [
+                      {
+                        key: "project_access",
+                        label: "Project access",
+                        render: (row: Row) => (
+                          <button
+                            className="rounded-lg border border-white/10 px-3 py-1.5 text-[10px] text-[#b9bfbd] transition hover:border-[#4ea98b]/60 hover:text-white disabled:opacity-40"
+                            disabled={projectAccessBusy}
+                            onClick={() => void openProjectAccess("team", row)}
+                            type="button"
+                          >
+                            Manage
+                          </button>
+                        ),
+                      },
+                    ]
+                  : []),
               ]}
             />
           )}
@@ -2992,6 +3284,12 @@ function PeoplePanel(props: PanelProps) {
                     <span className="text-[10px] text-[#747c79]">
                       {value(row, "team_name")}
                     </span>
+                    <span
+                      className="max-w-48 truncate text-[10px] text-[#747c79]"
+                      title={invitationProjectNames(row)}
+                    >
+                      {invitationProjectNames(row)}
+                    </span>
                     <span className="text-[9px] text-[#626a67]">
                       Expires {formatDate(row.expires_at)}
                     </span>
@@ -3074,8 +3372,10 @@ function PeoplePanel(props: PanelProps) {
                 </h2>
                 <p className="mt-1 text-[10px] text-[#777f7c]">
                   {mode === "user"
-                    ? "Choose their role and team. They will complete their profile during onboarding."
-                    : "Configure the workspace access structure."}
+                    ? "Choose their role, team, and the projects they can work in."
+                    : mode === "team"
+                      ? "Create a team and define its shared project access."
+                      : "Configure the workspace access structure."}
                 </p>
               </div>
               <button
@@ -3108,9 +3408,18 @@ function PeoplePanel(props: PanelProps) {
                       <select
                         required
                         className={inputClass}
-                        onChange={(e) =>
-                          setForm({ ...form, role_id: e.target.value })
-                        }
+                        onChange={(e) => {
+                          const role = props.roles.find(
+                            (item) => String(item.role_id) === e.target.value,
+                          );
+                          setForm({
+                            ...form,
+                            role_id: e.target.value,
+                            ...(isCompanyWideProjectRole(role?.role_key)
+                              ? { project_ids: [] }
+                              : {}),
+                          });
+                        }}
                         value={String(form.role_id ?? "")}
                       >
                         <option value="">Select role</option>
@@ -3148,6 +3457,29 @@ function PeoplePanel(props: PanelProps) {
                           ))}
                       </select>
                     </Field>
+                    <div className="col-span-2 max-[560px]:col-span-1">
+                      <Field label="Project access">
+                        {companyWideInvitation ? (
+                          <div className="flex h-11 items-center gap-2.5 rounded-xl border border-[#4ea98b]/20 bg-[#173c31]/35 px-3.5 text-[11px] text-[#9fd4c1]">
+                            <CheckCircle2 className="size-4" strokeWidth={1.8} />
+                            This role has company-wide project access.
+                          </div>
+                        ) : (
+                          <ProjectMultiSelect
+                            onChange={(projectIds) =>
+                              setForm({ ...form, project_ids: projectIds })
+                            }
+                            projects={props.projects}
+                            selected={selectedFormProjects}
+                          />
+                        )}
+                      </Field>
+                      {!companyWideInvitation && selectedFormProjects.length === 0 && (
+                        <p className="mt-1.5 text-[9px] text-[#777f7c]">
+                          Select at least one project so this teammate can see CRM data.
+                        </p>
+                      )}
+                    </div>
                   </>
                 )}
                 {mode === "team" && (
@@ -3184,6 +3516,22 @@ function PeoplePanel(props: PanelProps) {
                         />
                       </Field>
                     </div>
+                    {canManageProjectAccess && (
+                      <div className="col-span-2 max-[560px]:col-span-1">
+                        <Field label="Shared project access">
+                          <ProjectMultiSelect
+                            onChange={(projectIds) =>
+                              setForm({ ...form, project_ids: projectIds })
+                            }
+                            projects={props.projects}
+                            selected={selectedFormProjects}
+                          />
+                        </Field>
+                        <p className="mt-1.5 text-[9px] text-[#777f7c]">
+                          Every member of this team inherits these projects.
+                        </p>
+                      </div>
+                    )}
                   </>
                 )}
                 {mode === "role" && (
@@ -3237,13 +3585,99 @@ function PeoplePanel(props: PanelProps) {
                 </button>
                 <button
                   className={settingsUi.primaryButton}
-                  disabled={props.busy}
+                  disabled={
+                    props.busy ||
+                    (mode === "user" &&
+                      !companyWideInvitation &&
+                      selectedFormProjects.length === 0)
+                  }
                   type="submit"
                 >
                   {props.busy ? "Saving…" : dialogTitle}
                 </button>
               </footer>
             </form>
+          </section>
+        </div>
+      )}
+      {projectAccess && (
+        <div
+          className="fixed inset-0 z-[115] flex items-center justify-center bg-black/80 p-4 backdrop-blur-[3px]"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) setProjectAccess(null);
+          }}
+        >
+          <section
+            aria-labelledby="project-access-dialog-title"
+            aria-modal="true"
+            className="w-full max-w-[560px] overflow-hidden rounded-2xl border border-white/[0.12] bg-[#111513] shadow-[0_30px_100px_rgba(0,0,0,0.7)]"
+            role="dialog"
+          >
+            <header className="flex items-start justify-between gap-4 border-b border-white/[0.08] px-6 py-5">
+              <div className="min-w-0">
+                <h2
+                  className="font-[var(--font-bricolage)] text-xl font-medium text-white"
+                  id="project-access-dialog-title"
+                >
+                  Project access
+                </h2>
+                <p className="mt-1 text-[10px] text-[#777f7c]">
+                  Choose which projects {projectAccess.name} can work in.
+                </p>
+              </div>
+              <button
+                aria-label="Close project access editor"
+                className="flex size-8 items-center justify-center rounded-lg text-[#858c89] hover:bg-white/[0.06] hover:text-white"
+                onClick={() => setProjectAccess(null)}
+                type="button"
+              >
+                <X className="size-4" />
+              </button>
+            </header>
+            <div className="p-6">
+              <ProjectMultiSelect
+                inherited={projectAccess.inherited}
+                onChange={(selected) =>
+                  setProjectAccess((current) =>
+                    current ? { ...current, selected } : current,
+                  )
+                }
+                projects={props.projects}
+                selected={projectAccess.selected}
+              />
+              {projectAccess.kind === "user" && projectAccess.inherited.length > 0 && (
+                <p className="mt-3 text-[10px] leading-5 text-[#777f7c]">
+                  Projects marked “Via team” are inherited from the member’s team.
+                  Change them from the Teams tab.
+                </p>
+              )}
+            </div>
+            <footer className="flex items-center justify-between gap-3 border-t border-white/[0.08] bg-black/10 px-6 py-4">
+              <span className="text-[10px] text-[#777f7c]">
+                {new Set([
+                  ...projectAccess.selected,
+                  ...projectAccess.inherited,
+                ]).size}{" "}
+                projects available
+              </span>
+              <div className="flex gap-2">
+                <button
+                  className={settingsUi.secondaryButton}
+                  onClick={() => setProjectAccess(null)}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button
+                  className={settingsUi.primaryButton}
+                  disabled={projectAccessBusy}
+                  onClick={() => void saveProjectAccess()}
+                  type="button"
+                >
+                  {projectAccessBusy ? "Saving…" : "Save access"}
+                </button>
+              </div>
+            </footer>
           </section>
         </div>
       )}

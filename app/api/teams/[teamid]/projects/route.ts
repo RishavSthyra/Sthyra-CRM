@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { parseTeamId } from "@/lib/teams";
+import { validateProjectIds } from "@/lib/userRelations";
+import { requireProjectAccessManager } from "@/lib/projectAccessAdministration";
 
  type TeamProjectsContext = {
   params: Promise<{ teamid: string }>;
@@ -27,47 +29,6 @@ const PROJECT_COLUMNS = `
   tp.created_at AS assigned_at
 `;
 
-function validateProjectIds(body: unknown):
-  | { ok: true; projectIds: number[] }
-  | { ok: false; errors: string[] } {
-  if (typeof body !== "object" || body === null || Array.isArray(body)) {
-    return { ok: false, errors: ["Request body must be a JSON object"] };
-  }
-
-  const errors = Object.keys(body)
-    .filter((field) => field !== "project_ids")
-    .map((field) => `Unknown field: ${field}`);
-  const projectIds = (body as { project_ids?: unknown }).project_ids;
-
-  if (!Array.isArray(projectIds)) {
-    errors.push("project_ids must be an array");
-    return { ok: false, errors };
-  }
-
-  const normalizedIds: number[] = [];
-  const seen = new Set<number>();
-  projectIds.forEach((projectId, index) => {
-    if (
-      typeof projectId !== "number" ||
-      !Number.isSafeInteger(projectId) ||
-      projectId <= 0
-    ) {
-      errors.push(`project_ids[${index}] must be a positive integer`);
-      return;
-    }
-    if (seen.has(projectId)) {
-      errors.push(`project_ids contains a duplicate project ID: ${projectId}`);
-      return;
-    }
-    seen.add(projectId);
-    normalizedIds.push(projectId);
-  });
-
-  return errors.length > 0
-    ? { ok: false, errors }
-    : { ok: true, projectIds: normalizedIds };
-}
-
 async function getTeamProjectRows(queryable: {
   query: (text: string, values?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>;
 }, teamId: string) {
@@ -83,9 +44,11 @@ async function getTeamProjectRows(queryable: {
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   context: TeamProjectsContext,
 ) {
+  const scope = await requireProjectAccessManager(request);
+  if (!scope.ok) return scope.response;
   const { teamid } = await context.params;
   const teamId = parseTeamId(teamid);
   if (teamId === null) {
@@ -93,7 +56,10 @@ export async function GET(
   }
 
   try {
-    const team = await pool.query("SELECT team_id FROM teams WHERE team_id = $1", [teamId]);
+    const team = await pool.query(
+      "SELECT team_id FROM teams WHERE team_id = $1 AND company_id = $2",
+      [teamId, scope.context.access.company.company_id],
+    );
     if (team.rowCount === 0) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
@@ -111,6 +77,8 @@ export async function PUT(
   request: NextRequest,
   context: TeamProjectsContext,
 ) {
+  const scope = await requireProjectAccessManager(request);
+  if (!scope.ok) return scope.response;
   const { teamid } = await context.params;
   const teamId = parseTeamId(teamid);
   if (teamId === null) {
@@ -139,8 +107,8 @@ export async function PUT(
   try {
     await client.query("BEGIN");
     const team = await client.query(
-      "SELECT team_id FROM teams WHERE team_id = $1 FOR UPDATE",
-      [teamId],
+      "SELECT team_id FROM teams WHERE team_id = $1 AND company_id = $2 FOR UPDATE",
+      [teamId, scope.context.access.company.company_id],
     );
     if (team.rowCount === 0) {
       await client.query("ROLLBACK");
@@ -149,8 +117,9 @@ export async function PUT(
 
     if (validation.projectIds.length > 0) {
       const projects = await client.query(
-        "SELECT project_id FROM projects WHERE project_id = ANY($1::integer[])",
-        [validation.projectIds],
+        `SELECT project_id FROM projects
+         WHERE project_id = ANY($1::integer[]) AND company_id = $2 AND is_active = TRUE`,
+        [validation.projectIds, scope.context.access.company.company_id],
       );
       const existingIds = new Set(
         projects.rows.map((row: { project_id: number }) => Number(row.project_id)),

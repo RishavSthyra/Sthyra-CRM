@@ -243,6 +243,14 @@ export async function POST(request: NextRequest) {
         );
     const userId = String(userResult.rows[0].user_id);
     await client.query(
+      `INSERT INTO user_projects (user_id, project_id)
+       SELECT $1::uuid, wip.project_id
+       FROM workspace_invitation_projects wip
+       WHERE wip.invitation_id = $2
+       ON CONFLICT (user_id, project_id) DO NOTHING`,
+      [userId, invitation.invitation_id],
+    );
+    await client.query(
       `UPDATE workspace_invitations
        SET status='accepted', accepted_at=CURRENT_TIMESTAMP, accepted_by=$2,
            updated_at=CURRENT_TIMESTAMP

@@ -9,6 +9,7 @@ export type InvitationEmailData = {
   companyName: string;
   roleName: string;
   teamName: string;
+  projectNames: string[];
   inviterName: string;
   invitationUrl: string;
   expiresAt: Date;
@@ -58,6 +59,9 @@ export async function sendInvitationEmail(data: InvitationEmailData) {
   const company = escapeHtml(data.companyName);
   const role = escapeHtml(data.roleName);
   const team = escapeHtml(data.teamName);
+  const projects = data.projectNames.length
+    ? data.projectNames.map(escapeHtml).join(", ")
+    : "Company-wide access";
   const inviter = escapeHtml(data.inviterName || "A workspace administrator");
   const url = escapeHtml(data.invitationUrl);
   const expiry = escapeHtml(
@@ -108,6 +112,10 @@ export async function sendInvitationEmail(data: InvitationEmailData) {
                     <td style="width:120px;padding:15px 18px;font-size:13px;line-height:20px;color:#69736f;">Role</td>
                     <td style="padding:15px 18px;font-size:14px;line-height:20px;font-weight:600;color:#18201e;">${role}</td>
                   </tr>
+                  <tr>
+                    <td style="width:120px;padding:15px 18px;border-top:1px solid #e8ecea;font-size:13px;line-height:20px;color:#69736f;">Projects</td>
+                    <td style="padding:15px 18px;border-top:1px solid #e8ecea;font-size:14px;line-height:20px;font-weight:600;color:#18201e;">${projects}</td>
+                  </tr>
                 </table>
               </td>
             </tr>
@@ -141,7 +149,7 @@ export async function sendInvitationEmail(data: InvitationEmailData) {
       from: smtp.from,
       to: data.email,
       subject: `Join ${data.companyName} on Sthyra CRM`,
-      text: `${data.inviterName || "A workspace administrator"} invited you to join ${data.companyName} as ${data.roleName} in ${data.teamName}. Accept before ${expiry}: ${data.invitationUrl}`,
+      text: `${data.inviterName || "A workspace administrator"} invited you to join ${data.companyName} as ${data.roleName} in ${data.teamName}. Projects: ${projects}. Accept before ${expiry}: ${data.invitationUrl}`,
       html,
     });
     return { sent: true as const };

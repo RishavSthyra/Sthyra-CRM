@@ -46,6 +46,9 @@ export async function POST(request: NextRequest, context: Context) {
       companyName: String(invitation!.company_name),
       roleName: String(invitation!.role_name),
       teamName: String(invitation!.team_name),
+      projectNames: Array.isArray(invitation!.project_names)
+        ? invitation!.project_names.map(String)
+        : [],
       inviterName: String(invitation!.inviter_name ?? ""),
       invitationUrl: link,
       expiresAt: new Date(rotated.rows[0].expires_at),

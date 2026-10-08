@@ -23,7 +23,20 @@ export async function GET(request: NextRequest) {
   try {
     const result = await database.query(
       `SELECT wi.invitation_id, wi.email, wi.status, wi.expires_at,
-              c.company_name, c.company_code, r.role_name, t.name AS team_name
+              c.company_name, c.company_code, r.role_name, r.role_key,
+              t.name AS team_name,
+              COALESCE((
+                SELECT jsonb_agg(
+                  jsonb_build_object(
+                    'project_id', p.project_id,
+                    'project_name', p.project_name,
+                    'project_code', p.project_code
+                  ) ORDER BY p.project_name, p.project_id
+                )
+                FROM workspace_invitation_projects wip
+                JOIN projects p ON p.project_id=wip.project_id
+                WHERE wip.invitation_id=wi.invitation_id
+              ), '[]'::jsonb) AS projects
        FROM workspace_invitations wi
        JOIN companies c ON c.company_id=wi.company_id
        JOIN roles r ON r.role_id=wi.role_id

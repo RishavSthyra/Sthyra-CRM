@@ -5,11 +5,16 @@ import {
   invitationUrl,
   sendInvitationEmail,
 } from "@/lib/invitations";
-import { requirePermission } from "@/lib/authorization";
 import { isUuid } from "@/lib/permissions";
 import { isObject } from "@/utils/isObject";
 import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
 import { invitationAccountConflictMessage } from "@/lib/invitationPolicy";
+import { requirePermission } from "@/lib/authorization";
+import {
+  requireProjectAccessManager,
+} from "@/lib/projectAccessAdministration";
+import { isCompanyWideProjectRole } from "@/lib/projectAccessPolicy";
+import { validateProjectIds } from "@/lib/userRelations";
 
 const INVITATION_COLUMNS = `
   wi.invitation_id,
@@ -31,7 +36,19 @@ const INVITATION_COLUMNS = `
   r.role_name,
   r.role_key,
   t.name AS team_name,
-  CONCAT_WS(' ', inviter.first_name, inviter.last_name) AS invited_by_name
+  CONCAT_WS(' ', inviter.first_name, inviter.last_name) AS invited_by_name,
+  COALESCE((
+    SELECT jsonb_agg(
+      jsonb_build_object(
+        'project_id', p.project_id,
+        'project_name', p.project_name,
+        'project_code', p.project_code
+      ) ORDER BY p.project_name, p.project_id
+    )
+    FROM workspace_invitation_projects wip
+    JOIN projects p ON p.project_id = wip.project_id
+    WHERE wip.invitation_id = wi.invitation_id
+  ), '[]'::jsonb) AS projects
 `;
 
 export async function GET(request: NextRequest) {
@@ -82,7 +99,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const scope = await requirePermission(request, "PEOPLE_MANAGE");
+  const scope = await requireProjectAccessManager(request);
   if (!scope.ok) return scope.response;
 
   let body: unknown;
@@ -106,13 +123,23 @@ export async function POST(request: NextRequest) {
   const roleId = typeof body.role_id === "string" ? body.role_id : "";
   const teamId = typeof body.team_id === "string" ? body.team_id : "";
   const errors: string[] = [];
+  const projectValidation = validateProjectIds({
+    project_ids: body.project_ids ?? [],
+  });
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
     errors.push("A valid email is required");
   if (!isUuid(roleId)) errors.push("A valid role is required");
   if (!isUuid(teamId)) errors.push("A valid team is required");
+  if (!projectValidation.ok) errors.push(...projectValidation.errors);
   if (errors.length) {
     return NextResponse.json(
       { error: "Validation failed", details: errors },
+      { status: 422 },
+    );
+  }
+  if (!projectValidation.ok) {
+    return NextResponse.json(
+      { error: "Validation failed", details: projectValidation.errors },
       { status: 422 },
     );
   }
@@ -133,6 +160,16 @@ export async function POST(request: NextRequest) {
       );
     }
     const selectedRoleKey = String(role.rows[0].role_key);
+    if (
+      !isCompanyWideProjectRole(selectedRoleKey) &&
+      projectValidation.projectIds.length === 0
+    ) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { error: "Select at least one project for this teammate" },
+        { status: 422 },
+      );
+    }
     const actorRoleKey = scope.context.access.roleKey;
     const forbiddenRole =
       (selectedRoleKey === "SUPER_ADMIN" && actorRoleKey !== "SUPER_ADMIN") ||
@@ -157,6 +194,32 @@ export async function POST(request: NextRequest) {
         { error: "The selected team is unavailable" },
         { status: 422 },
       );
+    }
+    let selectedProjects: Record<string, unknown>[] = [];
+    if (projectValidation.projectIds.length > 0) {
+      const projects = await client.query(
+        `SELECT project_id, project_name, project_code
+         FROM projects
+         WHERE project_id = ANY($1::integer[])
+           AND company_id = $2
+           AND is_active = TRUE
+         ORDER BY project_name, project_id`,
+        [projectValidation.projectIds, companyId],
+      );
+      const found = new Set(
+        projects.rows.map((project) => Number(project.project_id)),
+      );
+      const unavailable = projectValidation.projectIds.filter(
+        (projectId) => !found.has(projectId),
+      );
+      if (unavailable.length) {
+        await client.query("ROLLBACK");
+        return NextResponse.json(
+          { error: "One or more selected projects are unavailable" },
+          { status: 422 },
+        );
+      }
+      selectedProjects = projects.rows;
     }
     const existingUser = await adminPool.query(
       `SELECT team.company_id
@@ -204,9 +267,17 @@ export async function POST(request: NextRequest) {
          expires_at, created_at, updated_at`,
       [companyId, email, roleId, teamId, scope.context.userId, tokenHash],
     );
+    const created = result.rows[0];
+    if (projectValidation.projectIds.length > 0) {
+      await client.query(
+        `INSERT INTO workspace_invitation_projects (invitation_id, project_id)
+         SELECT $1::uuid, project_id
+         FROM unnest($2::integer[]) AS selected(project_id)`,
+        [created.invitation_id, projectValidation.projectIds],
+      );
+    }
     await client.query("COMMIT");
 
-    const created = result.rows[0];
     const link = invitationUrl(token, request.nextUrl.origin);
     const delivery = await sendInvitationEmail({
       email,
@@ -215,6 +286,9 @@ export async function POST(request: NextRequest) {
       ),
       roleName: String(role.rows[0].role_name),
       teamName: String(team.rows[0].name),
+      projectNames: isCompanyWideProjectRole(selectedRoleKey)
+        ? []
+        : selectedProjects.map((project) => String(project.project_name)),
       inviterName: String(companyAndInviter.rows[0]?.inviter_name ?? ""),
       invitationUrl: link,
       expiresAt: new Date(created.expires_at),
@@ -245,6 +319,7 @@ export async function POST(request: NextRequest) {
       role_key: role.rows[0].role_key,
       team_name: team.rows[0].name,
       invited_by_name: companyAndInviter.rows[0]?.inviter_name ?? null,
+      projects: selectedProjects,
     };
     return NextResponse.json(
       {

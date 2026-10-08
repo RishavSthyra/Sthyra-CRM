@@ -31,8 +31,14 @@ export async function getInvitationForDelivery(
   companyId: number,
 ) {
   const result = await pool.query(
-    `SELECT wi.*, c.company_name, r.role_name, t.name AS team_name,
-            CONCAT_WS(' ', inviter.first_name, inviter.last_name) AS inviter_name
+    `SELECT wi.*, c.company_name, r.role_name, r.role_key, t.name AS team_name,
+            CONCAT_WS(' ', inviter.first_name, inviter.last_name) AS inviter_name,
+            COALESCE((
+              SELECT jsonb_agg(p.project_name ORDER BY p.project_name, p.project_id)
+              FROM workspace_invitation_projects wip
+              JOIN projects p ON p.project_id=wip.project_id
+              WHERE wip.invitation_id=wi.invitation_id
+            ), '[]'::jsonb) AS project_names
      FROM workspace_invitations wi
      JOIN companies c ON c.company_id=wi.company_id
      JOIN roles r ON r.role_id=wi.role_id
