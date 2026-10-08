@@ -203,6 +203,7 @@ const DEFAULT_TRANSFER_EXPIRY = new Date(
 
 const fieldClass =
   "h-11 w-full rounded-lg border border-white/[0.11] bg-[#0b0e0c] px-3.5 text-sm text-[#e8ece9] outline-none transition placeholder:text-[#59605d] focus:border-[#55c8a6]/55 focus:ring-2 focus:ring-[#55c8a6]/10 disabled:opacity-50";
+const selectClass = `${fieldClass} appearance-none pr-10`;
 
 function name(
   first?: string | null,
@@ -417,116 +418,141 @@ function CreateTransferDrawer({
           </button>
         </header>
 
-        <form
-          className="flex-1 space-y-6 overflow-y-auto p-6"
-          onSubmit={submit}
-        >
-          <section className="border-y border-white/[0.08] py-4">
+        <form className="flex-1 overflow-y-auto p-6" onSubmit={submit}>
+          <section className="flex items-center justify-between gap-5 border-b border-white/[0.08] pb-5">
             <span className="text-[10px] tracking-[0.08em] text-[#68706c] uppercase">
               Current ownership
             </span>
-            <p className="mt-2 text-sm text-[#dce1de]">
+            <p className="text-right text-sm font-medium text-[#dce1de]">
               {subject.owner_first_name || subject.owner_last_name
                 ? name(subject.owner_first_name, subject.owner_last_name)
                 : (subject.owner_team_name ?? "Unassigned")}
             </p>
           </section>
 
-          <div className="grid grid-cols-[150px_minmax(0,1fr)] gap-4 max-[560px]:grid-cols-1">
-            <label>
-              <span className="mb-2 block text-xs text-[#9da5a1]">Send to</span>
-              <select
-                className={fieldClass}
-                onChange={(event) => {
-                  setRecipientKind(event.target.value as "user" | "team");
-                  setRecipientId("");
-                }}
-                value={recipientKind}
-              >
-                <option value="user">Person</option>
-                <option value="team">Team</option>
-              </select>
-            </label>
-            <label>
-              <span className="mb-2 block text-xs text-[#9da5a1]">
-                Recipient
-              </span>
-              <select
-                className={fieldClass}
-                onChange={(event) => setRecipientId(event.target.value)}
-                required
-                value={recipientId}
-              >
-                <option value="">Select recipient</option>
-                {recipientKind === "user"
-                  ? users.map((user) => (
-                      <option key={user.user_id} value={user.user_id}>
-                        {name(user.first_name, user.last_name, user.email)}
-                        {user.team_name ? ` · ${user.team_name}` : ""}
-                      </option>
-                    ))
-                  : teams.map((team) => (
-                      <option key={team.team_id} value={team.team_id}>
-                        {team.team_name}
+          <section className="pt-5">
+            <h3 className="text-[10px] font-semibold tracking-[0.12em] text-[#68706c] uppercase">
+              Destination
+            </h3>
+            <div className="mt-4 grid grid-cols-2 gap-4 max-[560px]:grid-cols-1">
+              <label>
+                <span className="mb-2 block text-xs text-[#9da5a1]">
+                  Send to
+                </span>
+                <div className="relative">
+                  <select
+                    className={selectClass}
+                    onChange={(event) => {
+                      setRecipientKind(event.target.value as "user" | "team");
+                      setRecipientId("");
+                    }}
+                    value={recipientKind}
+                  >
+                    <option value="user">Person</option>
+                    <option value="team">Team</option>
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-[#7f8883]" />
+                </div>
+              </label>
+              <label>
+                <span className="mb-2 block text-xs text-[#9da5a1]">
+                  Recipient
+                </span>
+                <div className="relative">
+                  <select
+                    className={selectClass}
+                    onChange={(event) => setRecipientId(event.target.value)}
+                    required
+                    value={recipientId}
+                  >
+                    <option value="">Select recipient</option>
+                    {recipientKind === "user"
+                      ? users.map((user) => (
+                          <option key={user.user_id} value={user.user_id}>
+                            {name(user.first_name, user.last_name, user.email)}
+                            {user.team_name ? ` · ${user.team_name}` : ""}
+                          </option>
+                        ))
+                      : teams.map((team) => (
+                          <option key={team.team_id} value={team.team_id}>
+                            {team.team_name}
+                          </option>
+                        ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-[#7f8883]" />
+                </div>
+              </label>
+            </div>
+          </section>
+
+          <section className="mt-6 border-t border-white/[0.08] pt-5">
+            <h3 className="text-[10px] font-semibold tracking-[0.12em] text-[#68706c] uppercase">
+              Transfer settings
+            </h3>
+            <div className="mt-4 grid grid-cols-2 gap-4 max-[560px]:grid-cols-1">
+              <label>
+                <span className="mb-2 block text-xs text-[#9da5a1]">
+                  Checklist
+                </span>
+                <div className="relative">
+                  <select
+                    className={selectClass}
+                    onChange={(event) => setTemplateId(event.target.value)}
+                    value={templateId}
+                  >
+                    <option value="">Use project default</option>
+                    {options.templates.map((template) => (
+                      <option
+                        key={template.template_id}
+                        value={template.template_id}
+                      >
+                        {template.template_name} · {template.item_count} items
                       </option>
                     ))}
-              </select>
-            </label>
-          </div>
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-[#7f8883]" />
+                </div>
+              </label>
+              <label>
+                <span className="mb-2 block text-xs text-[#9da5a1]">
+                  Expires
+                </span>
+                <input
+                  className={fieldClass}
+                  min={toLocalDateTime(new Date(RENDER_TIMESTAMP))}
+                  onChange={(event) => setExpiresAt(event.target.value)}
+                  type="datetime-local"
+                  value={expiresAt}
+                />
+              </label>
+            </div>
+          </section>
 
-          <div className="grid grid-cols-2 gap-4 max-[560px]:grid-cols-1">
-            <label>
-              <span className="mb-2 block text-xs text-[#9da5a1]">
-                Checklist
-              </span>
-              <select
-                className={fieldClass}
-                onChange={(event) => setTemplateId(event.target.value)}
-                value={templateId}
-              >
-                <option value="">Use project default</option>
-                {options.templates.map((template) => (
-                  <option
-                    key={template.template_id}
-                    value={template.template_id}
-                  >
-                    {template.template_name} · {template.item_count} items
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span className="mb-2 block text-xs text-[#9da5a1]">Expires</span>
+          <section className="mt-6 space-y-4 border-t border-white/[0.08] pt-5">
+            <h3 className="text-[10px] font-semibold tracking-[0.12em] text-[#68706c] uppercase">
+              Handoff context
+            </h3>
+            <label className="block">
+              <span className="mb-2 block text-xs text-[#9da5a1]">Reason</span>
               <input
                 className={fieldClass}
-                min={toLocalDateTime(new Date(RENDER_TIMESTAMP))}
-                onChange={(event) => setExpiresAt(event.target.value)}
-                type="datetime-local"
-                value={expiresAt}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="Why is ownership changing?"
+                value={reason}
               />
             </label>
-          </div>
+            <label className="block">
+              <span className="mb-2 block text-xs text-[#9da5a1]">Notes</span>
+              <textarea
+                className={`${fieldClass} min-h-24 resize-y py-3`}
+                onChange={(event) => setNotes(event.target.value)}
+                placeholder="Context the recipient should know"
+                value={notes}
+              />
+            </label>
+          </section>
 
-          <label>
-            <span className="mb-2 block text-xs text-[#9da5a1]">Reason</span>
-            <input
-              className={fieldClass}
-              onChange={(event) => setReason(event.target.value)}
-              placeholder="Why is ownership changing?"
-              value={reason}
-            />
-          </label>
-          <label>
-            <span className="mb-2 block text-xs text-[#9da5a1]">Notes</span>
-            <textarea
-              className={`${fieldClass} min-h-24 resize-y py-3`}
-              onChange={(event) => setNotes(event.target.value)}
-              placeholder="Context the recipient should know"
-              value={notes}
-            />
-          </label>
-
-          <div className="flex justify-end gap-3 border-t border-white/[0.08] pt-5">
+          <div className="mt-6 flex justify-end gap-3 border-t border-white/[0.08] pt-5">
             <button
               className="h-10 px-4 text-sm text-[#9da5a1] hover:text-white"
               onClick={onClose}
