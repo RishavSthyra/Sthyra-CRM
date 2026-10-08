@@ -20,6 +20,10 @@ export type UserProjectAccess = {
     company_code: string;
     company_name: string;
   };
+  team: {
+    team_id: string;
+    team_name: string;
+  };
   roleKey: string;
   canViewAllProjects: boolean;
   projects: AccessibleProject[];
@@ -34,7 +38,8 @@ export async function getUserProjectAccess(
        c.company_code,
        c.company_name,
        r.role_key,
-       u.team_id
+       u.team_id,
+       t.name AS team_name
      FROM users u
      JOIN teams t ON t.team_id = u.team_id
      JOIN companies c ON c.company_id = t.company_id
@@ -56,6 +61,7 @@ export async function getUserProjectAccess(
     company_name: string;
     role_key: string;
     team_id: string;
+    team_name: string;
   };
   const canViewAllProjects = COMPANY_WIDE_PROJECT_ROLES.has(row.role_key);
   const projects = await pool.query(
@@ -90,6 +96,10 @@ export async function getUserProjectAccess(
       company_id: Number(row.company_id),
       company_code: row.company_code,
       company_name: row.company_name,
+    },
+    team: {
+      team_id: row.team_id,
+      team_name: row.team_name,
     },
     roleKey: row.role_key,
     canViewAllProjects,

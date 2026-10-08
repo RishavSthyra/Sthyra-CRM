@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
-import { requireSuperAdmin } from "@/lib/authorization";
+import { requireAuditLogAccess } from "@/lib/authorization";
 import { parsePagination } from "@/utils/parsePagination";
 
 export async function GET(request: NextRequest) {
-  const scope = await requireSuperAdmin(request);
+  const scope = await requireAuditLogAccess(request);
   if (!scope.ok) return scope.response;
   const pagination = parsePagination(request.nextUrl.searchParams);
   if (!pagination.ok) {

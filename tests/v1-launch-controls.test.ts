@@ -75,9 +75,11 @@ test("signed request context binds an auth user to its tenant hostname", () => {
   process.env.AUTH_SECRET = previous;
 });
 
-test("audit permission remains super-admin only", () => {
+test("audit permission is available to company leadership roles", () => {
   assert.equal(roleHasPermission("SUPER_ADMIN", [], "AUDIT_VIEW"), true);
-  assert.equal(roleHasPermission("COMPANY_OWNER", ["AUDIT_VIEW"], "AUDIT_VIEW"), false);
+  assert.equal(roleHasPermission("COMPANY_OWNER", [], "AUDIT_VIEW"), true);
+  assert.equal(roleHasPermission("COMPANY_ADMIN", [], "AUDIT_VIEW"), true);
+  assert.equal(roleHasPermission("CUSTOM", ["AUDIT_VIEW"], "AUDIT_VIEW"), true);
   assert.equal(roleHasPermission("CUSTOM", ["DATA_EXPORT"], "DATA_EXPORT"), true);
   assert.equal(roleHasPermission("CUSTOM", [], "DATA_EXPORT"), false);
 });

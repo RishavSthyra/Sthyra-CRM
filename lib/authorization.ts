@@ -4,6 +4,7 @@ import {
   OperationsContext,
   requireOperationsContext,
 } from "@/lib/operationsAccess";
+import { hasAuditLogAccess } from "@/lib/projectAccessPolicy";
 
 const LEGACY_ADMIN_ROLES = new Set([
   "COMPANY_OWNER",
@@ -33,7 +34,6 @@ export function roleHasPermission(
   requiredPermission: string,
 ): boolean {
   if (roleKey === "SUPER_ADMIN") return true;
-  if (requiredPermission === "AUDIT_VIEW") return false;
   return (
     LEGACY_ADMIN_ROLES.has(roleKey) || permissionKeys.includes(requiredPermission)
   );
@@ -75,6 +75,29 @@ export async function requireSuperAdmin(
       ok: false,
       response: NextResponse.json(
         { error: "Super admin access is required" },
+        { status: 403 },
+      ),
+    };
+  }
+  const permissions = await getUserPermissionKeys(scope.context.userId);
+  return { ok: true, context: { ...scope.context, permissions } };
+}
+
+export async function requireAuditLogAccess(
+  request: NextRequest,
+): Promise<PermissionContextResult> {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope;
+  if (
+    !hasAuditLogAccess({
+      roleKey: scope.context.access.roleKey,
+      teamName: scope.context.access.team.team_name,
+    })
+  ) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "Leadership access is required" },
         { status: 403 },
       ),
     };

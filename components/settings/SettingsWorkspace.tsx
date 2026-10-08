@@ -57,6 +57,7 @@ import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 import { generateCodeFromName } from "@/utils/generateCodeFromName";
 import {
+  hasAuditLogAccess,
   isCompanyWideProjectRole,
   isLeadershipTeamName,
 } from "@/lib/projectAccessPolicy";
@@ -71,6 +72,7 @@ type Project = {
 };
 type ContextData = {
   company: { company_id: number; company_code: string; company_name: string };
+  team: { team_id: string; team_name: string };
   role_key: string;
   can_view_all_projects: boolean;
   permissions: string[];
@@ -717,8 +719,12 @@ export function SettingsWorkspace() {
   ].find((item) => item.id === section);
   const admin = context?.can_view_all_projects === true;
   const permissionKeys = new Set(context?.permissions ?? []);
+  const canViewAuditLog = hasAuditLogAccess({
+    roleKey: context?.role_key,
+    teamName: context?.team.team_name,
+  });
   const visibleCompanySections = companySections.filter((item) => {
-    if (item.id === "audit-log") return context?.role_key === "SUPER_ADMIN";
+    if (item.id === "audit-log") return canViewAuditLog;
     if (admin) return true;
     if (item.id === "people") return permissionKeys.has("PEOPLE_MANAGE");
     if (item.id === "projects" || item.id === "regions")
@@ -993,10 +999,13 @@ function SettingsPanel(props: PanelProps) {
     return <CatalogPanel {...props} kind="tags" rows={props.tags} />;
   if (props.section === "data-tools") return <DataToolsPanel {...props} />;
   if (props.section === "audit-log")
-    return props.context?.role_key === "SUPER_ADMIN" ? (
+    return hasAuditLogAccess({
+      roleKey: props.context?.role_key,
+      teamName: props.context?.team.team_name,
+    }) ? (
       <AuditLogPanel {...props} />
     ) : (
-      <Empty>Super admin access is required.</Empty>
+      <Empty>Leadership access is required.</Empty>
     );
   if (!projectId)
     return <Empty>Select a project to configure this section.</Empty>;
@@ -2071,7 +2080,7 @@ function AuditLogPanel(props: PanelProps) {
   return (
     <Card
       title="Detailed audit log"
-      description="Visible only to super admins. Secret and token fields are redacted before storage."
+      description="Visible only to Leadership. Secret and token fields are redacted before storage."
     >
       {loadingLogs ? (
         <div className="py-12 text-center text-xs text-[#777f7c]">Loading changes…</div>

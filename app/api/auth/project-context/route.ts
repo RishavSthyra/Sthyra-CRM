@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
     );
     const response = NextResponse.json({
       company: access.company,
+      team: access.team,
       role_key: access.roleKey,
       can_view_all_projects: access.canViewAllProjects,
       permissions,

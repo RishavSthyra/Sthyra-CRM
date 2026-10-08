@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  hasAuditLogAccess,
   hasProjectWideLeadVisibility,
   isCompanyWideProjectRole,
   isLeadershipTeamName,
@@ -43,6 +44,25 @@ test("lead visibility is project-wide only for trusted assignment scopes", () =>
 test("leadership team matching is case and whitespace insensitive", () => {
   assert.equal(isLeadershipTeamName(" Leadership "), true);
   assert.equal(isLeadershipTeamName("Sales Team"), false);
+});
+
+test("audit logs are available to company leaders and Leadership team members", () => {
+  assert.equal(
+    hasAuditLogAccess({ roleKey: "COMPANY_OWNER", teamName: "Sales" }),
+    true,
+  );
+  assert.equal(
+    hasAuditLogAccess({ roleKey: "COMPANY_ADMIN", teamName: "Operations" }),
+    true,
+  );
+  assert.equal(
+    hasAuditLogAccess({ roleKey: "CUSTOM", teamName: " Leadership " }),
+    true,
+  );
+  assert.equal(
+    hasAuditLogAccess({ roleKey: "SALES_EXECUTIVE", teamName: "Sales" }),
+    false,
+  );
 });
 
 test("project selections accept unique positive integer IDs", () => {
