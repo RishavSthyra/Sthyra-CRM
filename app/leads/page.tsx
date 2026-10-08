@@ -37,6 +37,10 @@ type Lead = {
   temperature?: string | null;
   current_owner_user_id?: string | null;
   current_team_id?: string | null;
+  owner_first_name?: string | null;
+  owner_last_name?: string | null;
+  owner_email?: string | null;
+  owner_team_name?: string | null;
   source_id?: string | null;
   campaign_id?: string | null;
   sub_source?: string | null;
@@ -286,6 +290,19 @@ function label(value?: string | null) {
         .replaceAll("_", " ")
         .replace(/\b\w/g, (letter) => letter.toUpperCase())
     : "—";
+}
+
+function leadOwnerName(lead: Lead) {
+  const personName = [lead.owner_first_name, lead.owner_last_name]
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join(" ");
+
+  if (personName) return personName;
+  if (lead.owner_email) return lead.owner_email;
+  if (lead.owner_team_name) return lead.owner_team_name;
+  if (lead.current_owner_user_id || lead.current_team_id) return "Unknown owner";
+  return "Unassigned";
 }
 
 function LeadStatus({ lead }: { lead: Lead }) {
@@ -1304,7 +1321,7 @@ export default function LeadsPage() {
                         <LeadStatus lead={lead} />
                       </td>
                       <td>
-                        {lead.current_owner_user_id ? "Assigned" : "Unassigned"}
+                        {leadOwnerName(lead)}
                       </td>
                       <td>{lead.source_id ? "Source" : "—"}</td>
                       <td>{lead.sub_source || "—"}</td>
@@ -1582,12 +1599,7 @@ export default function LeadsPage() {
                         </div>
                         <div>
                           <span>Owner</span>
-                          <strong>
-                            {currentLead.current_owner_user_id ||
-                            currentLead.current_team_id
-                              ? "Assigned"
-                              : "Unassigned"}
-                          </strong>
+                          <strong>{leadOwnerName(currentLead)}</strong>
                         </div>
                         <div>
                           <span>Temperature</span>

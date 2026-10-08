@@ -30,6 +30,10 @@ export async function GET(request: NextRequest, context: Context) {
     );
     const result = await pool.query(
       `SELECT l.*, TO_JSONB(c) AS contact,
+              owner.first_name AS owner_first_name,
+              owner.last_name AS owner_last_name,
+              owner.email AS owner_email,
+              owner_team.name AS owner_team_name,
               CASE WHEN s.stage_id IS NULL THEN NULL ELSE JSONB_BUILD_OBJECT(
                 'stage_id', s.stage_id, 'stage_key', s.stage_key,
                 'stage_name', s.stage_name, 'is_terminal', s.is_terminal
@@ -42,6 +46,8 @@ export async function GET(request: NextRequest, context: Context) {
               ) END AS opportunity
        FROM leads l JOIN contacts c ON c.contact_id=l.contact_id
        LEFT JOIN project_lead_stages s ON s.stage_id=l.stage_id
+       LEFT JOIN users owner ON owner.user_id=l.current_owner_user_id
+       LEFT JOIN teams owner_team ON owner_team.team_id=l.current_team_id
        LEFT JOIN opportunities o ON o.lead_id=l.lead_id
        WHERE ${filters.join(" AND ")}`,
       values,

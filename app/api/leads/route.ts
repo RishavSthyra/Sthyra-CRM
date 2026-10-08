@@ -192,12 +192,18 @@ export async function GET(request: NextRequest) {
        `SELECT l.*, c.first_name, c.last_name, c.email, c.phone_number,
               p.project_code, p.project_name,
               s.stage_key, s.stage_name,
+              owner.first_name AS owner_first_name,
+              owner.last_name AS owner_last_name,
+              owner.email AS owner_email,
+              owner_team.name AS owner_team_name,
               o.opportunity_id, o.opportunity_name,
               o.stage_key AS opportunity_stage_key,
               o.status AS opportunity_status
        FROM leads l JOIN contacts c ON c.contact_id=l.contact_id
        JOIN projects p ON p.project_id=l.project_id
        LEFT JOIN project_lead_stages s ON s.stage_id=l.stage_id
+       LEFT JOIN users owner ON owner.user_id=l.current_owner_user_id
+       LEFT JOIN teams owner_team ON owner_team.team_id=l.current_team_id
        LEFT JOIN opportunities o ON o.lead_id=l.lead_id
        ${where} ORDER BY ${orderBy}
        LIMIT $${listValues.length - 1} OFFSET $${listValues.length}`,
