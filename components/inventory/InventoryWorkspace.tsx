@@ -7,6 +7,7 @@ import {
   Boxes,
   Building2,
   Check,
+  ChevronDown,
   ChevronRight,
   Clock3,
   FileImage,
@@ -105,7 +106,7 @@ const statusStyles: Record<InventoryStatus, string> = {
 };
 
 const inputClass =
-  "h-10 w-full rounded-lg border border-white/[0.11] bg-[#0a0d0b] px-3 text-sm text-white outline-none transition placeholder:text-[#59605d] focus:border-[#57d6b1]/55 focus:ring-2 focus:ring-[#57d6b1]/10";
+  "h-11 w-full rounded-[10px] border border-[#2c2c2c] bg-[#111] px-3 text-sm text-white outline-none transition placeholder:text-[#666] focus:border-[#57d6b1]/60";
 
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetchWithSession(url, { cache: "no-store" });
@@ -219,11 +220,9 @@ function EmptyState({
 
 function Metric({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="min-w-0 px-5 py-4 first:pl-0 max-[760px]:px-3 max-[760px]:first:pl-3">
-      <p className="truncate text-[11px] font-medium tracking-[0.08em] text-[#6f7773] uppercase">
-        {label}
-      </p>
-      <p className="mt-1.5 text-xl font-semibold tracking-[-0.03em] text-[#edf0ee]">
+    <div className="min-w-0 px-4 py-4 max-[1050px]:border-b max-[1050px]:border-[#2c2c2c] max-[1050px]:last:border-b-0">
+      <p className="truncate text-[11px] font-medium text-[#929292]">{label}</p>
+      <p className="mt-2 text-2xl font-semibold tracking-[-0.03em] text-white">
         {value}
       </p>
     </div>
@@ -1245,7 +1244,7 @@ export function InventoryWorkspace() {
 
   if (loading) {
     return (
-      <main className="min-h-dvh bg-[#070908] text-white">
+      <main className="min-h-dvh bg-black text-white">
         <DashboardSidebar />
         <div className="ml-[96px] grid min-h-dvh place-items-center max-[560px]:ml-[88px]">
           <LoaderCircle className="size-6 animate-spin text-[#55d3ae]" />
@@ -1255,26 +1254,29 @@ export function InventoryWorkspace() {
   }
 
   return (
-    <main className="min-h-dvh bg-[#070908] text-white">
+    <main className="min-h-dvh bg-black text-white">
       <DashboardSidebar />
-      <div className="ml-[96px] min-h-dvh max-[560px]:ml-[88px]">
-        <header className="border-b border-white/[0.08] px-7 py-6 max-[700px]:px-4">
-          <div className="mx-auto flex max-w-[1680px] flex-wrap items-start justify-between gap-5">
-            <div>
-              <p className="text-[10px] font-semibold tracking-[0.17em] text-[#69716d] uppercase">
-                Sales operations
-              </p>
-              <h1 className="mt-1.5 text-[28px] font-semibold tracking-[-0.04em] text-[#f4f6f5]">
-                Inventory
-              </h1>
-              <p className="mt-1 text-sm text-[#7d8581]">
-                Availability, configurations and pricing in one workspace.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
+      <section className="ml-[96px] min-h-dvh py-8 pr-8 pb-12 max-[780px]:py-5 max-[780px]:pr-4 max-[560px]:ml-[84px] max-[560px]:px-3">
+        <header className="flex flex-wrap items-end justify-between gap-5">
+          <div>
+            <p className="text-xs text-[#5b5b5b]">
+              {context?.company.company_name ?? "Workspace"} / Inventory
+            </p>
+            <h1 className="mt-3 font-[var(--font-bricolage)] text-[clamp(32px,3.2vw,44px)] font-medium tracking-[-0.035em]">
+              Inventory
+            </h1>
+            <p className="mt-2 text-sm text-[#b4b4b4]">
+              Availability, configurations and pricing in one workspace.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-end justify-end gap-2">
+            <label className="relative block min-w-[240px]">
+              <span className="mb-2 block text-[11px] font-medium text-[#777]">
+                Project
+              </span>
               <select
                 aria-label="Project"
-                className="h-10 min-w-48 rounded-lg border border-white/[0.11] bg-[#0e120f] px-3 text-sm text-[#d4d8d6] outline-none focus:border-[#57d6b1]/45"
+                className="h-11 w-full appearance-none rounded-[10px] border border-[#363636] bg-[#151515] pr-10 pl-4 text-sm text-[#d8d8d8] outline-none transition focus:border-[#57d6b1]/70"
                 onChange={(event) => {
                   setPage(1);
                   setUnitDetail(null);
@@ -1289,37 +1291,38 @@ export function InventoryWorkspace() {
                   </option>
                 ))}
               </select>
+              <ChevronDown className="pointer-events-none absolute right-3 bottom-3.5 size-4 text-[#777]" />
+            </label>
+            <button
+              aria-label="Refresh inventory"
+              className="grid size-11 place-items-center rounded-[10px] border border-[#363636] bg-[#191919] text-[#999] transition hover:bg-[#262626] hover:text-white"
+              onClick={() => refreshAll(true)}
+              type="button"
+            >
+              <RefreshCw
+                className={`size-4 ${refreshing ? "animate-spin" : ""}`}
+              />
+            </button>
+            {tab === "units" && (
               <button
-                aria-label="Refresh inventory"
-                className="grid size-10 place-items-center rounded-lg border border-white/[0.11] bg-[#0e120f] text-[#9da49f] transition hover:bg-white/[0.05] hover:text-white"
-                onClick={() => refreshAll(true)}
+                className="flex h-11 items-center gap-2 rounded-[10px] border border-[#363636] bg-[#191919] px-3 text-sm font-medium text-[#bcc2bf] transition hover:bg-[#262626] hover:text-white max-[640px]:hidden"
+                onClick={() => openDialog("generate")}
                 type="button"
               >
-                <RefreshCw
-                  className={`size-4 ${refreshing ? "animate-spin" : ""}`}
-                />
+                <Sparkles className="size-4" /> Generate
               </button>
-              {tab === "units" && (
-                <button
-                  className="flex h-10 items-center gap-2 rounded-lg border border-white/[0.11] bg-[#0e120f] px-3 text-sm font-medium text-[#bcc2bf] transition hover:bg-white/[0.05] hover:text-white max-[640px]:hidden"
-                  onClick={() => openDialog("generate")}
-                  type="button"
-                >
-                  <Sparkles className="size-4" /> Generate
-                </button>
-              )}
-              <button
-                className="flex h-10 items-center gap-2 rounded-lg bg-[#27886c] px-4 text-sm font-semibold text-white transition hover:bg-[#2d9b7b]"
-                onClick={() => openDialog(primaryAction[tab].kind)}
-                type="button"
-              >
-                <Plus className="size-4" /> {primaryAction[tab].label}
-              </button>
-            </div>
+            )}
+            <button
+              className="flex h-11 items-center gap-2 rounded-[10px] bg-[#27886c] px-4 text-sm font-semibold text-white transition hover:bg-[#2d9b7b]"
+              onClick={() => openDialog(primaryAction[tab].kind)}
+              type="button"
+            >
+              <Plus className="size-4" /> {primaryAction[tab].label}
+            </button>
           </div>
         </header>
 
-        <div className="mx-auto max-w-[1680px] px-7 pb-8 max-[700px]:px-4">
+        <div>
           {!selectedProjectId ? (
             <EmptyState
               description="Create or join a project before setting up inventory."
@@ -1328,25 +1331,33 @@ export function InventoryWorkspace() {
             />
           ) : (
             <>
-              <section className="grid grid-cols-6 divide-x divide-white/[0.07] border-b border-white/[0.08] max-[980px]:grid-cols-3 max-[980px]:divide-x-0 max-[560px]:grid-cols-2">
-                <Metric
-                  label="Total units"
-                  value={summary?.unit_count ?? "—"}
-                />
-                <Metric label="Available" value={statusCounts.available ?? 0} />
-                <Metric label="On hold" value={statusCounts.held ?? 0} />
-                <Metric label="Reserved" value={statusCounts.reserved ?? 0} />
-                <Metric label="Booked" value={statusCounts.booked ?? 0} />
-                <Metric label="Sold" value={statusCounts.sold ?? 0} />
+              <section className="mt-7 overflow-hidden rounded-2xl border border-[#2c2c2c] bg-[#080808]">
+                <header className="border-b border-[#2c2c2c] bg-[#191919] px-4 py-3 text-sm font-medium text-[#dedede]">
+                  Overview
+                </header>
+                <div className="grid grid-cols-6 divide-x divide-[#2c2c2c] max-[1050px]:grid-cols-3 max-[1050px]:divide-x-0 max-[560px]:grid-cols-2">
+                  <Metric
+                    label="Total units"
+                    value={summary?.unit_count ?? "—"}
+                  />
+                  <Metric
+                    label="Available"
+                    value={statusCounts.available ?? 0}
+                  />
+                  <Metric label="On hold" value={statusCounts.held ?? 0} />
+                  <Metric label="Reserved" value={statusCounts.reserved ?? 0} />
+                  <Metric label="Booked" value={statusCounts.booked ?? 0} />
+                  <Metric label="Sold" value={statusCounts.sold ?? 0} />
+                </div>
               </section>
 
-              <nav className="flex items-center gap-6 overflow-x-auto border-b border-white/[0.08] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <nav className="mt-4 flex items-center gap-1 overflow-x-auto rounded-xl border border-[#2c2c2c] bg-[#191919] p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {tabs.map((item) => (
                   <button
-                    className={`relative flex h-[58px] shrink-0 items-center gap-2 text-sm font-medium transition ${
+                    className={`relative flex h-10 shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-medium transition ${
                       tab === item.key
-                        ? "text-white"
-                        : "text-[#777f7b] hover:text-[#c8cdca]"
+                        ? "bg-[#3b3b3b] text-white"
+                        : "text-[#999] hover:bg-[#242424] hover:text-white"
                     }`}
                     key={item.key}
                     onClick={() => setTab(item.key)}
@@ -1357,9 +1368,6 @@ export function InventoryWorkspace() {
                       <span className="text-[11px] text-[#5f6763]">
                         {item.count}
                       </span>
-                    )}
-                    {tab === item.key && (
-                      <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-[#50d3ac]" />
                     )}
                   </button>
                 ))}
@@ -1421,13 +1429,13 @@ export function InventoryWorkspace() {
                     </p>
                   </div>
 
-                  <div className="overflow-hidden rounded-xl border border-white/[0.09] bg-[#0b0e0c]">
+                  <div className="overflow-hidden rounded-2xl border border-[#2c2c2c] bg-[#080808]">
                     {unitsLoading ? (
                       <SkeletonRows />
                     ) : units.length ? (
                       <div className="overflow-x-auto">
                         <table className="w-full min-w-[1040px] text-left">
-                          <thead className="border-b border-white/[0.08] bg-white/[0.018]">
+                          <thead className="border-b border-[#2c2c2c] bg-[#191919]">
                             <tr className="text-[10px] font-semibold tracking-[0.08em] text-[#69716d] uppercase">
                               <th className="px-5 py-3.5">Unit</th>
                               <th className="px-5 py-3.5">Type</th>
@@ -1438,10 +1446,10 @@ export function InventoryWorkspace() {
                               <th className="w-12 px-4 py-3.5" />
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-white/[0.06]">
+                          <tbody className="divide-y divide-[#2c2c2c]">
                             {units.map((unit) => (
                               <tr
-                                className="cursor-pointer transition hover:bg-white/[0.025]"
+                                className="h-[72px] cursor-pointer transition hover:bg-[#101010]"
                                 key={unit.unit_id}
                                 onClick={() => {
                                   setUnitDetail(null);
@@ -1585,10 +1593,10 @@ export function InventoryWorkspace() {
                       </button>
                     </div>
                     {unitTypes.length ? (
-                      <div className="divide-y divide-white/[0.07] border-y border-white/[0.08]">
+                      <div className="overflow-hidden rounded-xl border border-[#2c2c2c] bg-[#080808] divide-y divide-[#2c2c2c]">
                         {unitTypes.map((type) => (
                           <div
-                            className="grid grid-cols-[minmax(0,1.3fr)_minmax(100px,.65fr)_minmax(120px,.65fr)_90px] items-center gap-5 py-4 max-[760px]:grid-cols-[minmax(0,1fr)_90px]"
+                            className="grid grid-cols-[minmax(0,1.3fr)_minmax(100px,.65fr)_minmax(120px,.65fr)_90px] items-center gap-5 px-4 py-4 transition hover:bg-[#101010] max-[760px]:grid-cols-[minmax(0,1fr)_90px]"
                             key={type.unit_type_id}
                           >
                             <div className="flex min-w-0 items-center gap-3">
@@ -1669,10 +1677,10 @@ export function InventoryWorkspace() {
                       </button>
                     </div>
                     {floorPlans.length ? (
-                      <div className="divide-y divide-white/[0.07] border-y border-white/[0.08]">
+                      <div className="overflow-hidden rounded-xl border border-[#2c2c2c] bg-[#080808] divide-y divide-[#2c2c2c]">
                         {floorPlans.map((plan) => (
                           <div
-                            className="flex items-center gap-3 py-4"
+                            className="flex items-center gap-3 px-4 py-4 transition hover:bg-[#101010]"
                             key={plan.floor_plan_id}
                           >
                             <span className="grid size-10 shrink-0 place-items-center rounded-lg border border-white/[0.07] bg-white/[0.035] text-[#8d9591]">
@@ -1704,7 +1712,7 @@ export function InventoryWorkspace() {
                         ))}
                       </div>
                     ) : (
-                      <div className="border-y border-white/[0.08] py-10 text-center">
+                      <div className="rounded-xl border border-[#2c2c2c] bg-[#080808] py-10 text-center">
                         <p className="text-sm text-[#747c78]">
                           No floor plans yet.
                         </p>
@@ -1747,16 +1755,16 @@ export function InventoryWorkspace() {
                     </button>
                   </div>
                   {nodes.length ? (
-                    <div className="overflow-hidden rounded-xl border border-white/[0.09] bg-[#0b0e0c]">
-                      <div className="grid grid-cols-[minmax(0,1fr)_180px_140px] border-b border-white/[0.08] px-5 py-3 text-[10px] font-semibold tracking-[0.08em] text-[#69716d] uppercase max-[680px]:grid-cols-[minmax(0,1fr)_100px]">
+                    <div className="overflow-hidden rounded-2xl border border-[#2c2c2c] bg-[#080808]">
+                      <div className="grid grid-cols-[minmax(0,1fr)_180px_140px] border-b border-[#2c2c2c] bg-[#191919] px-5 py-3 text-[10px] font-semibold tracking-[0.08em] text-[#777] uppercase max-[680px]:grid-cols-[minmax(0,1fr)_100px]">
                         <span>Location</span>
                         <span className="max-[680px]:hidden">Code</span>
                         <span>Kind</span>
                       </div>
-                      <div className="divide-y divide-white/[0.06]">
+                      <div className="divide-y divide-[#2c2c2c]">
                         {nodes.map((node) => (
                           <div
-                            className="grid grid-cols-[minmax(0,1fr)_180px_140px] items-center px-5 py-3.5 max-[680px]:grid-cols-[minmax(0,1fr)_100px]"
+                            className="grid grid-cols-[minmax(0,1fr)_180px_140px] items-center px-5 py-3.5 transition hover:bg-[#101010] max-[680px]:grid-cols-[minmax(0,1fr)_100px]"
                             key={node.node_id}
                           >
                             <div
@@ -1841,7 +1849,7 @@ export function InventoryWorkspace() {
                       </button>
                     </div>
                     {imports.length ? (
-                      <div className="divide-y divide-white/[0.07] border-y border-white/[0.08]">
+                      <div className="overflow-hidden rounded-xl border border-[#2c2c2c] bg-[#080808] divide-y divide-[#2c2c2c]">
                         {imports.map((job) => {
                           const total = Number(job.total_rows || 0);
                           const succeeded = Number(job.succeeded_rows || 0);
@@ -1850,7 +1858,10 @@ export function InventoryWorkspace() {
                             ? Math.round(((succeeded + failed) / total) * 100)
                             : 0;
                           return (
-                            <div className="py-4" key={job.import_id}>
+                            <div
+                              className="px-4 py-4 transition hover:bg-[#101010]"
+                              key={job.import_id}
+                            >
                               <div className="flex items-center gap-3">
                                 <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-white/[0.045] text-[#89918d]">
                                   {job.source === "generator" ? (
@@ -1936,7 +1947,7 @@ export function InventoryWorkspace() {
             </>
           )}
         </div>
-      </div>
+      </section>
 
       {dialog && selectedProjectId && (
         <InventoryDialog

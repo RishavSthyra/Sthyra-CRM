@@ -80,15 +80,13 @@ function Metric({
   detail: string;
 }) {
   return (
-    <div className="min-w-0 border-r border-white/[0.08] px-5 py-4 last:border-r-0">
-      <div className="text-[10px] font-semibold tracking-[0.16em] text-[#737b78] uppercase">
-        {label}
-      </div>
-      <div className="mt-2 flex items-end justify-between gap-3">
-        <strong className="text-[26px] leading-none font-medium tracking-[-0.04em] text-white">
+    <div className="min-w-0 border-r border-[#2c2c2c] px-4 py-4 last:border-r-0 max-[900px]:border-b max-[900px]:border-[#2c2c2c] max-[520px]:border-r-0">
+      <div className="text-[11px] font-medium text-[#929292]">{label}</div>
+      <div className="mt-2">
+        <strong className="block truncate text-2xl leading-none font-semibold tracking-[-0.03em] text-white">
           {value}
         </strong>
-        <span className="truncate pb-0.5 text-[10px] text-[#626a67]">
+        <span className="mt-1.5 block truncate text-[11px] text-[#707070]">
           {detail}
         </span>
       </div>
@@ -153,7 +151,7 @@ function SelectControl({
     <div className={`relative ${className}`}>
       <select
         {...props}
-        className="h-11 w-full cursor-pointer appearance-none rounded-lg border border-white/[0.11] bg-[#080b0a] py-0 pr-10 pl-3 text-sm text-white outline-none transition focus:border-[#50cdaa]/60 focus:ring-2 focus:ring-[#50cdaa]/10"
+        className="h-11 w-full cursor-pointer appearance-none rounded-[10px] border border-[#363636] bg-[#151515] py-0 pr-10 pl-4 text-sm text-[#d8d8d8] outline-none transition focus:border-[#50cdaa]/70"
       >
         {children}
       </select>
@@ -287,51 +285,62 @@ export function MarketingWorkspace() {
   }
 
   return (
-    <div className="min-h-dvh bg-[#030504] text-white">
+    <div className="min-h-dvh bg-black text-white">
       <DashboardSidebar />
-      <main className="ml-[92px] min-h-dvh px-7 py-6 max-[760px]:ml-[84px] max-[760px]:px-4">
-        <header className="flex flex-wrap items-end justify-between gap-4 border-b border-white/[0.09] pb-5">
+      <main className="ml-[96px] min-h-dvh py-8 pr-8 pb-12 max-[780px]:py-5 max-[780px]:pr-4 max-[560px]:ml-[84px] max-[560px]:px-3">
+        <header className="flex flex-wrap items-end justify-between gap-5">
           <div>
-            <h1 className="text-[34px] leading-none font-medium tracking-[-0.04em]">
+            <p className="text-xs text-[#5b5b5b]">Growth / Marketing</p>
+            <h1 className="mt-3 font-[var(--font-bricolage)] text-[clamp(32px,3.2vw,44px)] font-medium tracking-[-0.035em]">
               Marketing
             </h1>
-            <p className="mt-2 text-sm text-[#707875]">
+            <p className="mt-2 text-sm text-[#b4b4b4]">
               Capture demand, stitch every touchpoint and close the loop with ad
               platforms.
             </p>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            <SelectControl
-              aria-label="Filter by project"
-              className="w-64"
-              value={project}
-              onChange={(event) => setProject(event.target.value)}
-            >
-              <option value="">All accessible projects</option>
-              {overview?.projects.map((item) => (
-                <option
-                  key={String(item.project_id)}
-                  value={String(item.project_id)}
-                >
-                  {String(item.project_name)}
-                </option>
-              ))}
-            </SelectControl>
-            <SelectControl
-              aria-label="Reporting period"
-              className="w-32"
-              value={days}
-              onChange={(event) => setDays(event.target.value)}
-            >
-              <option value="30">30 days</option>
-              <option value="90">90 days</option>
-              <option value="180">180 days</option>
-              <option value="365">1 year</option>
-            </SelectControl>
+          <div className="flex flex-wrap items-end justify-end gap-2">
+            <div>
+              <span className="mb-2 block text-[11px] font-medium text-[#777]">
+                Project
+              </span>
+              <SelectControl
+                aria-label="Filter by project"
+                className="w-64 max-[560px]:w-full"
+                value={project}
+                onChange={(event) => setProject(event.target.value)}
+              >
+                <option value="">All accessible projects</option>
+                {overview?.projects.map((item) => (
+                  <option
+                    key={String(item.project_id)}
+                    value={String(item.project_id)}
+                  >
+                    {String(item.project_name)}
+                  </option>
+                ))}
+              </SelectControl>
+            </div>
+            <div>
+              <span className="mb-2 block text-[11px] font-medium text-[#777]">
+                Reporting period
+              </span>
+              <SelectControl
+                aria-label="Reporting period"
+                className="w-36"
+                value={days}
+                onChange={(event) => setDays(event.target.value)}
+              >
+                <option value="30">30 days</option>
+                <option value="90">90 days</option>
+                <option value="180">180 days</option>
+                <option value="365">1 year</option>
+              </SelectControl>
+            </div>
             <button
               aria-label="Refresh marketing data"
               title="Refresh"
-              className="flex size-9 items-center justify-center text-[#7f8884] transition hover:text-white"
+              className="flex size-11 items-center justify-center rounded-[10px] border border-[#363636] bg-[#191919] text-[#999] transition hover:bg-[#262626] hover:text-white"
               onClick={() => void load()}
             >
               <RefreshCw
@@ -341,34 +350,39 @@ export function MarketingWorkspace() {
           </div>
         </header>
 
-        <div className="grid grid-cols-4 border-b border-white/[0.09] max-[900px]:grid-cols-2">
-          <Metric
-            label="Visitors"
-            value={asNumber(summary.visitors).toLocaleString("en-IN")}
-            detail={`${days}-day reach`}
-          />
-          <Metric
-            label="Touchpoints"
-            value={asNumber(summary.touchpoints).toLocaleString("en-IN")}
-            detail={`${asNumber(summary.submissions)} submissions`}
-          />
-          <Metric
-            label="Attributed leads"
-            value={asNumber(summary.attributed_leads).toLocaleString("en-IN")}
-            detail="CRM records"
-          />
-          <Metric
-            label="Conversion"
-            value={`${asNumber(summary.conversion_rate).toFixed(1)}%`}
-            detail="Visitor to lead"
-          />
-        </div>
+        <section className="mt-7 overflow-hidden rounded-2xl border border-[#2c2c2c] bg-[#080808]">
+          <header className="border-b border-[#2c2c2c] bg-[#191919] px-4 py-3 text-sm font-medium text-[#dedede]">
+            Overview
+          </header>
+          <div className="grid grid-cols-4 max-[900px]:grid-cols-2 max-[520px]:grid-cols-1">
+            <Metric
+              label="Visitors"
+              value={asNumber(summary.visitors).toLocaleString("en-IN")}
+              detail={`${days}-day reach`}
+            />
+            <Metric
+              label="Touchpoints"
+              value={asNumber(summary.touchpoints).toLocaleString("en-IN")}
+              detail={`${asNumber(summary.submissions)} submissions`}
+            />
+            <Metric
+              label="Attributed leads"
+              value={asNumber(summary.attributed_leads).toLocaleString("en-IN")}
+              detail="CRM records"
+            />
+            <Metric
+              label="Conversion"
+              value={`${asNumber(summary.conversion_rate).toFixed(1)}%`}
+              detail="Visitor to lead"
+            />
+          </div>
+        </section>
 
-        <nav className="flex items-center gap-6 overflow-x-auto border-b border-white/[0.09] pt-2">
+        <nav className="mt-4 flex items-center gap-1 overflow-x-auto rounded-xl border border-[#2c2c2c] bg-[#191919] p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {tabs.map((item) => (
             <button
               key={item.key}
-              className={`border-b-2 px-0 py-3 text-xs font-medium whitespace-nowrap transition ${tab === item.key ? "border-[#50cdaa] text-white" : "border-transparent text-[#707875] hover:text-[#c2c8c5]"}`}
+              className={`h-10 shrink-0 rounded-lg px-4 text-xs font-medium whitespace-nowrap transition ${tab === item.key ? "bg-[#3b3b3b] text-white" : "text-[#999] hover:bg-[#242424] hover:text-white"}`}
               onClick={() => setTab(item.key)}
             >
               {item.label}
@@ -391,8 +405,8 @@ export function MarketingWorkspace() {
         ) : null}
 
         {!error && overview && tab === "overview" ? (
-          <section className="grid grid-cols-[minmax(0,1.65fr)_minmax(300px,.65fr)] max-[1050px]:grid-cols-1">
-            <div className="border-r border-white/[0.09] py-5 pr-6 max-[1050px]:border-r-0 max-[1050px]:pr-0">
+          <section className="mt-4 grid grid-cols-[minmax(0,1.65fr)_minmax(300px,.65fr)] overflow-hidden rounded-2xl border border-[#2c2c2c] bg-[#080808] max-[1050px]:grid-cols-1">
+            <div className="border-r border-[#2c2c2c] p-5 max-[1050px]:border-r-0">
               <div className="flex items-center justify-between">
                 <div>
                   <span className="text-[10px] tracking-[0.18em] text-[#50cdaa] uppercase">
@@ -458,7 +472,7 @@ export function MarketingWorkspace() {
                 )}
               </div>
             </div>
-            <div className="py-5 pl-6 max-[1050px]:border-t max-[1050px]:border-white/[0.09] max-[1050px]:pl-0">
+            <div className="p-5 max-[1050px]:border-t max-[1050px]:border-[#2c2c2c]">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] tracking-[0.18em] text-[#77807c] uppercase">
                   Source performance
@@ -536,7 +550,7 @@ export function MarketingWorkspace() {
         ) : null}
 
         {!error && overview && tab === "forms" ? (
-          <section className="py-5">
+          <section className="mt-4 rounded-2xl border border-[#2c2c2c] bg-[#080808] p-5">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-medium">Capture endpoints</h2>
@@ -553,11 +567,11 @@ export function MarketingWorkspace() {
               </button>
             </div>
             {forms.length ? (
-              <div className="mt-5 divide-y divide-white/[0.07] border-y border-white/[0.09]">
+              <div className="mt-5 overflow-hidden rounded-xl border border-[#2c2c2c] bg-[#0b0b0b] divide-y divide-[#2c2c2c]">
                 {forms.map((form) => (
                   <div
                     key={String(form.form_id)}
-                    className="grid grid-cols-[minmax(200px,1fr)_150px_150px_130px_auto] items-center gap-4 py-4 max-[950px]:grid-cols-[1fr_auto]"
+                    className="grid grid-cols-[minmax(200px,1fr)_150px_150px_130px_auto] items-center gap-4 px-4 py-4 transition hover:bg-[#101010] max-[950px]:grid-cols-[1fr_auto]"
                   >
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
@@ -574,7 +588,7 @@ export function MarketingWorkspace() {
                         {String(form.project_name)} · {String(form.public_key)}
                       </p>
                     </div>
-                    <div>
+                    <div className="max-[950px]:hidden">
                       <span className="block text-[9px] tracking-wider text-[#616966] uppercase">
                         Provider
                       </span>
@@ -582,7 +596,7 @@ export function MarketingWorkspace() {
                         {String(form.provider).replaceAll("_", " ")}
                       </span>
                     </div>
-                    <div>
+                    <div className="max-[950px]:hidden">
                       <span className="block text-[9px] tracking-wider text-[#616966] uppercase">
                         Attribution
                       </span>
@@ -591,7 +605,7 @@ export function MarketingWorkspace() {
                         {String(form.campaign_name ?? "No campaign")}
                       </span>
                     </div>
-                    <div>
+                    <div className="max-[950px]:hidden">
                       <span className="block text-[9px] tracking-wider text-[#616966] uppercase">
                         Captured
                       </span>
@@ -672,7 +686,7 @@ export function MarketingWorkspace() {
         ) : null}
 
         {!error && overview && tab === "integrations" ? (
-          <section className="py-5">
+          <section className="mt-4 rounded-2xl border border-[#2c2c2c] bg-[#080808] p-5">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-medium">Connected platforms</h2>
@@ -693,7 +707,7 @@ export function MarketingWorkspace() {
                 {integrations.map((integration) => (
                   <div
                     key={String(integration.integration_id)}
-                    className="rounded-xl border border-white/[0.09] bg-white/[0.018] p-5"
+                    className="rounded-xl border border-[#2c2c2c] bg-[#111] p-5 transition hover:border-[#3b3b3b]"
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex gap-3">
@@ -833,16 +847,21 @@ function DataTable({
   emptyBody: string;
   action?: (row: RecordValue) => React.ReactNode;
 }) {
-  if (!rows.length) return <Empty title={emptyTitle} body={emptyBody} />;
+  if (!rows.length)
+    return (
+      <div className="mt-4 rounded-2xl border border-[#2c2c2c] bg-[#080808]">
+        <Empty title={emptyTitle} body={emptyBody} />
+      </div>
+    );
   return (
-    <div className="overflow-x-auto py-4">
+    <div className="mt-4 overflow-x-auto rounded-2xl border border-[#2c2c2c] bg-[#080808]">
       <table className="w-full min-w-[880px] border-collapse text-left">
-        <thead>
-          <tr className="border-b border-white/[0.09]">
+        <thead className="bg-[#191919]">
+          <tr className="border-b border-[#2c2c2c]">
             {columns.map((column) => (
               <th
                 key={column.key}
-                className="px-3 py-3 text-[9px] font-semibold tracking-[0.16em] text-[#626a67] uppercase first:pl-0"
+                className="h-10 px-4 text-[10px] font-semibold tracking-[0.1em] text-[#777] uppercase"
               >
                 {column.label}
               </th>
@@ -854,12 +873,12 @@ function DataTable({
           {rows.map((row, index) => (
             <tr
               key={String(row.touchpoint_id ?? row.conversion_job_id ?? index)}
-              className="border-b border-white/[0.06] hover:bg-white/[0.015]"
+              className="h-[64px] border-b border-[#2c2c2c] transition last:border-b-0 hover:bg-[#101010]"
             >
               {columns.map((column) => (
                 <td
                   key={column.key}
-                  className="max-w-64 truncate px-3 py-3.5 text-xs text-[#aeb5b2] first:pl-0"
+                  className="max-w-64 truncate px-4 py-3.5 text-xs text-[#aeb5b2]"
                 >
                   {column.format
                     ? column.format(row[column.key])
@@ -939,8 +958,7 @@ function FormDialog({
           campaign_id: campaign || null,
           integration_id: integration || null,
           provider_form_id: providerFormId || null,
-          allowed_origins:
-            provider === "website_form" ? allowedOrigins : [],
+          allowed_origins: provider === "website_form" ? allowedOrigins : [],
           lead_defaults: {},
           field_mapping: {},
         }),

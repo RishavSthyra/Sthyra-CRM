@@ -691,7 +691,7 @@ export function InventoryPricingWorkspace({
 
   if (!priceBooks.length) {
     return (
-      <div className="grid min-h-[360px] place-items-center border-y border-white/[0.08] py-16 text-center">
+      <div className="mt-4 grid min-h-[360px] place-items-center rounded-2xl border border-[#2c2c2c] bg-[#080808] py-16 text-center">
         <div className="max-w-sm">
           <div className="mx-auto grid size-11 place-items-center rounded-xl bg-white/[0.04] text-[#7e8782]">
             <CircleDollarSign className="size-5" />
@@ -715,8 +715,8 @@ export function InventoryPricingWorkspace({
   }
 
   return (
-    <section className="pt-7">
-      <div className="flex flex-wrap items-start justify-between gap-5 border-b border-white/[0.08] pb-6">
+    <section className="mt-4 overflow-hidden rounded-2xl border border-[#2c2c2c] bg-[#080808]">
+      <div className="flex flex-wrap items-start justify-between gap-5 border-b border-[#2c2c2c] bg-[#191919] p-5">
         <div>
           <h2 className="text-base font-semibold text-[#e8ebe9]">Pricing</h2>
           <p className="mt-1 text-sm text-[#747c78]">
@@ -733,7 +733,7 @@ export function InventoryPricingWorkspace({
       </div>
 
       <div className="grid min-h-[520px] grid-cols-[260px_minmax(0,1fr)] max-[860px]:grid-cols-1">
-        <aside className="border-r border-white/[0.08] py-5 pr-5 max-[860px]:border-r-0 max-[860px]:border-b max-[860px]:pr-0">
+        <aside className="border-r border-[#2c2c2c] p-4 max-[860px]:border-r-0 max-[860px]:border-b max-[860px]:border-[#2c2c2c]">
           <p className="mb-2 px-2 text-[10px] font-semibold tracking-[0.13em] text-[#626a66] uppercase">
             Price books
           </p>
@@ -769,7 +769,7 @@ export function InventoryPricingWorkspace({
         </aside>
 
         {selectedBook && (
-          <div className="min-w-0 py-5 pl-6 max-[860px]:pl-0">
+          <div className="min-w-0 p-5">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
@@ -828,7 +828,7 @@ export function InventoryPricingWorkspace({
               </div>
             </div>
 
-            <div className="mt-6 flex items-center gap-3 border-y border-white/[0.08] py-3">
+            <div className="mt-6 flex items-center gap-3 rounded-xl border border-[#2c2c2c] bg-[#111] p-3">
               <div className="relative max-w-sm flex-1">
                 <Search className="absolute top-2.5 left-3 size-4 text-[#646d68]" />
                 <input
@@ -849,10 +849,10 @@ export function InventoryPricingWorkspace({
                 <LoaderCircle className="size-5 animate-spin text-[#5ed5b2]" />
               </div>
             ) : filteredEntries.length ? (
-              <div className="divide-y divide-white/[0.065]">
+              <div className="mt-4 overflow-hidden rounded-xl border border-[#2c2c2c] bg-[#0b0b0b] divide-y divide-[#2c2c2c]">
                 {filteredEntries.map((entry) => (
                   <div
-                    className="grid grid-cols-[minmax(0,1.4fr)_minmax(120px,.65fr)_minmax(130px,.7fr)_74px] items-center gap-4 py-4 max-[720px]:grid-cols-[minmax(0,1fr)_80px]"
+                    className="grid grid-cols-[minmax(0,1.4fr)_minmax(120px,.65fr)_minmax(130px,.7fr)_74px] items-center gap-4 px-4 py-4 transition hover:bg-[#101010] max-[720px]:grid-cols-[minmax(0,1fr)_80px]"
                     key={entry.price_entry_id}
                   >
                     <div className="min-w-0">

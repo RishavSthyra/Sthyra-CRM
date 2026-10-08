@@ -338,7 +338,7 @@ export function InventoryAttributesManager({
   >(null);
 
   return (
-    <div className="mt-3 border-t border-white/[0.08] pt-7 xl:col-span-2">
+    <div className="mt-3 rounded-2xl border border-[#2c2c2c] bg-[#080808] p-5 xl:col-span-2">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h2 className="text-base font-semibold text-[#e8ebe9]">
@@ -374,12 +374,12 @@ export function InventoryAttributesManager({
                   </span>
                 </div>
                 {scoped.length ? (
-                  <div className="divide-y divide-white/[0.07] border-y border-white/[0.08]">
+                  <div className="overflow-hidden rounded-xl border border-[#2c2c2c] bg-[#0b0b0b] divide-y divide-[#2c2c2c]">
                     {scoped.map((attribute) => {
                       const Icon = typeIcon(attribute.data_type);
                       return (
                         <div
-                          className="flex items-center gap-3 py-3.5"
+                          className="flex items-center gap-3 px-4 py-3.5 transition hover:bg-[#101010]"
                           key={attribute.definition_id}
                         >
                           <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/[0.04] text-[#7d8581]">
@@ -412,7 +412,7 @@ export function InventoryAttributesManager({
                     })}
                   </div>
                 ) : (
-                  <p className="border-y border-white/[0.08] py-5 text-sm text-[#666e6a]">
+                  <p className="rounded-xl border border-[#2c2c2c] bg-[#0b0b0b] px-4 py-5 text-sm text-[#666e6a]">
                     No custom fields configured.
                   </p>
                 )}
@@ -421,7 +421,7 @@ export function InventoryAttributesManager({
           })}
         </div>
       ) : (
-        <div className="mt-5 border-y border-white/[0.08] py-9 text-center">
+        <div className="mt-5 rounded-xl border border-[#2c2c2c] bg-[#0b0b0b] py-9 text-center">
           <p className="text-sm text-[#747c78]">
             Add fields such as garden area, view, plot size, parking, or
             frontage.
