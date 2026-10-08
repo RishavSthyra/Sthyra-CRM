@@ -2060,6 +2060,7 @@ function DataToolsPanel(props: PanelProps) {
 function AuditLogPanel(props: PanelProps) {
   const [logs, setLogs] = useState<Row[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(true);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
   const { api } = props;
   useEffect(() => {
     let active = true;
@@ -2079,29 +2080,290 @@ function AuditLogPanel(props: PanelProps) {
   }, [api]);
   return (
     <Card
-      title="Detailed audit log"
-      description="Visible only to Leadership. Secret and token fields are redacted before storage."
+      title="Workspace activity"
+      description="A readable history of important workspace changes. Visible only to Leadership."
     >
       {loadingLogs ? (
-        <div className="py-12 text-center text-xs text-[#777f7c]">Loading changes…</div>
+        <div className="py-12 text-center text-xs text-[#777f7c]">
+          Loading activity…
+        </div>
+      ) : logs.length === 0 ? (
+        <Empty>No workspace activity has been recorded yet.</Empty>
       ) : (
-        <ListTable
-          rows={logs}
-          columns={[
-            { key: "created_at", label: "Time", render: (row) => new Date(String(row.created_at)).toLocaleString() },
-            { key: "actor_name", label: "Actor" },
-            { key: "action", label: "Action" },
-            { key: "entity_type", label: "Entity" },
-            { key: "entity_id", label: "Record" },
-            {
-              key: "changed_fields",
-              label: "Changed fields",
-              render: (row) => Array.isArray(row.changed_fields) ? row.changed_fields.join(", ") : "—",
-            },
-          ]}
-        />
+        <div className="divide-y divide-white/[0.07]">
+          {logs.map((log) => {
+            const auditId = String(log.audit_id);
+            const action = String(log.action ?? "UPDATE").toUpperCase();
+            const fields = readableAuditFields(log);
+            const expanded = expandedLogId === auditId;
+            const ActionIcon =
+              action === "INSERT" ? Plus : action === "DELETE" ? Ban : Pencil;
+            const actionTone =
+              action === "INSERT"
+                ? "border-[#4ea98b]/25 bg-[#183a30] text-[#79d4b5]"
+                : action === "DELETE"
+                  ? "border-[#b66060]/25 bg-[#351d1d] text-[#df8e8e]"
+                  : "border-[#747dff]/20 bg-[#242641] text-[#aeb3ff]";
+            return (
+              <article className="py-5 first:pt-1 last:pb-1" key={auditId}>
+                <div className="flex items-start gap-3.5">
+                  <span
+                    className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border ${actionTone}`}
+                  >
+                    <ActionIcon aria-hidden className="size-3.5" strokeWidth={1.8} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1 text-[12px] leading-5 text-[#aeb5b2]">
+                      <strong className="font-semibold text-[#eef1f0]">
+                        {String(log.actor_name || "System")}
+                      </strong>
+                      <span>{auditActionVerb(action)}</span>
+                      <strong className="font-medium text-[#d9dddb]">
+                        {auditEntityLabel(log.entity_type)}
+                      </strong>
+                      {log.record_label ? (
+                        <span className="font-medium text-[#8fd6bd]">
+                          “{String(log.record_label)}”
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 text-[10px] leading-4 text-[#747c79]">
+                      {auditChangeSummary(action, fields)}
+                    </p>
+                    <div className="mt-2.5 flex flex-wrap items-center gap-3">
+                      <time className="text-[9px] text-[#616966]">
+                        {formatAuditTime(log.created_at)}
+                      </time>
+                      {fields.length > 0 && (
+                        <button
+                          aria-expanded={expanded}
+                          className="inline-flex items-center gap-1 text-[9px] font-semibold text-[#82cbb2] transition hover:text-[#b0ead6]"
+                          onClick={() =>
+                            setExpandedLogId(expanded ? null : auditId)
+                          }
+                          type="button"
+                        >
+                          {expanded ? "Hide details" : "View details"}
+                          <ChevronDown
+                            aria-hidden
+                            className={`size-3 transition-transform ${expanded ? "rotate-180" : ""}`}
+                          />
+                        </button>
+                      )}
+                    </div>
+                    {expanded && (
+                      <AuditChangeDetails action={action} fields={fields} log={log} />
+                    )}
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
       )}
     </Card>
+  );
+}
+
+const auditEntityLabels: Record<string, string> = {
+  activities: "activity",
+  appointments: "appointment",
+  assignments: "lead assignment",
+  campaigns: "campaign",
+  companies: "company profile",
+  contacts: "contact",
+  inventory_units: "inventory unit",
+  lead_sources: "lead source",
+  leads: "lead",
+  marketing_forms: "marketing form",
+  marketing_integrations: "marketing connection",
+  opportunities: "opportunity",
+  projects: "project",
+  queues: "assignment queue",
+  role_permissions: "role permission",
+  roles: "role",
+  routing_rules: "routing rule",
+  site_visits: "site visit",
+  sla_rules: "SLA rule",
+  tags: "tag",
+  tasks: "task",
+  teams: "team",
+  transfers: "ownership transfer",
+  users: "team member",
+};
+
+const auditFieldLabels: Record<string, string> = {
+  action_type: "Destination type",
+  archived_at: "Archive status",
+  budget: "Budget",
+  campaign_id: "Campaign",
+  current_owner_user_id: "Assigned salesperson",
+  current_team_id: "Assigned team",
+  description: "Description",
+  email: "Email address",
+  first_name: "First name",
+  is_active: "Availability",
+  last_name: "Last name",
+  name: "Name",
+  phone: "Phone number",
+  phone_number: "Phone number",
+  project_status: "Project status",
+  queue_name: "Queue name",
+  reason: "Reason",
+  role_id: "Role",
+  role_name: "Role name",
+  rule_name: "Rule name",
+  sla_name: "SLA name",
+  stage_id: "Sales stage",
+  status: "Status",
+  sub_source: "Lead subsource",
+  target_queue_id: "Destination queue",
+  target_team_id: "Destination team",
+  target_user_id: "Destination person",
+  team_id: "Team",
+  temperature: "Lead temperature",
+  username: "Username",
+};
+
+const hiddenAuditFields = new Set([
+  "actor_user_id",
+  "company_id",
+  "contact_id",
+  "created_at",
+  "created_by",
+  "lead_id",
+  "opportunity_id",
+  "project_id",
+  "updated_at",
+  "updated_by",
+]);
+
+function auditEntityLabel(value: unknown) {
+  const key = String(value ?? "record");
+  return (
+    auditEntityLabels[key] ??
+    key.replaceAll("_", " ").replace(/s$/, "").toLowerCase()
+  );
+}
+
+function auditFieldLabel(field: string) {
+  return (
+    auditFieldLabels[field] ??
+    field
+      .replace(/_id$/, "")
+      .replaceAll("_", " ")
+      .replace(/^./, (letter) => letter.toUpperCase())
+  );
+}
+
+function readableAuditFields(log: Row) {
+  return Array.isArray(log.changed_fields)
+    ? log.changed_fields
+        .map(String)
+        .filter((field) => !hiddenAuditFields.has(field))
+    : [];
+}
+
+function auditActionVerb(action: string) {
+  if (action === "INSERT") return "created";
+  if (action === "DELETE") return "deleted";
+  return "updated";
+}
+
+function joinReadableList(items: string[]) {
+  if (items.length <= 1) return items[0] ?? "";
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")}, and ${items.at(-1)}`;
+}
+
+function auditChangeSummary(action: string, fields: string[]) {
+  if (action === "INSERT") return "A new record was added to the workspace.";
+  if (action === "DELETE") return "This record was removed from the workspace.";
+  const labels = fields.slice(0, 3).map(auditFieldLabel);
+  const remaining = fields.length - labels.length;
+  if (!labels.length) return "The record was updated.";
+  return `${joinReadableList(labels)}${remaining > 0 ? ` and ${remaining} more` : ""} changed.`;
+}
+
+function formatAuditTime(value: unknown) {
+  const date = new Date(String(value ?? ""));
+  return Number.isNaN(date.getTime())
+    ? "Time unavailable"
+    : date.toLocaleString("en-IN", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+}
+
+function auditValues(value: unknown): Row {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Row)
+    : {};
+}
+
+function formatAuditValue(field: string, value: unknown) {
+  if (value === null || value === undefined || value === "") return "Not set";
+  if (field.endsWith("_id")) return "Selected record";
+  if (typeof value === "boolean") return value ? "Enabled" : "Disabled";
+  if (Array.isArray(value)) {
+    if (value.every((item) => ["string", "number"].includes(typeof item)))
+      return value.join(", ") || "None";
+    return `${value.length} configured item${value.length === 1 ? "" : "s"}`;
+  }
+  if (typeof value === "object") return "Configuration updated";
+  const text = String(value);
+  if (/^\d{4}-\d{2}-\d{2}T/.test(text)) return formatAuditTime(text);
+  return text.replaceAll("_", " ");
+}
+
+function AuditChangeDetails({
+  action,
+  fields,
+  log,
+}: {
+  action: string;
+  fields: string[];
+  log: Row;
+}) {
+  const before = auditValues(log.old_values);
+  const after = auditValues(log.new_values);
+  return (
+    <div className="mt-3 overflow-hidden rounded-xl border border-white/[0.07] bg-black/20">
+      {fields.map((field) => {
+        const identifierChanged =
+          field.endsWith("_id") && before[field] && after[field];
+        return (
+          <div
+            className="grid grid-cols-[minmax(130px,0.8fr)_minmax(0,1.4fr)] gap-4 border-b border-white/[0.06] px-3.5 py-3 last:border-b-0"
+            key={field}
+          >
+            <strong className="text-[9px] font-semibold text-[#8d9692]">
+              {auditFieldLabel(field)}
+            </strong>
+            <div className="min-w-0 text-[10px] leading-4 text-[#cbd0ce]">
+              {identifierChanged ? (
+                <span>Selection changed</span>
+              ) : action === "INSERT" ? (
+                <span>{formatAuditValue(field, after[field])}</span>
+              ) : action === "DELETE" ? (
+                <span>{formatAuditValue(field, before[field])}</span>
+              ) : (
+                <span className="inline-flex flex-wrap items-center gap-2">
+                  <span className="text-[#777f7c] line-through">
+                    {formatAuditValue(field, before[field])}
+                  </span>
+                  <span aria-hidden className="text-[#4f5754]">→</span>
+                  <span>{formatAuditValue(field, after[field])}</span>
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+      <div className="border-t border-white/[0.06] px-3.5 py-2.5 text-[9px] text-[#5f6764]">
+        Sensitive credentials and authentication tokens are never shown.
+      </div>
+    </div>
   );
 }
 
