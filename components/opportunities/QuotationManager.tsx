@@ -103,8 +103,28 @@ type Shortlist = {
 type Opportunity = {
   opportunity_id: string;
   opportunity_name: string;
+  stage_key: string;
   email?: string | null;
   contact?: { email?: string | null };
+};
+
+type BookingFormSummary = {
+  booking_form_id: string;
+  booking_reference: string;
+  status: "active" | "submitted" | "confirmed" | "expired" | "revoked";
+  unit_id: string;
+  configuration: string;
+  flat_number: string;
+  agreed_price: string | number;
+  booking_amount: string | number;
+  currency: string;
+  expires_at: string;
+  first_viewed_at?: string | null;
+  view_count: number;
+  submitted_at?: string | null;
+  confirmed_at?: string | null;
+  customer_name: string;
+  phone_number?: string | null;
 };
 
 type EventRow = {
@@ -1171,6 +1191,7 @@ function SendDialog({
 
 function DetailDialog({
   opportunityId,
+  opportunityStage,
   quotation,
   onClose,
   onChanged,
@@ -1178,6 +1199,7 @@ function DetailDialog({
   onSend,
 }: {
   opportunityId: string;
+  opportunityStage: string;
   quotation: ManagedQuotation;
   onClose: () => void;
   onChanged: () => Promise<void>;
@@ -1185,16 +1207,39 @@ function DetailDialog({
   onSend: () => void;
 }) {
   const [events, setEvents] = useState<EventRow[]>([]);
+  const [bookingForm, setBookingForm] = useState<BookingFormSummary | null>(null);
+  const [bookingShareUrl, setBookingShareUrl] = useState("");
   const [busy, setBusy] = useState("");
+  const quotedUnits = useMemo(
+    () =>
+      quotation.line_items.filter(
+        (item, index, items) =>
+          item.unit_id &&
+          items.findIndex((candidate) => candidate.unit_id === item.unit_id) ===
+            index,
+      ),
+    [quotation.line_items],
+  );
+  const [selectedBookingUnit, setSelectedBookingUnit] = useState(
+    quotedUnits[0]?.unit_id || "",
+  );
   useEffect(() => {
-    void requestJson<{ events?: EventRow[] }>(
-      `/api/opportunities/${opportunityId}/quotations/${quotation.quotation_id}`,
-    )
-      .then((result) => setEvents(result.events || []))
+    void Promise.all([
+      requestJson<{ events?: EventRow[] }>(
+        `/api/opportunities/${opportunityId}/quotations/${quotation.quotation_id}`,
+      ),
+      requestJson<{ booking_form?: BookingFormSummary | null }>(
+        `/api/opportunities/${opportunityId}/quotations/${quotation.quotation_id}/booking-form`,
+      ),
+    ])
+      .then(([quotationResult, bookingResult]) => {
+        setEvents(quotationResult.events || []);
+        setBookingForm(bookingResult.booking_form || null);
+      })
       .catch(() => undefined);
   }, [opportunityId, quotation.quotation_id]);
   async function action(
-    kind: "share" | "revise" | "cancel" | "agreement" | "booking",
+    kind: "share" | "revise" | "cancel" | "agreement",
   ) {
     setBusy(kind);
     try {
@@ -1243,32 +1288,96 @@ function DetailDialog({
           },
         );
         toast.success("Agreement-ready snapshot created");
-      } else {
-        const units = quotation.line_items.filter((item) => item.unit_id);
-        if (!units.length)
-          throw new Error("This quotation has no inventory unit to book");
-        const chosen =
-          units.length === 1
-            ? units[0].unit_id
-            : window.prompt(
-                `Enter unit ID to book:\n${units.map((item) => `${item.unit_code || item.description}: ${item.unit_id}`).join("\n")}`,
-              );
-        if (!chosen) return;
-        await requestJson(
-          `/api/opportunities/${opportunityId}/quotations/${quotation.quotation_id}/convert`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ target_type: "booking", unit_id: chosen }),
-          },
-        );
-        toast.success("Booking created from accepted quotation");
       }
       await onChanged();
       onClose();
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Unable to complete action",
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+  async function generateBookingForm() {
+    if (!selectedBookingUnit)
+      return toast.error("Select the unit for this booking form");
+    setBusy("booking-form");
+    try {
+      const result = await requestJson<{
+        booking_form: BookingFormSummary;
+        share_url: string;
+      }>(
+        `/api/opportunities/${opportunityId}/quotations/${quotation.quotation_id}/booking-form`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            unit_id: selectedBookingUnit,
+            validity_days: 14,
+          }),
+        },
+      );
+      setBookingForm(result.booking_form);
+      setBookingShareUrl(result.share_url);
+      await navigator.clipboard.writeText(result.share_url);
+      toast.success("Secure booking form link copied");
+      await onChanged();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Unable to create booking form",
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+  async function copyBookingLink() {
+    if (!bookingShareUrl) return;
+    await navigator.clipboard.writeText(bookingShareUrl);
+    toast.success("Booking form link copied");
+  }
+  async function revokeBookingForm() {
+    if (!window.confirm("Revoke this customer booking form link?")) return;
+    setBusy("booking-revoke");
+    try {
+      const result = await requestJson<{ booking_form: BookingFormSummary }>(
+        `/api/opportunities/${opportunityId}/quotations/${quotation.quotation_id}/booking-form`,
+        { method: "DELETE" },
+      );
+      setBookingForm(result.booking_form);
+      setBookingShareUrl("");
+      toast.success("Booking form link revoked");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Unable to revoke booking form",
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+  async function confirmBooking() {
+    if (!bookingForm) return;
+    setBusy("booking-confirm");
+    try {
+      await requestJson(
+        `/api/opportunities/${opportunityId}/quotations/${quotation.quotation_id}/convert`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            target_type: "booking",
+            unit_id: bookingForm.unit_id,
+          }),
+        },
+      );
+      setBookingForm((current) =>
+        current ? { ...current, status: "confirmed" } : current,
+      );
+      toast.success("Booking confirmed and inventory updated");
+      await onChanged();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Unable to confirm booking",
       );
     } finally {
       setBusy("");
@@ -1368,38 +1477,121 @@ function DetailDialog({
           )}
         </div>
         {quotation.status === "accepted" && (
-          <div className="flex flex-wrap items-center gap-3 border-b border-white/[0.08] bg-[#143128]/35 px-6 py-4">
-            <Check className="size-4 text-[#57bd99]" />
-            <p className="mr-auto text-xs text-[#9fd5c1]">
-              Accepted quotations are locked. Create a revision for any
-              commercial change.
-            </p>
-            <button
-              className={buttonClass}
-              disabled={
-                !!busy ||
-                quotation.conversions?.some(
-                  (item) => item.target_type === "agreement",
-                )
-              }
-              onClick={() => void action("agreement")}
-              type="button"
-            >
-              <ReceiptText className="size-3.5" /> Prepare agreement
-            </button>
-            <button
-              className="inline-flex h-9 items-center gap-2 rounded-md bg-[#2b8d70] px-3 text-xs font-semibold text-white disabled:opacity-50"
-              disabled={
-                !!busy ||
-                quotation.conversions?.some(
-                  (item) => item.target_type === "booking",
-                )
-              }
-              onClick={() => void action("booking")}
-              type="button"
-            >
-              <Check className="size-3.5" /> Create booking
-            </button>
+          <div className="border-b border-white/[0.08] bg-[#143128]/35 px-6 py-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <Check className="size-4 text-[#57bd99]" />
+              <p className="mr-auto text-xs text-[#9fd5c1]">
+                Accepted quotations are locked. Create a revision for any
+                commercial change.
+              </p>
+              <button
+                className={buttonClass}
+                disabled={
+                  !!busy ||
+                  quotation.conversions?.some(
+                    (item) => item.target_type === "agreement",
+                  )
+                }
+                onClick={() => void action("agreement")}
+                type="button"
+              >
+                <ReceiptText className="size-3.5" /> Prepare agreement
+              </button>
+            </div>
+            <div className="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-white/[0.08] bg-black/15 p-3">
+              <div className="mr-auto min-w-56">
+                <p className="text-xs font-semibold text-[#dce7e2]">
+                  Customer booking form
+                </p>
+                <p className="mt-1 text-[11px] leading-5 text-[#82908a]">
+                  {opportunityStage !== "booking"
+                    ? "Move the opportunity to Booking stage to generate the form."
+                    : bookingForm?.status === "confirmed"
+                      ? `${bookingForm.booking_reference} · Booking confirmed`
+                      : bookingForm?.status === "submitted"
+                        ? `${bookingForm.booking_reference} · Submitted by ${bookingForm.customer_name}`
+                        : bookingForm?.status === "active"
+                          ? `${bookingForm.booking_reference} · ${bookingForm.view_count ? `Viewed ${bookingForm.view_count} time${bookingForm.view_count === 1 ? "" : "s"}` : "Not viewed yet"}`
+                          : "Generate a secure form after the accepted quotation."}
+                </p>
+              </div>
+              {opportunityStage === "booking" &&
+                !["submitted", "confirmed"].includes(
+                  bookingForm?.status || "",
+                ) &&
+                quotedUnits.length > 1 && (
+                  <label className="min-w-52 text-[10px] font-medium text-[#8e9792]">
+                    Booking unit
+                    <select
+                      className={`${inputClass} mt-1 h-9`}
+                      onChange={(event) =>
+                        setSelectedBookingUnit(event.target.value)
+                      }
+                      value={selectedBookingUnit}
+                    >
+                      {quotedUnits.map((item) => (
+                        <option key={item.unit_id!} value={item.unit_id!}>
+                          {item.unit_code || item.unit_name || item.description}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              {bookingShareUrl && bookingForm?.status === "active" && (
+                <button
+                  className={buttonClass}
+                  onClick={() => void copyBookingLink()}
+                  type="button"
+                >
+                  <Copy className="size-3.5" /> Copy link
+                </button>
+              )}
+              {bookingForm?.status === "active" && (
+                <button
+                  className={`${buttonClass} text-[#c9a0a0]`}
+                  disabled={!!busy}
+                  onClick={() => void revokeBookingForm()}
+                  type="button"
+                >
+                  Revoke
+                </button>
+              )}
+              {opportunityStage === "booking" &&
+                bookingForm?.status === "submitted" && (
+                  <button
+                    className="inline-flex h-9 items-center gap-2 rounded-md bg-[#2b8d70] px-3 text-xs font-semibold text-white disabled:opacity-50"
+                    disabled={!!busy}
+                    onClick={() => void confirmBooking()}
+                    type="button"
+                  >
+                    {busy === "booking-confirm" ? (
+                      <LoaderCircle className="size-3.5 animate-spin" />
+                    ) : (
+                      <Check className="size-3.5" />
+                    )}
+                    Confirm booking
+                  </button>
+                )}
+              {opportunityStage === "booking" &&
+                bookingForm?.status !== "submitted" &&
+                bookingForm?.status !== "confirmed" && (
+                  <button
+                    className="inline-flex h-9 items-center gap-2 rounded-md bg-[#2b8d70] px-3 text-xs font-semibold text-white disabled:opacity-50"
+                    disabled={!!busy || !quotedUnits.length}
+                    onClick={() => void generateBookingForm()}
+                    type="button"
+                  >
+                    {busy === "booking-form" ? (
+                      <LoaderCircle className="size-3.5 animate-spin" />
+                    ) : (
+                      <FileText className="size-3.5" />
+                    )}
+                    {bookingForm?.status === "active"
+                      ? "Regenerate link"
+                      : "Generate form"}
+                  </button>
+                )}
+            </div>
           </div>
         )}
         <div className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_330px]">
@@ -1758,6 +1950,7 @@ export function QuotationManager({
           }}
           onSend={() => setSending(detail)}
           opportunityId={opportunity.opportunity_id}
+          opportunityStage={opportunity.stage_key}
           quotation={detail}
         />
       )}

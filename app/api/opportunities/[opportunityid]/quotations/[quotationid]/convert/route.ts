@@ -136,6 +136,45 @@ export async function POST(request: NextRequest, context: Context) {
       );
     }
 
+    if (access.opportunity.stage_key !== "booking") {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { error: "Move this opportunity to the Booking stage first" },
+        { status: 409 },
+      );
+    }
+
+    const bookingFormResult = await client.query(
+      `SELECT * FROM booking_forms
+       WHERE quotation_id=$1 AND opportunity_id=$2
+       FOR UPDATE`,
+      [quotationId, access.opportunityId],
+    );
+    const bookingForm = bookingFormResult.rows[0];
+    if (
+      !bookingForm ||
+      !["submitted", "confirmed"].includes(String(bookingForm.status))
+    ) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        {
+          error:
+            "The customer must submit the booking form before the booking can be confirmed",
+        },
+        { status: 409 },
+      );
+    }
+    if (String(bookingForm.unit_id) !== unitId) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        {
+          error:
+            "The selected unit does not match the submitted booking form",
+        },
+        { status: 409 },
+      );
+    }
+
     const quotedUnits = Array.isArray(quotation.line_items)
       ? quotation.line_items
           .map((item: Record<string, unknown>) => item.unit_id)
@@ -183,14 +222,26 @@ export async function POST(request: NextRequest, context: Context) {
           JSON.stringify({
             unit_id: unitId,
             total_amount: quotation.total_amount,
+            booking_amount: bookingForm.booking_amount,
+            booking_form_id: bookingForm.booking_form_id,
+            booking_reference: bookingForm.booking_reference,
           }),
           access.context.userId,
         ],
       );
       await recordQuotationEvent(client, quotation, "booking_created", {
         actorUserId: access.context.userId,
-        metadata: { reservation_id: reservation.rows[0].reservation_id },
+        metadata: {
+          reservation_id: reservation.rows[0].reservation_id,
+          booking_form_id: bookingForm.booking_form_id,
+        },
       });
+      await client.query(
+        `UPDATE booking_forms SET status='confirmed',confirmed_at=COALESCE(confirmed_at,CURRENT_TIMESTAMP),
+                confirmed_by=COALESCE(confirmed_by,$2),updated_at=CURRENT_TIMESTAMP
+         WHERE booking_form_id=$1`,
+        [bookingForm.booking_form_id, access.context.userId],
+      );
       await client.query("COMMIT");
       return NextResponse.json({
         message: "Quotation linked to the existing booking",
@@ -245,9 +296,9 @@ export async function POST(request: NextRequest, context: Context) {
           unitId,
           quotation.opportunity_id,
           holdId,
-          quotation.total_amount,
+          bookingForm.booking_amount,
           quotation.currency,
-          `Created from accepted quotation ${quotation.quotation_number} V${quotation.version}`,
+          `Created from submitted booking form ${bookingForm.booking_reference} and accepted quotation ${quotation.quotation_number} V${quotation.version}`,
           access.context.userId,
         ],
       );
@@ -309,6 +360,9 @@ export async function POST(request: NextRequest, context: Context) {
         JSON.stringify({
           unit_id: unitId,
           total_amount: quotation.total_amount,
+          booking_amount: bookingForm.booking_amount,
+          booking_form_id: bookingForm.booking_form_id,
+          booking_reference: bookingForm.booking_reference,
         }),
         access.context.userId,
       ],
@@ -319,6 +373,12 @@ export async function POST(request: NextRequest, context: Context) {
       "booking",
       "quotation_converted_to_booking",
       access.context.userId,
+    );
+    await client.query(
+      `UPDATE booking_forms SET status='confirmed',confirmed_at=CURRENT_TIMESTAMP,
+              confirmed_by=$2,updated_at=CURRENT_TIMESTAMP
+       WHERE booking_form_id=$1`,
+      [bookingForm.booking_form_id, access.context.userId],
     );
     await queueMarketingConversion(client, {
       companyId: Number(quotation.company_id),
@@ -332,7 +392,11 @@ export async function POST(request: NextRequest, context: Context) {
     });
     await recordQuotationEvent(client, quotation, "booking_created", {
       actorUserId: access.context.userId,
-      metadata: { reservation_id: reservationId, unit_id: unitId },
+      metadata: {
+        reservation_id: reservationId,
+        unit_id: unitId,
+        booking_form_id: bookingForm.booking_form_id,
+      },
     });
     const recipients = await resolveNotificationRecipients(client, {
       companyId: Number(quotation.company_id),
@@ -354,7 +418,11 @@ export async function POST(request: NextRequest, context: Context) {
       entityId: reservationId,
       actionUrl: `/opportunities?opportunity_id=${access.opportunityId}`,
       eventKey: `quotation:${quotationId}:booking`,
-      metadata: { quotation_id: quotationId, unit_id: unitId },
+      metadata: {
+        quotation_id: quotationId,
+        unit_id: unitId,
+        booking_form_id: bookingForm.booking_form_id,
+      },
       channels: ["in_app", "email"],
     });
     await client.query("COMMIT");

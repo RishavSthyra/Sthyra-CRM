@@ -50,6 +50,7 @@ export async function GET(request: NextRequest) {
                 NULLIF(snapshot.data->>'company_name', ''),
                 NULLIF(snapshot.data->>'project_name', ''),
                 NULLIF(snapshot.data->>'opportunity_name', ''),
+                NULLIF(snapshot.data->>'booking_reference', ''),
                 NULLIF(snapshot.data->>'queue_name', ''),
                 NULLIF(snapshot.data->>'rule_name', ''),
                 NULLIF(snapshot.data->>'sla_name', ''),
