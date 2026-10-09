@@ -16,11 +16,13 @@ import toast from "react-hot-toast";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 import type {
   AssetType,
-  FloorPlan,
   InventoryAttributeDefinition,
   InventoryDialogKind,
+  InventoryLayout,
+  InventoryLayoutRoom,
   InventoryNode,
   InventoryUnit,
+  InventoryUnitDetail,
   PriceBook,
   UnitType,
 } from "./types";
@@ -35,10 +37,9 @@ type DialogProps = {
   unitTypes: UnitType[];
   nodes: InventoryNode[];
   assetTypes: AssetType[];
-  floorPlans: FloorPlan[];
   attributes: InventoryAttributeDefinition[];
   editing?:
-    InventoryUnit | UnitType | FloorPlan | InventoryNode | PriceBook | null;
+    InventoryUnit | UnitType | InventoryNode | PriceBook | null;
   onClose: () => void;
   onSaved: () => Promise<void> | void;
 };
@@ -49,10 +50,6 @@ function isUnitType(item: DialogProps["editing"]): item is UnitType {
 
 function isInventoryNode(item: DialogProps["editing"]): item is InventoryNode {
   return Boolean(item && "parent_node_id" in item);
-}
-
-function isFloorPlan(item: DialogProps["editing"]): item is FloorPlan {
-  return Boolean(item && "floor_plan_id" in item);
 }
 
 function isPriceBook(item: DialogProps["editing"]): item is PriceBook {
@@ -101,7 +98,7 @@ function DialogShell({
       }}
       role="dialog"
     >
-      <div className="max-h-[calc(100dvh-32px)] w-full max-w-[620px] overflow-y-auto rounded-2xl border border-white/[0.13] bg-[#111512] shadow-[0_30px_100px_rgba(0,0,0,.7)]">
+      <div className="max-h-[calc(100dvh-32px)] w-full max-w-[820px] overflow-y-auto rounded-2xl border border-white/[0.13] bg-[#111512] shadow-[0_30px_100px_rgba(0,0,0,.7)]">
         <div className="sticky top-0 z-10 flex items-start justify-between border-b border-white/[0.09] bg-[#111512]/95 px-6 py-5 backdrop-blur-xl">
           <div>
             <h2 className="text-lg font-semibold tracking-[-0.02em] text-white">
@@ -172,6 +169,228 @@ function Field({
       <span className={labelClass}>{label}</span>
       {children}
     </label>
+  );
+}
+
+function emptyRoom(): InventoryLayoutRoom {
+  return {
+    room_name: "",
+    room_type: null,
+    length: null,
+    width: null,
+    measurement_unit: "ft",
+    area_sqft: null,
+    notes: null,
+  };
+}
+
+function layoutPayload(layout: InventoryLayout) {
+  const numberOrNull = (value: number | string | null | undefined) =>
+    value === null || value === undefined || value === "" ? null : Number(value);
+  return {
+    notes: layout.notes || null,
+    rooms: layout.rooms.map((room) => ({
+      room_name: room.room_name,
+      room_type: room.room_type || null,
+      length: numberOrNull(room.length),
+      width: numberOrNull(room.width),
+      measurement_unit: room.measurement_unit,
+      area_sqft: numberOrNull(room.area_sqft),
+      notes: room.notes || null,
+    })),
+    assets: layout.assets.map((asset) => ({
+      asset_kind: asset.asset_kind,
+      asset_url: asset.asset_url,
+      file_name: asset.file_name || null,
+      mime_type: asset.mime_type || null,
+    })),
+  };
+}
+
+function LayoutEditor({
+  layout,
+  onChange,
+  title = "Layout and rooms",
+}: {
+  layout: InventoryLayout;
+  onChange: (layout: InventoryLayout) => void;
+  title?: string;
+}) {
+  function patchRoom(index: number, patch: Partial<InventoryLayoutRoom>) {
+    onChange({
+      ...layout,
+      rooms: layout.rooms.map((room, position) =>
+        position === index ? { ...room, ...patch } : room,
+      ),
+    });
+  }
+  return (
+    <section className="mt-6 rounded-xl border border-white/[0.09] bg-black/15 p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-sm font-semibold text-[#e4e8e5]">{title}</h3>
+          <p className="mt-1 text-xs leading-5 text-[#707975]">
+            Attach the plan and define every room once. Flats inherit it automatically.
+          </p>
+        </div>
+        <button
+          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-white/[0.1] px-3 text-xs font-semibold text-[#c7cdca] hover:bg-white/[0.05]"
+          onClick={() => onChange({ ...layout, rooms: [...layout.rooms, emptyRoom()] })}
+          type="button"
+        >
+          <Plus className="size-3.5" /> Add room
+        </button>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {layout.rooms.map((room, index) => {
+          const length = Number(room.length || 0);
+          const width = Number(room.width || 0);
+          const area = length && width
+            ? length * width * (room.measurement_unit === "m" ? 10.7639 : 1)
+            : Number(room.area_sqft || 0);
+          return (
+            <div className="rounded-lg border border-white/[0.08] bg-[#0a0d0b] p-3" key={room.room_id || index}>
+              <div className="grid gap-3 sm:grid-cols-[1.2fr_1fr_.7fr_.7fr_.55fr_36px]">
+                <input
+                  aria-label={`Room ${index + 1} name`}
+                  className={inputClass}
+                  onChange={(event) => patchRoom(index, { room_name: event.target.value })}
+                  placeholder="Living room"
+                  required
+                  value={room.room_name}
+                />
+                <input
+                  aria-label={`Room ${index + 1} type`}
+                  className={inputClass}
+                  onChange={(event) => patchRoom(index, { room_type: event.target.value })}
+                  placeholder="Living"
+                  value={room.room_type ?? ""}
+                />
+                <input
+                  aria-label={`Room ${index + 1} length`}
+                  className={inputClass}
+                  min="0.01"
+                  onChange={(event) => patchRoom(index, { length: event.target.value })}
+                  placeholder="Length"
+                  step="0.01"
+                  type="number"
+                  value={room.length ?? ""}
+                />
+                <input
+                  aria-label={`Room ${index + 1} width`}
+                  className={inputClass}
+                  min="0.01"
+                  onChange={(event) => patchRoom(index, { width: event.target.value })}
+                  placeholder="Width"
+                  step="0.01"
+                  type="number"
+                  value={room.width ?? ""}
+                />
+                <select
+                  aria-label={`Room ${index + 1} measurement unit`}
+                  className={inputClass}
+                  onChange={(event) => patchRoom(index, { measurement_unit: event.target.value as "ft" | "m" })}
+                  value={room.measurement_unit}
+                >
+                  <option value="ft">ft</option>
+                  <option value="m">m</option>
+                </select>
+                <button
+                  aria-label={`Remove ${room.room_name || `room ${index + 1}`}`}
+                  className="grid size-9 place-items-center self-center rounded-lg text-[#7f8783] hover:bg-[#ff665a]/10 hover:text-[#ff9188]"
+                  onClick={() => onChange({ ...layout, rooms: layout.rooms.filter((_, position) => position !== index) })}
+                  type="button"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <input
+                  aria-label={`Room ${index + 1} notes`}
+                  className="h-8 min-w-0 flex-1 rounded-md border border-white/[0.07] bg-transparent px-2 text-xs text-[#b9c0bc] outline-none placeholder:text-[#555d59] focus:border-[#57d6b1]/40"
+                  onChange={(event) => patchRoom(index, { notes: event.target.value })}
+                  placeholder="Optional notes"
+                  value={room.notes ?? ""}
+                />
+                <span className="shrink-0 text-[11px] text-[#717a75]">
+                  {area > 0 ? `${area.toFixed(2)} sq ft` : "Add dimensions"}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+        {!layout.rooms.length && (
+          <button
+            className="w-full rounded-lg border border-dashed border-white/[0.1] py-5 text-xs text-[#7e8782] hover:border-white/[0.17] hover:text-[#bcc3bf]"
+            onClick={() => onChange({ ...layout, rooms: [emptyRoom()] })}
+            type="button"
+          >
+            Add the first room and its dimensions
+          </button>
+        )}
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-[170px_minmax(0,1fr)_36px]">
+        {layout.assets.map((asset, index) => (
+          <div className="contents" key={asset.layout_asset_id || index}>
+            <select
+              aria-label={`Layout file ${index + 1} type`}
+              className={inputClass}
+              onChange={(event) => onChange({
+                ...layout,
+                assets: layout.assets.map((item, position) => position === index ? { ...item, asset_kind: event.target.value as typeof item.asset_kind } : item),
+              })}
+              value={asset.asset_kind}
+            >
+              <option value="floor_plan">Floor plan</option>
+              <option value="render">Render</option>
+              <option value="document">Document</option>
+            </select>
+            <input
+              aria-label={`Layout file ${index + 1} URL`}
+              className={inputClass}
+              onChange={(event) => onChange({
+                ...layout,
+                assets: layout.assets.map((item, position) => position === index ? { ...item, asset_url: event.target.value } : item),
+              })}
+              placeholder="https://… plan image or PDF"
+              required
+              type="url"
+              value={asset.asset_url}
+            />
+            <button
+              aria-label="Remove layout file"
+              className="grid size-9 place-items-center self-center rounded-lg text-[#7f8783] hover:bg-[#ff665a]/10 hover:text-[#ff9188]"
+              onClick={() => onChange({ ...layout, assets: layout.assets.filter((_, position) => position !== index) })}
+              type="button"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/[0.1] px-3 text-xs font-medium text-[#aeb6b1] hover:bg-white/[0.04] hover:text-white"
+        onClick={() => onChange({
+          ...layout,
+          assets: [...layout.assets, { asset_kind: "floor_plan", asset_url: "", file_name: null, mime_type: null }],
+        })}
+        type="button"
+      >
+        <Plus className="size-3.5" /> Add plan or document
+      </button>
+
+      <label className="mt-5 block">
+        <span className={labelClass}>Layout notes</span>
+        <textarea
+          className={`${inputClass} min-h-20 resize-y py-3`}
+          onChange={(event) => onChange({ ...layout, notes: event.target.value })}
+          placeholder="Internal layout notes, revision details, or special dimensions"
+          value={layout.notes ?? ""}
+        />
+      </label>
+    </section>
   );
 }
 
@@ -357,6 +576,7 @@ function AddUnitForm({
   | "unitTypes"
 >) {
   const unit = editing && "unit_id" in editing ? editing : null;
+  const unitDetail = unit as InventoryUnitDetail | null;
   const [busy, setBusy] = useState(false);
   const [customValues, setCustomValues] = useState<Record<string, unknown>>(
     unit?.metadata ?? {},
@@ -375,6 +595,28 @@ function AddUnitForm({
       unit?.price_override === null ? "" : String(unit?.price_override ?? ""),
     currency: unit?.currency ?? "INR",
   });
+  const [layoutMode, setLayoutMode] = useState<"inherited" | "custom">(
+    unit?.layout_mode ?? "inherited",
+  );
+  const initialTemplate = unitTypes.find(
+    (type) => type.unit_type_id === (unit?.unit_type_id ?? unitTypes[0]?.unit_type_id),
+  );
+  const [layout, setLayout] = useState<InventoryLayout>(
+    unit?.layout_mode === "custom" && unitDetail?.custom_layout
+      ? {
+          notes: unitDetail.custom_layout.notes,
+          rooms: unitDetail.custom_layout.rooms.map((room) => ({ ...room })),
+          assets: unitDetail.custom_layout.assets.map((asset) => ({ ...asset })),
+        }
+      : {
+          notes: initialTemplate?.layout_notes ?? null,
+          rooms: initialTemplate?.layout_rooms?.map((room) => ({ ...room })) ?? [],
+          assets: initialTemplate?.layout_assets?.map((asset) => ({ ...asset })) ?? [],
+        },
+  );
+  const selectedTemplate = unitTypes.find(
+    (type) => type.unit_type_id === form.unit_type_id,
+  );
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -392,6 +634,8 @@ function AddUnitForm({
           : null,
         currency: form.currency,
         metadata: customAttributePayload(customDefinitions, customValues),
+        layout_mode: layoutMode,
+        ...(layoutMode === "custom" ? { layout: layoutPayload(layout) } : {}),
         ...(unit ? { version: unit.version } : {}),
       };
       await submitJson(
@@ -442,7 +686,7 @@ function AddUnitForm({
             value={form.unit_name}
           />
         </Field>
-        <Field label="Unit type">
+        <Field label="Unit template">
           <select
             className={inputClass}
             onChange={(event) =>
@@ -454,7 +698,7 @@ function AddUnitForm({
             required
             value={form.unit_type_id}
           >
-            <option value="">Select a unit type</option>
+            <option value="">Select a unit template</option>
             {unitTypes.map((type) => (
               <option key={type.unit_type_id} value={type.unit_type_id}>
                 {type.type_name} · {type.type_code}
@@ -541,6 +785,39 @@ function AddUnitForm({
           />
         </Field>
       </FormGrid>
+      <section className="mt-6 rounded-xl border border-white/[0.09] bg-black/15 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-[#e2e6e3]">Flat layout</p>
+            <p className="mt-1 text-xs text-[#747d78]">
+              {layoutMode === "inherited"
+                ? `Inherited from ${selectedTemplate?.type_name ?? "the selected unit template"} · ${selectedTemplate?.layout_rooms?.length ?? 0} rooms`
+                : "This flat has its own room dimensions and plan files."}
+            </p>
+          </div>
+          <button
+            className="h-9 rounded-lg border border-white/[0.11] px-3 text-xs font-semibold text-[#bdc4c0] hover:bg-white/[0.05]"
+            onClick={() => {
+              if (layoutMode === "custom") {
+                setLayoutMode("inherited");
+                return;
+              }
+              setLayoutMode("custom");
+              setLayout({
+                notes: selectedTemplate?.layout_notes ?? null,
+                rooms: selectedTemplate?.layout_rooms?.map((room) => ({ ...room })) ?? [],
+                assets: selectedTemplate?.layout_assets?.map((asset) => ({ ...asset })) ?? [],
+              });
+            }}
+            type="button"
+          >
+            {layoutMode === "custom" ? "Use template layout" : "Customize this flat"}
+          </button>
+        </div>
+      </section>
+      {layoutMode === "custom" && (
+        <LayoutEditor layout={layout} onChange={setLayout} title="Custom flat layout" />
+      )}
       <CustomAttributeFields
         definitions={customDefinitions}
         onChange={setCustomValues}
@@ -559,7 +836,6 @@ function AddUnitTypeForm({
   assetTypes,
   attributes,
   editing,
-  floorPlans,
   onClose,
   onSaved,
   projectId,
@@ -568,7 +844,6 @@ function AddUnitTypeForm({
   | "assetTypes"
   | "attributes"
   | "editing"
-  | "floorPlans"
   | "onClose"
   | "onSaved"
   | "projectId"
@@ -581,6 +856,11 @@ function AddUnitTypeForm({
   const customDefinitions = attributes.filter(
     (attribute) => attribute.applies_to === "unit_type",
   );
+  const [layout, setLayout] = useState<InventoryLayout>({
+    notes: unitType?.layout_notes ?? null,
+    rooms: unitType?.layout_rooms?.map((room) => ({ ...room })) ?? [],
+    assets: unitType?.layout_assets?.map((asset) => ({ ...asset })) ?? [],
+  });
   const [form, setForm] = useState({
     asset_type_id:
       unitType?.asset_type_id ?? assetTypes[0]?.asset_type_id ?? "",
@@ -597,6 +877,10 @@ function AddUnitTypeForm({
       unitType?.carpet_area_sqft === null
         ? ""
         : String(unitType?.carpet_area_sqft ?? ""),
+    built_up_area_sqft:
+      unitType?.built_up_area_sqft === null
+        ? ""
+        : String(unitType?.built_up_area_sqft ?? ""),
     saleable_area_sqft:
       unitType?.saleable_area_sqft === null
         ? ""
@@ -604,7 +888,6 @@ function AddUnitTypeForm({
     base_price:
       unitType?.base_price === null ? "" : String(unitType?.base_price ?? ""),
     currency: unitType?.currency ?? "INR",
-    floor_plan_id: unitType?.floor_plans?.[0]?.floor_plan_id ?? "",
     is_active: unitType?.is_active ?? true,
   });
 
@@ -622,10 +905,11 @@ function AddUnitTypeForm({
         bathrooms: numeric(form.bathrooms),
         balconies: numeric(form.balconies),
         carpet_area_sqft: numeric(form.carpet_area_sqft),
+        built_up_area_sqft: numeric(form.built_up_area_sqft),
         saleable_area_sqft: numeric(form.saleable_area_sqft),
         base_price: numeric(form.base_price),
         currency: form.currency,
-        floor_plan_id: form.floor_plan_id || null,
+        layout: layoutPayload(layout),
         specifications: customAttributePayload(customDefinitions, customValues),
         ...(unitType ? { is_active: form.is_active } : {}),
       };
@@ -636,12 +920,12 @@ function AddUnitTypeForm({
         unitType ? body : { project_id: projectId, ...body },
         unitType ? "PATCH" : "POST",
       );
-      toast.success(`Unit type ${unitType ? "updated" : "created"}`);
+      toast.success(`Unit template ${unitType ? "updated" : "created"}`);
       await onSaved();
       onClose();
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Unable to add unit type",
+        error instanceof Error ? error.message : "Unable to add unit template",
       );
     } finally {
       setBusy(false);
@@ -718,6 +1002,7 @@ function AddUnitTypeForm({
           ["bathrooms", "Bathrooms"],
           ["balconies", "Balconies"],
           ["carpet_area_sqft", "Carpet area (sq ft)"],
+          ["built_up_area_sqft", "Built-up area (sq ft)"],
           ["saleable_area_sqft", "Saleable area (sq ft)"],
           ["base_price", "Base price"],
         ].map(([key, label]) => (
@@ -737,25 +1022,6 @@ function AddUnitTypeForm({
             />
           </Field>
         ))}
-        <Field label="Primary floor plan">
-          <select
-            className={inputClass}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                floor_plan_id: event.target.value,
-              }))
-            }
-            value={form.floor_plan_id}
-          >
-            <option value="">Add later</option>
-            {floorPlans.map((plan) => (
-              <option key={plan.floor_plan_id} value={plan.floor_plan_id}>
-                {plan.plan_name} · v{plan.version}
-              </option>
-            ))}
-          </select>
-        </Field>
         <Field label="Currency">
           <input
             className={inputClass}
@@ -770,6 +1036,7 @@ function AddUnitTypeForm({
           />
         </Field>
       </FormGrid>
+      <LayoutEditor layout={layout} onChange={setLayout} />
       <CustomAttributeFields
         definitions={customDefinitions}
         onChange={setCustomValues}
@@ -793,7 +1060,7 @@ function AddUnitTypeForm({
       )}
       <FormActions
         busy={busy}
-        label={unitType ? "Save changes" : "Create type"}
+        label={unitType ? "Save changes" : "Create template"}
         onClose={onClose}
       />
     </form>
@@ -969,242 +1236,6 @@ function AddNodeForm({
       <FormActions
         busy={busy}
         label={inventoryNode ? "Save changes" : "Add location"}
-        onClose={onClose}
-      />
-    </form>
-  );
-}
-
-function AddFloorPlanForm({
-  editing,
-  onClose,
-  onSaved,
-  projectId,
-}: Pick<DialogProps, "editing" | "onClose" | "onSaved" | "projectId">) {
-  const floorPlan = isFloorPlan(editing) ? editing : null;
-  const [busy, setBusy] = useState(false);
-  const [deletingAssetId, setDeletingAssetId] = useState<string | null>(null);
-  const [existingAssets, setExistingAssets] = useState(floorPlan?.assets ?? []);
-  const [form, setForm] = useState({
-    plan_code: floorPlan?.plan_code ?? "",
-    plan_name: floorPlan?.plan_name ?? "",
-    version: String(floorPlan?.version ?? 1),
-    description: floorPlan?.description ?? "",
-    asset_url: "",
-    is_active: floorPlan?.is_active ?? true,
-  });
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    try {
-      const body = {
-        plan_code: form.plan_code,
-        plan_name: form.plan_name,
-        description: form.description || null,
-        ...(floorPlan ? { is_active: form.is_active } : {}),
-      };
-      if (floorPlan) {
-        await submitJson(
-          `/api/inventory/floor-plans/${floorPlan.floor_plan_id}`,
-          body,
-          "PATCH",
-        );
-        if (form.asset_url) {
-          await submitJson(
-            `/api/inventory/floor-plans/${floorPlan.floor_plan_id}/assets`,
-            {
-              asset_kind: "plan",
-              asset_url: form.asset_url,
-              display_order: floorPlan.assets.length + 1,
-            },
-          );
-        }
-      } else {
-        await submitJson("/api/inventory/floor-plans", {
-          project_id: projectId,
-          version: Number(form.version),
-          ...body,
-          assets: form.asset_url
-            ? [
-                {
-                  asset_kind: "plan",
-                  asset_url: form.asset_url,
-                  display_order: 1,
-                },
-              ]
-            : [],
-        });
-      }
-      toast.success(`Floor plan ${floorPlan ? "updated" : "created"}`);
-      await onSaved();
-      onClose();
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Unable to add floor plan",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function removeAsset(assetId: string) {
-    if (!floorPlan) return;
-    setDeletingAssetId(assetId);
-    try {
-      const response = await fetchWithSession(
-        `/api/inventory/floor-plans/${floorPlan.floor_plan_id}/assets/${assetId}`,
-        { method: "DELETE" },
-      );
-      if (!response.ok) throw new Error(await getApiError(response));
-      setExistingAssets((current) =>
-        current.filter((asset) => asset.asset_id !== assetId),
-      );
-      toast.success("Floor plan file removed");
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Unable to remove plan file",
-      );
-    } finally {
-      setDeletingAssetId(null);
-    }
-  }
-
-  return (
-    <form className="p-6" onSubmit={submit}>
-      <FormGrid>
-        <Field label="Plan code">
-          <input
-            autoFocus
-            className={inputClass}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                plan_code: event.target.value,
-              }))
-            }
-            placeholder="FP-3BHK-A"
-            required
-            value={form.plan_code}
-          />
-        </Field>
-        <Field label="Plan name">
-          <input
-            className={inputClass}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                plan_name: event.target.value,
-              }))
-            }
-            placeholder="3 BHK Type A"
-            required
-            value={form.plan_name}
-          />
-        </Field>
-        <Field label="Version">
-          <input
-            className={inputClass}
-            disabled={Boolean(floorPlan)}
-            min="1"
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                version: event.target.value,
-              }))
-            }
-            required
-            type="number"
-            value={form.version}
-          />
-        </Field>
-        <Field label={floorPlan ? "Add another plan URL" : "Plan URL"}>
-          <input
-            className={inputClass}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                asset_url: event.target.value,
-              }))
-            }
-            placeholder="https://…"
-            type="url"
-            value={form.asset_url}
-          />
-        </Field>
-        <Field label="Description" wide>
-          <textarea
-            className={`${inputClass} min-h-24 resize-y py-3`}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                description: event.target.value,
-              }))
-            }
-            placeholder="Internal description or revision note"
-            value={form.description}
-          />
-        </Field>
-      </FormGrid>
-      {floorPlan && existingAssets.length > 0 && (
-        <div className="mt-5 border-t border-white/[0.08] pt-5">
-          <p className="mb-2 text-xs font-medium text-[#aeb4b1]">
-            Attached plan files
-          </p>
-          <div className="divide-y divide-white/[0.07] rounded-lg border border-white/[0.08] px-3">
-            {existingAssets.map((asset) => (
-              <div
-                className="flex items-center gap-3 py-2.5"
-                key={asset.asset_id ?? asset.asset_url}
-              >
-                <FileSpreadsheet className="size-4 shrink-0 text-[#76807b]" />
-                <a
-                  className="min-w-0 flex-1 truncate text-xs text-[#b9c0bc] hover:text-white hover:underline"
-                  href={asset.asset_url}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  {asset.file_name || asset.asset_url}
-                </a>
-                {asset.asset_id && (
-                  <button
-                    aria-label="Remove floor plan file"
-                    className="grid size-8 shrink-0 place-items-center rounded-lg text-[#7d8581] hover:bg-[#ff665a]/10 hover:text-[#ff8f86] disabled:opacity-40"
-                    disabled={deletingAssetId === asset.asset_id}
-                    onClick={() => void removeAsset(asset.asset_id!)}
-                    type="button"
-                  >
-                    {deletingAssetId === asset.asset_id ? (
-                      <LoaderCircle className="size-3.5 animate-spin" />
-                    ) : (
-                      <Trash2 className="size-3.5" />
-                    )}
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {floorPlan && (
-        <label className="mt-5 flex items-center gap-2 text-sm text-[#b5bbb8]">
-          <input
-            checked={form.is_active}
-            className="accent-[#45c39e]"
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                is_active: event.target.checked,
-              }))
-            }
-            type="checkbox"
-          />
-          Active floor plan
-        </label>
-      )}
-      <FormActions
-        busy={busy}
-        label={floorPlan ? "Save changes" : "Create plan"}
         onClose={onClose}
       />
     </form>
@@ -1413,7 +1444,7 @@ function GenerateForm({
           </>
         ) : (
           <>
-            <Field label="Unit type">
+            <Field label="Unit template">
               <select
                 autoFocus
                 className={inputClass}
@@ -1426,7 +1457,7 @@ function GenerateForm({
                 required
                 value={series.unit_type_id}
               >
-                <option value="">Select unit type</option>
+                <option value="">Select unit template</option>
                 {unitTypes.map((type) => (
                   <option key={type.unit_type_id} value={type.unit_type_id}>
                     {type.type_name}
@@ -1969,12 +2000,9 @@ const dialogCopy: Record<
     description: "Create one individually managed property or sellable unit.",
   },
   unitType: {
-    title: "Create unit type",
-    description: "Define a reusable configuration, area and base price.",
-  },
-  floorPlan: {
-    title: "Add floor plan",
-    description: "Store one reusable plan and its current revision.",
+    title: "Create unit template",
+    description:
+      "Define its configuration, commercial areas, room dimensions and plan files.",
   },
   node: {
     title: "Add structure",
@@ -2001,10 +2029,8 @@ export function InventoryDialog(props: DialogProps) {
     ? {
         title: `Edit ${
           props.kind === "unitType"
-            ? "unit type"
-            : props.kind === "floorPlan"
-              ? "floor plan"
-              : props.kind === "priceBook"
+            ? "unit template"
+            : props.kind === "priceBook"
                 ? "price book"
                 : props.kind === "node"
                   ? "structure"
@@ -2021,7 +2047,6 @@ export function InventoryDialog(props: DialogProps) {
     >
       {props.kind === "unit" && <AddUnitForm {...props} />}
       {props.kind === "unitType" && <AddUnitTypeForm {...props} />}
-      {props.kind === "floorPlan" && <AddFloorPlanForm {...props} />}
       {props.kind === "node" && <AddNodeForm {...props} />}
       {props.kind === "generate" && <GenerateForm {...props} />}
       {props.kind === "import" && <ImportForm {...props} />}

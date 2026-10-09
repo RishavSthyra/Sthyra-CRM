@@ -14,12 +14,23 @@ import {
 } from "@/lib/inventory";
 import { requireOperationsContext } from "@/lib/operationsAccess";
 import { syncUnitTypeBasePrice } from "@/lib/inventoryPricing";
+import {
+  replaceUnitTypeLayout,
+  validateInventoryLayout,
+} from "@/lib/inventoryLayouts";
 
 const TYPE_SELECT = `SELECT ut.*, at.type_key AS asset_type_key, at.display_name AS asset_type_name,
-  COALESCE(jsonb_agg(jsonb_build_object('floor_plan_id',fp.floor_plan_id,'plan_code',fp.plan_code,'plan_name',fp.plan_name,'version',fp.version,'plan_role',link.plan_role,'display_order',link.display_order) ORDER BY link.display_order) FILTER (WHERE fp.floor_plan_id IS NOT NULL),'[]'::jsonb) AS floor_plans
+  COALESCE(rooms.items,'[]'::jsonb) AS layout_rooms,
+  COALESCE(assets.items,'[]'::jsonb) AS layout_assets
   FROM inventory_unit_types ut JOIN inventory_asset_types at ON at.asset_type_id=ut.asset_type_id
-  LEFT JOIN inventory_unit_type_floor_plans link ON link.unit_type_id=ut.unit_type_id
-  LEFT JOIN inventory_floor_plans fp ON fp.floor_plan_id=link.floor_plan_id`;
+  LEFT JOIN LATERAL (
+    SELECT jsonb_agg(to_jsonb(room) ORDER BY room.display_order,room.room_id) AS items
+    FROM inventory_unit_type_rooms room WHERE room.unit_type_id=ut.unit_type_id
+  ) rooms ON TRUE
+  LEFT JOIN LATERAL (
+    SELECT jsonb_agg(to_jsonb(asset) ORDER BY asset.display_order,asset.layout_asset_id) AS items
+    FROM inventory_unit_type_layout_assets asset WHERE asset.unit_type_id=ut.unit_type_id
+  ) assets ON TRUE`;
 
 export async function GET(request: NextRequest) {
   const scope = await requireOperationsContext(request);
@@ -37,7 +48,7 @@ export async function GET(request: NextRequest) {
     request.nextUrl.searchParams.get("include_inactive") === "true";
   try {
     const result = await pool.query(
-      `${TYPE_SELECT} WHERE ut.project_id=$1 AND ($2::boolean=TRUE OR ut.is_active=TRUE) GROUP BY ut.unit_type_id,at.asset_type_id ORDER BY ut.type_name,ut.unit_type_id`,
+      `${TYPE_SELECT} WHERE ut.project_id=$1 AND ($2::boolean=TRUE OR ut.is_active=TRUE) ORDER BY ut.type_name,ut.unit_type_id`,
       [projectId, includeInactive],
     );
     return NextResponse.json({ unit_types: result.rows });
@@ -85,7 +96,7 @@ export async function POST(request: NextRequest) {
       "base_price",
       "currency",
       "specifications",
-      "floor_plan_id",
+      "layout",
     ],
     errors,
   );
@@ -95,12 +106,6 @@ export async function POST(request: NextRequest) {
   );
   if (!projectId) errors.push("project_id must be an accessible project");
   const assetTypeId = uuidValue(body.asset_type_id, "asset_type_id", errors);
-  const floorPlanId = uuidValue(
-    body.floor_plan_id,
-    "floor_plan_id",
-    errors,
-    true,
-  );
   const typeCode = textValue(body.type_code, "type_code", errors, {
     required: true,
     maximum: 100,
@@ -139,6 +144,8 @@ export async function POST(request: NextRequest) {
     errors.push("currency must be a three-letter ISO code");
   const specifications =
     jsonObjectValue(body.specifications, "specifications", errors) ?? {};
+  const layoutResult = validateInventoryLayout(body.layout ?? {});
+  if (!layoutResult.ok) errors.push(...layoutResult.errors);
   if (errors.length)
     return NextResponse.json(
       { error: "Validation failed", details: errors },
@@ -151,7 +158,7 @@ export async function POST(request: NextRequest) {
       client,
       scope.context.access.company.company_id,
       projectId!,
-      { assetTypeId: assetTypeId!, floorPlanId: floorPlanId ?? null },
+      { assetTypeId: assetTypeId! },
     );
     if (referenceErrors.length) {
       await client.query("ROLLBACK");
@@ -193,10 +200,11 @@ export async function POST(request: NextRequest) {
         specifications,
       ],
     );
-    if (floorPlanId)
-      await client.query(
-        "INSERT INTO inventory_unit_type_floor_plans (unit_type_id,floor_plan_id,plan_role) VALUES ($1,$2,'primary')",
-        [result.rows[0].unit_type_id, floorPlanId],
+    if (layoutResult.ok)
+      await replaceUnitTypeLayout(
+        client,
+        result.rows[0].unit_type_id,
+        layoutResult.data,
       );
     const pricingSync = await syncUnitTypeBasePrice(client, result.rows[0]);
     await client.query("COMMIT");

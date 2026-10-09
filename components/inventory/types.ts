@@ -22,23 +22,31 @@ export type AssetType = {
   is_system: boolean;
 };
 
-export type FloorPlanAsset = {
-  asset_id?: string;
-  asset_kind: string;
+export type InventoryLayoutAsset = {
+  layout_asset_id?: string;
+  asset_kind: "floor_plan" | "render" | "document";
   asset_url: string;
   file_name?: string | null;
   mime_type?: string | null;
+  display_order?: number;
 };
 
-export type FloorPlan = {
-  floor_plan_id: string;
-  plan_code: string;
-  plan_name: string;
-  version: number;
-  description: string | null;
-  dimensions: Record<string, unknown>;
-  is_active: boolean;
-  assets: FloorPlanAsset[];
+export type InventoryLayoutRoom = {
+  room_id?: string;
+  room_name: string;
+  room_type: string | null;
+  length: number | string | null;
+  width: number | string | null;
+  measurement_unit: "ft" | "m";
+  area_sqft: number | string | null;
+  notes: string | null;
+  display_order?: number;
+};
+
+export type InventoryLayout = {
+  notes: string | null;
+  rooms: InventoryLayoutRoom[];
+  assets: InventoryLayoutAsset[];
 };
 
 export type UnitType = {
@@ -59,14 +67,10 @@ export type UnitType = {
   currency: string;
   specifications: Record<string, unknown>;
   is_active: boolean;
-  floor_plans: Array<{
-    floor_plan_id: string;
-    plan_code: string;
-    plan_name: string;
-    version: number;
-    plan_role: string;
-    display_order: number;
-  }>;
+  layout_notes: string | null;
+  layout_metadata: Record<string, unknown>;
+  layout_rooms: InventoryLayoutRoom[];
+  layout_assets: InventoryLayoutAsset[];
 };
 
 export type InventoryNode = {
@@ -102,6 +106,9 @@ export type InventoryUnit = {
   price_override: number | string | null;
   currency: string;
   metadata: Record<string, unknown>;
+  layout_mode: "inherited" | "custom";
+  layout_notes: string | null;
+  layout_metadata: Record<string, unknown>;
   type_specifications?: Record<string, unknown>;
   effective_price?: number | string | null;
   effective_price_currency?: string | null;
@@ -124,7 +131,10 @@ export type InventoryUnit = {
 };
 
 export type InventoryUnitDetail = InventoryUnit & {
-  floor_plans: FloorPlan[];
+  layout_source: "template" | "custom";
+  template_layout: InventoryLayout;
+  custom_layout: InventoryLayout;
+  effective_layout: InventoryLayout;
   prices: Array<{
     price_entry_id: string;
     price_book_name: string;
@@ -152,7 +162,6 @@ export type InventorySummary = {
   project_id: number;
   node_count: number;
   unit_type_count: number;
-  floor_plan_count: number;
   unit_count: number;
   status_counts: Array<{ status: InventoryStatus; count: number }>;
   asset_type_counts: Array<{
@@ -241,7 +250,6 @@ export type EffectiveInventoryPrice = {
 export type InventoryDialogKind =
   | "unit"
   | "unitType"
-  | "floorPlan"
   | "node"
   | "generate"
   | "import"

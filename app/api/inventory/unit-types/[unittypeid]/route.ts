@@ -18,6 +18,10 @@ import {
   syncUnitTypeBasePrice,
   type PricingSyncResult,
 } from "@/lib/inventoryPricing";
+import {
+  replaceUnitTypeLayout,
+  validateInventoryLayout,
+} from "@/lib/inventoryLayouts";
 
 type Context = { params: Promise<{ unittypeid: string }> };
 
@@ -61,7 +65,7 @@ export async function PATCH(request: NextRequest, context: Context) {
       "base_price",
       "currency",
       "specifications",
-      "floor_plan_id",
+      "layout",
       "is_active",
     ],
     errors,
@@ -107,12 +111,9 @@ export async function PATCH(request: NextRequest, context: Context) {
       errors.push("currency must be a three-letter ISO code");
     data.currency = currency;
   }
-  const floorPlanId = uuidValue(
-    body.floor_plan_id,
-    "floor_plan_id",
-    errors,
-    true,
-  );
+  const layoutResult =
+    body.layout === undefined ? null : validateInventoryLayout(body.layout);
+  if (layoutResult && !layoutResult.ok) errors.push(...layoutResult.errors);
   if (!Object.keys(body).length) errors.push("At least one field is required");
   if (errors.length)
     return NextResponse.json(
@@ -139,7 +140,6 @@ export async function PATCH(request: NextRequest, context: Context) {
       Number(existing.rows[0].project_id),
       {
         assetTypeId: data.asset_type_id as string | undefined,
-        floorPlanId: floorPlanId ?? undefined,
       },
     );
     if (referenceErrors.length) {
@@ -177,17 +177,8 @@ export async function PATCH(request: NextRequest, context: Context) {
       );
       updated = result.rows[0];
     }
-    if (body.floor_plan_id !== undefined) {
-      await client.query(
-        "DELETE FROM inventory_unit_type_floor_plans WHERE unit_type_id=$1 AND plan_role='primary'",
-        [id],
-      );
-      if (floorPlanId)
-        await client.query(
-          "INSERT INTO inventory_unit_type_floor_plans (unit_type_id,floor_plan_id,plan_role) VALUES ($1,$2,'primary') ON CONFLICT (unit_type_id,floor_plan_id) DO UPDATE SET plan_role='primary'",
-          [id, floorPlanId],
-        );
-    }
+    if (layoutResult?.ok)
+      await replaceUnitTypeLayout(client, id, layoutResult.data);
     let pricingSync: PricingSyncResult | undefined;
     if (body.base_price !== undefined || body.currency !== undefined) {
       pricingSync = await syncUnitTypeBasePrice(client, updated);

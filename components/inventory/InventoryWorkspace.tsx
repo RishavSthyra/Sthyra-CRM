@@ -45,7 +45,6 @@ import { InventoryPricingWorkspace } from "./InventoryPricingWorkspace";
 import type {
   AssetType,
   EffectiveInventoryPrice,
-  FloorPlan,
   ImportJob,
   InventoryAttributeDefinition,
   InventoryDialogKind,
@@ -68,7 +67,7 @@ type ActionKind =
   | "convertReservation"
   | "status";
 type EditableInventoryItem =
-  InventoryUnit | UnitType | FloorPlan | InventoryNode | PriceBook;
+  InventoryUnit | UnitType | InventoryNode | PriceBook;
 
 type LeadReference = {
   lead_id: string;
@@ -325,7 +324,7 @@ function UnitDrawer({
 
               <div className="mt-6 grid grid-cols-2 gap-x-8 gap-y-5 border-y border-white/[0.08] py-5">
                 {[
-                  ["Unit type", unit.type_name],
+                  ["Unit template", unit.type_name],
                   ["Configuration", unit.configuration ?? "—"],
                   ["Location", unit.node_name ?? "Unassigned"],
                   ["Orientation", unit.orientation ?? "—"],
@@ -432,48 +431,72 @@ function UnitDrawer({
               <section className="mt-7">
                 <div className="mb-3 flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-[#e4e7e5]">
-                    Floor plans
+                    Layout and rooms
                   </h3>
-                  <span className="text-xs text-[#69716d]">
-                    {unit.floor_plans.length}
+                  <span className="rounded-full border border-white/[0.09] px-2 py-1 text-[10px] font-medium text-[#87908b]">
+                    {unit.layout_source === "custom"
+                      ? "Custom layout"
+                      : `Inherited from ${unit.type_name}`}
                   </span>
                 </div>
-                {unit.floor_plans.length ? (
+                {unit.effective_layout.assets.length > 0 && (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {unit.effective_layout.assets.map((asset, index) => (
+                      <a
+                        className="inline-flex h-9 items-center gap-2 rounded-lg border border-white/[0.09] px-3 text-xs font-medium text-[#aeb7b2] hover:bg-white/[0.04] hover:text-white"
+                        href={asset.asset_url}
+                        key={asset.layout_asset_id || asset.asset_url}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <FileImage className="size-3.5" />
+                        {asset.file_name ||
+                          (asset.asset_kind === "floor_plan"
+                            ? `Floor plan ${index + 1}`
+                            : humanize(asset.asset_kind))}
+                      </a>
+                    ))}
+                  </div>
+                )}
+                {unit.effective_layout.rooms.length ? (
                   <div className="divide-y divide-white/[0.07] border-y border-white/[0.08]">
-                    {unit.floor_plans.map((plan) => (
+                    {unit.effective_layout.rooms.map((room, index) => (
                       <div
                         className="flex items-center justify-between gap-4 py-3.5"
-                        key={plan.floor_plan_id}
+                        key={room.room_id || `${room.room_name}-${index}`}
                       >
-                        <div className="flex min-w-0 items-center gap-3">
-                          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-white/[0.05] text-[#8f9793]">
-                            <FileImage className="size-4" />
-                          </span>
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium text-[#d6dad7]">
-                              {plan.plan_name}
-                            </p>
-                            <p className="mt-0.5 text-xs text-[#6f7773]">
-                              {plan.plan_code} · v{plan.version}
-                            </p>
-                          </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-[#d6dad7]">
+                            {room.room_name}
+                          </p>
+                          <p className="mt-0.5 text-xs text-[#6f7773]">
+                            {room.room_type || "Room"}
+                            {room.notes ? ` · ${room.notes}` : ""}
+                          </p>
                         </div>
-                        {plan.assets?.[0]?.asset_url && (
-                          <a
-                            className="text-xs font-medium text-[#70d8ba] hover:underline"
-                            href={plan.assets[0].asset_url}
-                            rel="noreferrer"
-                            target="_blank"
-                          >
-                            Open
-                          </a>
-                        )}
+                        <div className="shrink-0 text-right">
+                          <p className="text-sm text-[#c9cfcb]">
+                            {room.length && room.width
+                              ? `${formatNumber(room.length)} × ${formatNumber(room.width)} ${room.measurement_unit}`
+                              : "Dimensions not set"}
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-[#68716c]">
+                            {room.area_sqft
+                              ? `${formatNumber(room.area_sqft)} sq ft`
+                              : "—"}
+                          </p>
+                        </div>
                       </div>
                     ))}
                   </div>
                 ) : (
                   <p className="border-y border-white/[0.08] py-5 text-sm text-[#6e7672]">
-                    No floor plan is linked to this unit type.
+                    No rooms have been defined for this layout yet.
+                  </p>
+                )}
+                {unit.effective_layout.notes && (
+                  <p className="mt-3 text-xs leading-5 text-[#77807b]">
+                    {unit.effective_layout.notes}
                   </p>
                 )}
               </section>
@@ -966,7 +989,6 @@ export function InventoryWorkspace() {
   const [units, setUnits] = useState<InventoryUnit[]>([]);
   const [unitTypes, setUnitTypes] = useState<UnitType[]>([]);
   const [nodes, setNodes] = useState<InventoryNode[]>([]);
-  const [floorPlans, setFloorPlans] = useState<FloorPlan[]>([]);
   const [assetTypes, setAssetTypes] = useState<AssetType[]>([]);
   const [imports, setImports] = useState<ImportJob[]>([]);
   const [priceBooks, setPriceBooks] = useState<PriceBook[]>([]);
@@ -1090,7 +1112,6 @@ export function InventoryWorkspace() {
         summaryData,
         typeData,
         nodeData,
-        planData,
         assetData,
         importData,
         priceData,
@@ -1103,9 +1124,6 @@ export function InventoryWorkspace() {
           `/api/inventory/unit-types?${query}&include_inactive=true`,
         ),
         fetchJson<{ nodes: InventoryNode[] }>(`/api/inventory/nodes?${query}`),
-        fetchJson<{ floor_plans: FloorPlan[] }>(
-          `/api/inventory/floor-plans?${query}&include_inactive=true`,
-        ),
         fetchJson<{ asset_types: AssetType[] }>("/api/inventory/asset-types"),
         fetchJson<{ imports: ImportJob[] }>(
           `/api/inventory/imports?${query}&limit=50`,
@@ -1126,7 +1144,6 @@ export function InventoryWorkspace() {
       setSummary(summaryData);
       setUnitTypes(typeData.unit_types);
       setNodes(nodeData.nodes);
-      setFloorPlans(planData.floor_plans);
       setAssetTypes(assetData.asset_types);
       setImports(importData.imports);
       setPriceBooks(priceData.price_books);
@@ -1212,7 +1229,7 @@ export function InventoryWorkspace() {
 
   const tabs: Array<{ key: Tab; label: string; count?: number }> = [
     { key: "units", label: "Units", count: summary?.unit_count },
-    { key: "catalogue", label: "Catalogue", count: summary?.unit_type_count },
+    { key: "catalogue", label: "Templates", count: summary?.unit_type_count },
     { key: "structure", label: "Structure", count: summary?.node_count },
     { key: "pricing", label: "Pricing", count: priceBooks.length },
     { key: "imports", label: "Imports", count: imports.length },
@@ -1223,7 +1240,7 @@ export function InventoryWorkspace() {
     { label: string; kind: InventoryDialogKind }
   > = {
     units: { label: "Add unit", kind: "unit" },
-    catalogue: { label: "Create unit type", kind: "unitType" },
+    catalogue: { label: "Create unit template", kind: "unitType" },
     structure: { label: "Add structure", kind: "node" },
     pricing: { label: "Create price book", kind: "priceBook" },
     imports: { label: "Import CSV", kind: "import" },
@@ -1572,16 +1589,16 @@ export function InventoryWorkspace() {
               )}
 
               {tab === "catalogue" && (
-                <section className="grid gap-10 pt-7 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,.75fr)]">
+                <section className="pt-7">
                   <div>
                     <div className="mb-4 flex items-end justify-between gap-4">
                       <div>
                         <h2 className="text-base font-semibold text-[#e8ebe9]">
-                          Unit types
+                          Unit templates
                         </h2>
                         <p className="mt-1 text-sm text-[#747c78]">
-                          Reusable product definitions shared by individual
-                          units.
+                          Configuration, room dimensions, plan files and pricing
+                          inherited by every flat.
                         </p>
                       </div>
                       <button
@@ -1589,14 +1606,14 @@ export function InventoryWorkspace() {
                         onClick={() => openDialog("unitType")}
                         type="button"
                       >
-                        <Plus className="size-3.5" /> Add type
+                        <Plus className="size-3.5" /> Add template
                       </button>
                     </div>
                     {unitTypes.length ? (
                       <div className="overflow-hidden rounded-xl border border-[#2c2c2c] bg-[#080808] divide-y divide-[#2c2c2c]">
                         {unitTypes.map((type) => (
                           <div
-                            className="grid grid-cols-[minmax(0,1.3fr)_minmax(100px,.65fr)_minmax(120px,.65fr)_90px] items-center gap-5 px-4 py-4 transition hover:bg-[#101010] max-[760px]:grid-cols-[minmax(0,1fr)_90px]"
+                            className="grid grid-cols-[minmax(0,1.3fr)_minmax(100px,.65fr)_minmax(120px,.65fr)_130px] items-center gap-5 px-4 py-4 transition hover:bg-[#101010] max-[760px]:grid-cols-[minmax(0,1fr)_130px]"
                             key={type.unit_type_id}
                           >
                             <div className="flex min-w-0 items-center gap-3">
@@ -1631,14 +1648,17 @@ export function InventoryWorkspace() {
                             </div>
                             <div className="flex items-center justify-end gap-2">
                               <span className="text-xs text-[#59615d]">
-                                {type.floor_plans.length} plan
-                                {type.floor_plans.length === 1 ? "" : "s"}
+                                {type.layout_rooms.length} room
+                                {type.layout_rooms.length === 1 ? "" : "s"}
+                                {type.layout_assets.length
+                                  ? ` · ${type.layout_assets.length} file${type.layout_assets.length === 1 ? "" : "s"}`
+                                  : ""}
                               </span>
                               <button
                                 aria-label={`Edit ${type.type_name}`}
                                 className="grid size-8 place-items-center rounded-lg text-[#77807b] transition hover:bg-white/[0.06] hover:text-white"
                                 onClick={() => openDialog("unitType", type)}
-                                title="Edit unit type"
+                                title="Edit unit template"
                                 type="button"
                               >
                                 <Pencil className="size-3.5" />
@@ -1652,78 +1672,9 @@ export function InventoryWorkspace() {
                         action={() => openDialog("unitType")}
                         description="Define configurations such as 2 BHK, villa types, commercial suites, or any custom asset."
                         icon={Grid2X2}
-                        label="Create unit type"
-                        title="Build your inventory catalogue"
+                        label="Create unit template"
+                        title="Build your inventory templates"
                       />
-                    )}
-                  </div>
-
-                  <div>
-                    <div className="mb-4 flex items-end justify-between gap-4">
-                      <div>
-                        <h2 className="text-base font-semibold text-[#e8ebe9]">
-                          Floor plans
-                        </h2>
-                        <p className="mt-1 text-sm text-[#747c78]">
-                          Versioned once, reused everywhere.
-                        </p>
-                      </div>
-                      <button
-                        className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-white/[0.11] px-3 text-xs font-semibold text-[#c3c8c5] hover:bg-white/[0.05]"
-                        onClick={() => openDialog("floorPlan")}
-                        type="button"
-                      >
-                        <Plus className="size-3.5" /> Add plan
-                      </button>
-                    </div>
-                    {floorPlans.length ? (
-                      <div className="overflow-hidden rounded-xl border border-[#2c2c2c] bg-[#080808] divide-y divide-[#2c2c2c]">
-                        {floorPlans.map((plan) => (
-                          <div
-                            className="flex items-center gap-3 px-4 py-4 transition hover:bg-[#101010]"
-                            key={plan.floor_plan_id}
-                          >
-                            <span className="grid size-10 shrink-0 place-items-center rounded-lg border border-white/[0.07] bg-white/[0.035] text-[#8d9591]">
-                              <FileImage className="size-[18px]" />
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-semibold text-[#dfe3e0]">
-                                {plan.plan_name}
-                              </p>
-                              <p className="mt-0.5 text-xs text-[#69716d]">
-                                {plan.plan_code} · Version {plan.version}
-                                {!plan.is_active && " · Inactive"}
-                              </p>
-                            </div>
-                            <span className="text-xs text-[#67706b]">
-                              {plan.assets.length} file
-                              {plan.assets.length === 1 ? "" : "s"}
-                            </span>
-                            <button
-                              aria-label={`Edit ${plan.plan_name}`}
-                              className="grid size-8 shrink-0 place-items-center rounded-lg text-[#77807b] transition hover:bg-white/[0.06] hover:text-white"
-                              onClick={() => openDialog("floorPlan", plan)}
-                              title="Edit floor plan"
-                              type="button"
-                            >
-                              <Pencil className="size-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="rounded-xl border border-[#2c2c2c] bg-[#080808] py-10 text-center">
-                        <p className="text-sm text-[#747c78]">
-                          No floor plans yet.
-                        </p>
-                        <button
-                          className="mt-3 text-xs font-semibold text-[#69d7b6] hover:underline"
-                          onClick={() => openDialog("floorPlan")}
-                          type="button"
-                        >
-                          Add the first plan
-                        </button>
-                      </div>
                     )}
                   </div>
                   <InventoryAttributesManager
@@ -1953,7 +1904,6 @@ export function InventoryWorkspace() {
         <InventoryDialog
           assetTypes={assetTypes}
           attributes={attributes}
-          floorPlans={floorPlans}
           editing={editingItem}
           kind={dialog}
           nodes={nodes}

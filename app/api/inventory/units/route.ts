@@ -17,6 +17,10 @@ import {
 import { requireOperationsContext } from "@/lib/operationsAccess";
 import { getAccessibleProjectIds } from "@/lib/projectAccess";
 import { parsePagination } from "@/utils/parsePagination";
+import {
+  replaceUnitLayout,
+  validateInventoryLayout,
+} from "@/lib/inventoryLayouts";
 
 export async function GET(request: NextRequest) {
   const scope = await requireOperationsContext(request);
@@ -184,6 +188,8 @@ export async function POST(request: NextRequest) {
       "price_override",
       "currency",
       "metadata",
+      "layout_mode",
+      "layout",
     ],
     errors,
   );
@@ -226,6 +232,19 @@ export async function POST(request: NextRequest) {
   if (!/^[A-Z]{3}$/.test(currency))
     errors.push("currency must be a three-letter ISO code");
   const metadata = jsonObjectValue(body.metadata, "metadata", errors) ?? {};
+  const layoutMode =
+    body.layout_mode === undefined || body.layout_mode === "inherited"
+      ? "inherited"
+      : body.layout_mode === "custom"
+        ? "custom"
+        : (errors.push("layout_mode must be inherited or custom"), "inherited");
+  const layoutResult =
+    layoutMode === "custom"
+      ? validateInventoryLayout(body.layout ?? {})
+      : body.layout === undefined
+        ? null
+        : validateInventoryLayout(body.layout);
+  if (layoutResult && !layoutResult.ok) errors.push(...layoutResult.errors);
   if (errors.length)
     return NextResponse.json(
       { error: "Validation failed", details: errors },
@@ -261,7 +280,7 @@ export async function POST(request: NextRequest) {
       );
     }
     const result = await client.query(
-      `INSERT INTO inventory_units (company_id,project_id,node_id,unit_type_id,unit_code,unit_name,external_unit_key,orientation,area_sqft,price_override,currency,metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+      `INSERT INTO inventory_units (company_id,project_id,node_id,unit_type_id,unit_code,unit_name,external_unit_key,orientation,area_sqft,price_override,currency,metadata,layout_mode) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
       [
         scope.context.access.company.company_id,
         projectId,
@@ -275,8 +294,11 @@ export async function POST(request: NextRequest) {
         price ?? null,
         currency,
         metadata,
+        layoutMode,
       ],
     );
+    if (layoutMode === "custom" && layoutResult?.ok)
+      await replaceUnitLayout(client, result.rows[0].unit_id, layoutResult.data);
     await client.query(
       `INSERT INTO inventory_unit_status_history (unit_id,from_status,to_status,reason,metadata,performed_by) VALUES ($1,NULL,'available','Inventory unit created',$2,$3)`,
       [result.rows[0].unit_id, { source: "api" }, scope.context.userId],

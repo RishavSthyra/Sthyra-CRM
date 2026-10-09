@@ -22,6 +22,7 @@ export const INVENTORY_UNIT_COLUMNS = `
   iu.unit_id, iu.company_id, iu.project_id, iu.node_id, iu.unit_type_id,
   iu.unit_code, iu.unit_name, iu.external_unit_key, iu.orientation,
   iu.area_sqft, iu.price_override, iu.currency, iu.status, iu.metadata,
+  iu.layout_mode, iu.layout_notes, iu.layout_metadata,
   iu.version, iu.archived_at, iu.created_at, iu.updated_at,
   node.node_kind, node.node_code, node.node_name,
   unit_type.type_code, unit_type.type_name, unit_type.configuration,
@@ -29,6 +30,8 @@ export const INVENTORY_UNIT_COLUMNS = `
   unit_type.saleable_area_sqft, unit_type.base_price,
   unit_type.currency AS type_currency,
   unit_type.specifications AS type_specifications,
+  unit_type.layout_notes AS type_layout_notes,
+  unit_type.layout_metadata AS type_layout_metadata,
   asset_type.type_key AS asset_type_key,
   asset_type.display_name AS asset_type_name
 `;

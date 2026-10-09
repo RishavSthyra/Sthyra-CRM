@@ -17,6 +17,10 @@ import {
   canAccessOperationsEntity,
   requireOperationsContext,
 } from "@/lib/operationsAccess";
+import {
+  replaceUnitLayout,
+  validateInventoryLayout,
+} from "@/lib/inventoryLayouts";
 
 type Context = { params: Promise<{ unitid: string }> };
 async function accessUnit(request: NextRequest, raw: string) {
@@ -61,10 +65,22 @@ export async function GET(request: NextRequest, context: Context) {
   const access = await accessUnit(request, (await context.params).unitid);
   if (!access.ok) return access.response;
   try {
-    const [plans, prices, hold, reservation] = await Promise.all([
+    const [typeRooms, typeAssets, unitRooms, unitAssets, prices, hold, reservation] = await Promise.all([
       pool.query(
-        `SELECT fp.*,link.plan_role,link.display_order,COALESCE(jsonb_agg(jsonb_build_object('asset_id',a.asset_id,'asset_kind',a.asset_kind,'asset_url',a.asset_url,'file_name',a.file_name,'mime_type',a.mime_type) ORDER BY a.display_order) FILTER(WHERE a.asset_id IS NOT NULL),'[]'::jsonb) AS assets FROM inventory_unit_type_floor_plans link JOIN inventory_floor_plans fp ON fp.floor_plan_id=link.floor_plan_id LEFT JOIN inventory_floor_plan_assets a ON a.floor_plan_id=fp.floor_plan_id WHERE link.unit_type_id=$1 GROUP BY fp.floor_plan_id,link.plan_role,link.display_order ORDER BY link.display_order`,
+        `SELECT * FROM inventory_unit_type_rooms WHERE unit_type_id=$1 ORDER BY display_order,room_id`,
         [access.unit.unit_type_id],
+      ),
+      pool.query(
+        `SELECT * FROM inventory_unit_type_layout_assets WHERE unit_type_id=$1 ORDER BY display_order,layout_asset_id`,
+        [access.unit.unit_type_id],
+      ),
+      pool.query(
+        `SELECT * FROM inventory_unit_rooms WHERE unit_id=$1 ORDER BY display_order,room_id`,
+        [access.unitId],
+      ),
+      pool.query(
+        `SELECT * FROM inventory_unit_layout_assets WHERE unit_id=$1 ORDER BY display_order,layout_asset_id`,
+        [access.unitId],
       ),
       pool.query(
         `SELECT entry.*,book.price_book_name,book.currency FROM inventory_price_book_entries entry JOIN inventory_price_books book ON book.price_book_id=entry.price_book_id WHERE book.is_active=TRUE AND (entry.unit_id=$1 OR (entry.unit_type_id=$2 AND entry.unit_id IS NULL)) AND (entry.valid_from IS NULL OR entry.valid_from<=CURRENT_DATE) AND (entry.valid_until IS NULL OR entry.valid_until>=CURRENT_DATE) ORDER BY entry.unit_id NULLS LAST,book.is_default DESC,entry.valid_from DESC NULLS LAST`,
@@ -79,10 +95,24 @@ export async function GET(request: NextRequest, context: Context) {
         [access.unitId],
       ),
     ]);
+    const customLayout = {
+      notes: access.unit.layout_notes ?? null,
+      rooms: unitRooms.rows,
+      assets: unitAssets.rows,
+    };
+    const templateLayout = {
+      notes: access.unit.type_layout_notes ?? null,
+      rooms: typeRooms.rows,
+      assets: typeAssets.rows,
+    };
+    const usesCustomLayout = access.unit.layout_mode === "custom";
     return NextResponse.json({
       unit: {
         ...access.unit,
-        floor_plans: plans.rows,
+        template_layout: templateLayout,
+        custom_layout: customLayout,
+        effective_layout: usesCustomLayout ? customLayout : templateLayout,
+        layout_source: usesCustomLayout ? "custom" : "template",
         prices: prices.rows,
         active_hold: hold.rows[0] ?? null,
         active_reservation: reservation.rows[0] ?? null,
@@ -128,6 +158,8 @@ export async function PATCH(request: NextRequest, context: Context) {
       "price_override",
       "currency",
       "metadata",
+      "layout_mode",
+      "layout",
       "version",
     ],
     errors,
@@ -160,6 +192,25 @@ export async function PATCH(request: NextRequest, context: Context) {
     }),
     metadata: jsonObjectValue(body.metadata, "metadata", errors),
   };
+  if (body.layout_mode !== undefined) {
+    if (body.layout_mode !== "inherited" && body.layout_mode !== "custom")
+      errors.push("layout_mode must be inherited or custom");
+    else data.layout_mode = body.layout_mode;
+  }
+  const layoutResult =
+    body.layout === undefined ? null : validateInventoryLayout(body.layout);
+  if (layoutResult && !layoutResult.ok) errors.push(...layoutResult.errors);
+  const effectiveLayoutMode = String(
+    data.layout_mode ?? access.unit.layout_mode ?? "inherited",
+  );
+  if (body.layout !== undefined && effectiveLayoutMode !== "custom")
+    errors.push("layout can only be saved when layout_mode is custom");
+  if (
+    data.layout_mode === "custom" &&
+    access.unit.layout_mode !== "custom" &&
+    body.layout === undefined
+  )
+    errors.push("layout is required when customizing an inherited layout");
   if (body.currency !== undefined) {
     const currency = textValue(body.currency, "currency", errors, {
       maximum: 3,
@@ -220,7 +271,7 @@ export async function PATCH(request: NextRequest, context: Context) {
     const values = fields.map(([, value]) => value);
     values.push(access.unitId, expectedVersion ?? Number(access.unit.version));
     const result = await client.query(
-      `UPDATE inventory_units SET ${fields.map(([key], index) => `${key}=$${index + 1}`).join(",")},version=version+1,updated_at=CURRENT_TIMESTAMP WHERE unit_id=$${values.length - 1} AND version=$${values.length} RETURNING *`,
+      `UPDATE inventory_units SET ${fields.length ? `${fields.map(([key], index) => `${key}=$${index + 1}`).join(",")},` : ""}version=version+1,updated_at=CURRENT_TIMESTAMP WHERE unit_id=$${values.length - 1} AND version=$${values.length} RETURNING *`,
       values,
     );
     if (!result.rowCount) {
@@ -232,6 +283,21 @@ export async function PATCH(request: NextRequest, context: Context) {
         },
         { status: 409 },
       );
+    }
+    if (effectiveLayoutMode === "inherited") {
+      await client.query("DELETE FROM inventory_unit_rooms WHERE unit_id=$1", [
+        access.unitId,
+      ]);
+      await client.query(
+        "DELETE FROM inventory_unit_layout_assets WHERE unit_id=$1",
+        [access.unitId],
+      );
+      await client.query(
+        "UPDATE inventory_units SET layout_notes=NULL,layout_metadata='{}'::jsonb WHERE unit_id=$1",
+        [access.unitId],
+      );
+    } else if (layoutResult?.ok) {
+      await replaceUnitLayout(client, access.unitId, layoutResult.data);
     }
     await client.query("COMMIT");
     return NextResponse.json({

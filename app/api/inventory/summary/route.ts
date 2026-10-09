@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
         [projectId],
       ),
       pool.query(
-        `SELECT (SELECT COUNT(*) FROM project_inventory_nodes WHERE project_id=$1 AND is_active=TRUE)::integer AS node_count,(SELECT COUNT(*) FROM inventory_unit_types WHERE project_id=$1 AND is_active=TRUE)::integer AS unit_type_count,(SELECT COUNT(*) FROM inventory_floor_plans WHERE project_id=$1 AND is_active=TRUE)::integer AS floor_plan_count,(SELECT COUNT(*) FROM inventory_units WHERE project_id=$1 AND archived_at IS NULL)::integer AS unit_count`,
+        `SELECT (SELECT COUNT(*) FROM project_inventory_nodes WHERE project_id=$1 AND is_active=TRUE)::integer AS node_count,(SELECT COUNT(*) FROM inventory_unit_types WHERE project_id=$1 AND is_active=TRUE)::integer AS unit_type_count,(SELECT COUNT(*) FROM inventory_units WHERE project_id=$1 AND archived_at IS NULL)::integer AS unit_count`,
         [projectId],
       ),
       pool.query(
