@@ -16,9 +16,15 @@ export const CONTACT_COLUMNS = `
   is_nri,
   country,
   company_works_at,
+  occupation,
   is_married,
+  marital_status,
   anniversary_date::text AS anniversary_date,
   address,
+  city,
+  district,
+  state,
+  postal_code,
   merged_into_contact_id,
   archived_at,
   created_at,
@@ -36,9 +42,15 @@ const CONTACT_FIELDS = [
   "is_nri",
   "country",
   "company_works_at",
+  "occupation",
   "is_married",
+  "marital_status",
   "anniversary_date",
   "address",
+  "city",
+  "district",
+  "state",
+  "postal_code",
 ] as const;
 
 export type ContactField = (typeof CONTACT_FIELDS)[number];
@@ -53,10 +65,41 @@ export type ContactWrite = Partial<{
   is_nri: boolean;
   country: string | null;
   company_works_at: string | null;
+  occupation: string | null;
   is_married: boolean;
+  marital_status: MaritalStatus | null;
   anniversary_date: string | null;
   address: string | null;
+  city: string | null;
+  district: string | null;
+  state: string | null;
+  postal_code: string | null;
 }>;
+
+export const MARITAL_STATUSES = [
+  "single",
+  "married",
+  "separated",
+  "divorced",
+  "widowed",
+  "prefer_not_to_say",
+] as const;
+
+export type MaritalStatus = (typeof MARITAL_STATUSES)[number];
+
+export const CONTACT_PROFILE_FIELDS = [
+  "company_works_at",
+  "occupation",
+  "date_of_birth",
+  "marital_status",
+  "anniversary_date",
+  "address",
+  "city",
+  "district",
+  "state",
+  "postal_code",
+  "country",
+] as const;
 
 type ValidationResult =
   | { ok: true; data: ContactWrite }
@@ -191,9 +234,35 @@ export function validateContactPayload(
   if (company !== undefined) {
     data.company_works_at = company;
   }
+  const occupation = validateText(
+    body.occupation,
+    "occupation",
+    200,
+    true,
+    errors,
+  );
+  if (occupation !== undefined) {
+    data.occupation = occupation;
+  }
   const isMarried = validateBoolean(body.is_married, "is_married", errors);
   if (isMarried !== undefined) {
     data.is_married = isMarried;
+  }
+  if (body.marital_status !== undefined) {
+    if (body.marital_status === null) {
+      data.marital_status = null;
+      data.is_married = false;
+    } else if (
+      typeof body.marital_status !== "string" ||
+      !MARITAL_STATUSES.includes(body.marital_status as MaritalStatus)
+    ) {
+      errors.push(
+        `marital_status must be one of: ${MARITAL_STATUSES.join(", ")}, or null`,
+      );
+    } else {
+      data.marital_status = body.marital_status as MaritalStatus;
+      data.is_married = body.marital_status === "married";
+    }
   }
   const anniversary = validateDate(
     body.anniversary_date,
@@ -206,6 +275,17 @@ export function validateContactPayload(
   const address = validateText(body.address, "address", 5000, true, errors);
   if (address !== undefined) {
     data.address = address;
+  }
+  for (const [field, maxLength] of [
+    ["city", 100],
+    ["district", 100],
+    ["state", 100],
+    ["postal_code", 20],
+  ] as const) {
+    const value = validateText(body[field], field, maxLength, true, errors);
+    if (value !== undefined) {
+      data[field] = value;
+    }
   }
 
   if (!options.partial) {
@@ -226,6 +306,22 @@ export function validateContactPayload(
   }
 
   return errors.length ? { ok: false, errors } : { ok: true, data };
+}
+
+export function validateContactProfilePayload(body: unknown): ValidationResult {
+  if (!isObject(body) || Array.isArray(body)) {
+    return { ok: false, errors: ["Request body must be a JSON object"] };
+  }
+
+  const allowed = new Set<string>(CONTACT_PROFILE_FIELDS);
+  const unknownFields = Object.keys(body).filter((field) => !allowed.has(field));
+  if (unknownFields.length) {
+    return {
+      ok: false,
+      errors: unknownFields.map((field) => `Unknown profile field: ${field}`),
+    };
+  }
+  return validateContactPayload(body, { partial: true });
 }
 
 export function parseContactId(value: string): string | null {
@@ -271,11 +367,17 @@ export async function createContact(
        is_nri,
        country,
        company_works_at,
+       occupation,
        is_married,
+       marital_status,
        anniversary_date,
-       address
+       address,
+       city,
+       district,
+       state,
+       postal_code
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
      RETURNING ${CONTACT_COLUMNS}`,
     [
       companyId,
@@ -289,9 +391,15 @@ export async function createContact(
       contact.is_nri ?? false,
       contact.country ?? null,
       contact.company_works_at ?? null,
+      contact.occupation ?? null,
       contact.is_married ?? false,
+      contact.marital_status ?? null,
       contact.anniversary_date ?? null,
       contact.address ?? null,
+      contact.city ?? null,
+      contact.district ?? null,
+      contact.state ?? null,
+      contact.postal_code ?? null,
     ],
   );
   const created = result.rows[0] as ContactRow;

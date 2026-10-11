@@ -21,6 +21,11 @@ import {
   RichTextEditor,
 } from "@/components/activity/RichTextEditor";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
+import {
+  ContactProfile,
+  ContactProfilePopover,
+  ContactProfileWrite,
+} from "@/components/leads/ContactProfilePopover";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 import { getWorkspaceContext } from "@/lib/clientWorkspaceContext";
 import { DEFAULT_PROJECT_LEAD_STAGES } from "@/lib/defaultLeadStages";
@@ -96,14 +101,7 @@ type LeadDetail = Lead & {
   preferred_location?: string | null;
   preferred_config?: string | null;
   preferred_floor?: string | null;
-  contact?: {
-    first_name?: string;
-    last_name?: string | null;
-    email?: string | null;
-    phone_number?: string | null;
-    company_works_at?: string | null;
-    address?: string | null;
-  };
+  contact?: ContactProfile;
   stage?: { stage_name?: string | null } | null;
 };
 
@@ -836,6 +834,30 @@ export default function LeadsPage() {
     });
     if (email) params.set("to", email);
     router.push(`/activity?${params.toString()}`);
+  }
+
+  async function updateContactProfile(profile: ContactProfileWrite) {
+    const lead = leadDetail ?? selectedLead;
+    if (!lead) throw new Error("No lead is selected");
+    const response = await fetchWithSession(
+      `/api/leads/${lead.lead_id}/contact`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(profile),
+      },
+    );
+    if (response.status === 401) {
+      router.replace("/login");
+      throw new Error("Your session has expired");
+    }
+    if (!response.ok) throw new Error(await getApiError(response));
+    const body = (await response.json()) as { contact?: ContactProfile };
+    if (!body.contact) throw new Error("The updated contact was not returned");
+    setLeadDetail((current) =>
+      current ? { ...current, contact: body.contact } : current,
+    );
+    toast.success("Contact profile updated");
   }
 
   async function createLeadNote(event: FormEvent) {
@@ -1703,10 +1725,21 @@ export default function LeadsPage() {
                   "No description has been added for this lead.";
                 return (
                   <>
-                    <section className="flex min-h-[84px] items-center gap-3.5 border-b border-[#2c2c2c] px-[22px] max-[560px]:gap-2.5 max-[560px]:px-4">
-                      <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[#363636] text-sm text-[#f5f5f5]">
-                        {`${name[0] || "?"}${name.split(" ")[1]?.[0] || ""}`.toUpperCase()}
-                      </span>
+                    <section className="relative flex min-h-[84px] items-center gap-3.5 border-b border-[#2c2c2c] px-[22px] max-[560px]:gap-2.5 max-[560px]:px-4">
+                      <ContactProfilePopover
+                        name={name}
+                        onSave={updateContactProfile}
+                        profile={{
+                          ...contact,
+                          first_name:
+                            contact?.first_name ?? currentLead.first_name,
+                          last_name:
+                            contact?.last_name ?? currentLead.last_name,
+                          email: contact?.email ?? currentLead.email,
+                          phone_number:
+                            contact?.phone_number ?? currentLead.phone_number,
+                        }}
+                      />
                       <div className="flex min-w-0 flex-1 flex-col gap-[5px]">
                         <strong className="overflow-hidden text-lg text-ellipsis whitespace-nowrap max-[560px]:text-[15px]">
                           {name}

@@ -7,10 +7,14 @@ import {
   validateContactPayload,
 } from "@/lib/contacts";
 import { getDatabaseErrorCode } from "@/utils/getDatabaseErrorCode";
+import { requireOperationsContext } from "@/lib/operationsAccess";
 
 type ContactContext = { params: Promise<{ contactid: string }> };
 
-export async function GET(_request: NextRequest, context: ContactContext) {
+export async function GET(request: NextRequest, context: ContactContext) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
+
   const contactId = parseContactId((await context.params).contactid);
   if (!contactId) {
     return NextResponse.json(
@@ -22,8 +26,8 @@ export async function GET(_request: NextRequest, context: ContactContext) {
     const result = await pool.query(
       `SELECT ${CONTACT_COLUMNS}
        FROM contacts
-       WHERE contact_id = $1 AND archived_at IS NULL`,
-      [contactId],
+       WHERE contact_id = $1 AND company_id = $2 AND archived_at IS NULL`,
+      [contactId, scope.context.access.company.company_id],
     );
     if (result.rowCount === 0) {
       return NextResponse.json({ error: "Contact not found" }, { status: 404 });
@@ -39,6 +43,9 @@ export async function GET(_request: NextRequest, context: ContactContext) {
 }
 
 export async function PATCH(request: NextRequest, context: ContactContext) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
+
   const contactId = parseContactId((await context.params).contactid);
   if (!contactId) {
     return NextResponse.json(
@@ -68,9 +75,9 @@ export async function PATCH(request: NextRequest, context: ContactContext) {
     await client.query("BEGIN");
     const result = await client.query(
       `SELECT * FROM contacts
-       WHERE contact_id = $1 AND archived_at IS NULL
+       WHERE contact_id = $1 AND company_id = $2 AND archived_at IS NULL
        FOR UPDATE`,
-      [contactId],
+      [contactId, scope.context.access.company.company_id],
     );
     if (result.rowCount === 0) {
       await client.query("ROLLBACK");
@@ -94,8 +101,11 @@ export async function PATCH(request: NextRequest, context: ContactContext) {
     }
     if (validation.data.account_id) {
       const accountResult = await client.query(
-        "SELECT account_id FROM accounts WHERE account_id = $1 AND archived_at IS NULL",
-        [validation.data.account_id],
+        "SELECT account_id FROM accounts WHERE account_id = $1 AND company_id = $2 AND archived_at IS NULL",
+        [
+          validation.data.account_id,
+          scope.context.access.company.company_id,
+        ],
       );
       if (accountResult.rowCount === 0) {
         await client.query("ROLLBACK");
