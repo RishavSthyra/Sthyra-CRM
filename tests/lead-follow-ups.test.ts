@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getCallFollowUpPlan } from "../lib/leadFollowUps";
+import {
+  getCallFollowUpPlan,
+  getReopenedLeadCallPlan,
+} from "../lib/leadFollowUps";
 import { validateDisposition } from "../lib/telephony";
 
 const callTime = "2026-10-11T06:30:00.000Z";
@@ -75,6 +78,14 @@ test("a completed call without a disposition does not guess the next action", ()
     getCallFollowUpPlan({ callStatus: "completed", occurredAt: callTime }),
     { action: "unchanged" },
   );
+});
+
+test("reopening a lead creates an immediate call instead of restoring an old date", () => {
+  assert.deepEqual(getReopenedLeadCallPlan(callTime), {
+    action: "schedule",
+    dueAt: callTime,
+    summary: "Call reopened lead",
+  });
 });
 
 test("disposition validation accepts an exact callback time", () => {

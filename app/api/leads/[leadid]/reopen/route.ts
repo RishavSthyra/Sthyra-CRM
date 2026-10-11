@@ -1,17 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { getProjectStage, lockLead, transitionLead } from "@/lib/leadCommands";
+import { ensureReopenedLeadCall } from "@/lib/leadFollowUps";
 import { parseLeadId } from "@/lib/leads";
+import {
+  canUpdateLead,
+  requireLeadVisibility,
+} from "@/lib/leadVisibility";
 import { isObject } from "@/utils/isObject";
 
 type Context = { params: Promise<{ leadid: string }> };
 export async function POST(request: NextRequest, context: Context) {
+  const scope = await requireLeadVisibility(request, "LEADS_UPDATE");
+  if (!scope.ok) return scope.response;
   const leadId = parseLeadId((await context.params).leadid);
   if (!leadId) {
     return NextResponse.json(
       { error: "leadId must be a valid UUID" },
       { status: 400 },
     );
+  }
+  if (!(await canUpdateLead(leadId, scope.context.leadVisibility))) {
+    return NextResponse.json({ error: "Lead not found" }, { status: 404 });
   }
   let body: unknown = {};
   try {
@@ -86,7 +96,9 @@ export async function POST(request: NextRequest, context: Context) {
         nurture_until: null,
       },
       { stage_key: stage.stage_key },
+      scope.context.userId,
     );
+    await ensureReopenedLeadCall(client, updated, scope.context.userId);
     await client.query("COMMIT");
     return NextResponse.json({ message: "Lead reopened", lead: updated });
   } catch (error) {

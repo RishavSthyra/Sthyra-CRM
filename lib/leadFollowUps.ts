@@ -19,6 +19,16 @@ export type CallFollowUpPlan =
   | { action: "clear" }
   | { action: "unchanged" };
 
+export function getReopenedLeadCallPlan(
+  reopenedAt: string | Date = new Date(),
+): Extract<CallFollowUpPlan, { action: "schedule" }> {
+  return {
+    action: "schedule",
+    dueAt: new Date(reopenedAt).toISOString(),
+    summary: "Call reopened lead",
+  };
+}
+
 const ONE_DAY_OUTCOMES = new Set<CallFollowUpOutcome>([
   "no_answer",
   "voicemail",
@@ -206,6 +216,22 @@ export async function ensureInitialLeadCall(
     leadId: String(lead.lead_id),
     dueAt: new Date().toISOString(),
     summary: "Initial sales call",
+    actorUserId,
+    preservePending: true,
+  });
+}
+
+export async function ensureReopenedLeadCall(
+  client: PoolClient,
+  lead: Record<string, unknown>,
+  actorUserId: string | null,
+) {
+  if (String(lead.status) !== "active") return;
+  const plan = getReopenedLeadCallPlan();
+  await scheduleCall(client, {
+    leadId: String(lead.lead_id),
+    dueAt: plan.dueAt,
+    summary: plan.summary,
     actorUserId,
     preservePending: true,
   });
