@@ -80,7 +80,38 @@ test("a completed call without a disposition does not guess the next action", ()
   );
 });
 
-test("reopening a lead creates an immediate call instead of restoring an old date", () => {
+test("reopening a lead restores its previously cancelled follow-up", () => {
+  assert.deepEqual(
+    getReopenedLeadCallPlan(callTime, {
+      status: "cancelled",
+      due_at: "2026-10-13T10:04:25.854Z",
+      summary: "Initial sales call",
+    }),
+    {
+      action: "restore",
+      dueAt: "2026-10-13T10:04:25.854Z",
+      summary: "Initial sales call",
+    },
+  );
+  assert.equal(
+    getReopenedLeadCallPlan(callTime, {
+      status: "cancelled",
+      due_at: new Date("2026-10-13T10:04:25.854Z"),
+      summary: "Initial sales call",
+    }).action,
+    "restore",
+  );
+});
+
+test("reopening preserves a pending call and only creates one when none exists", () => {
+  assert.deepEqual(
+    getReopenedLeadCallPlan(callTime, {
+      status: "pending",
+      due_at: "2026-10-13T10:04:25.854Z",
+      summary: "Initial sales call",
+    }),
+    { action: "unchanged" },
+  );
   assert.deepEqual(getReopenedLeadCallPlan(callTime), {
     action: "schedule",
     dueAt: callTime,

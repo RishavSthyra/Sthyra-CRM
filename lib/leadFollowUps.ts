@@ -19,9 +19,35 @@ export type CallFollowUpPlan =
   | { action: "clear" }
   | { action: "unchanged" };
 
+export type ReopenedLeadCallPlan =
+  | { action: "restore"; dueAt: string; summary: string }
+  | { action: "schedule"; dueAt: string; summary: string }
+  | { action: "unchanged" };
+
 export function getReopenedLeadCallPlan(
   reopenedAt: string | Date = new Date(),
-): Extract<CallFollowUpPlan, { action: "schedule" }> {
+  previousAction: Record<string, unknown> | null = null,
+): ReopenedLeadCallPlan {
+  if (previousAction?.status === "pending") return { action: "unchanged" };
+  const previousDueAt = previousAction?.due_at;
+  const parsedPreviousDueAt =
+    previousDueAt instanceof Date
+      ? previousDueAt
+      : typeof previousDueAt === "string"
+        ? new Date(previousDueAt)
+        : null;
+  if (
+    previousAction?.status === "cancelled" &&
+    parsedPreviousDueAt &&
+    !Number.isNaN(parsedPreviousDueAt.getTime()) &&
+    typeof previousAction.summary === "string"
+  ) {
+    return {
+      action: "restore",
+      dueAt: parsedPreviousDueAt.toISOString(),
+      summary: previousAction.summary,
+    };
+  }
   return {
     action: "schedule",
     dueAt: new Date(reopenedAt).toISOString(),
@@ -227,7 +253,30 @@ export async function ensureReopenedLeadCall(
   actorUserId: string | null,
 ) {
   if (String(lead.status) !== "active") return;
-  const plan = getReopenedLeadCallPlan();
+  const previous = await client.query(
+    "SELECT * FROM lead_next_actions WHERE lead_id=$1 FOR UPDATE",
+    [lead.lead_id],
+  );
+  const previousAction = previous.rows[0] ?? null;
+  const plan = getReopenedLeadCallPlan(new Date(), previousAction);
+  if (plan.action === "unchanged") return;
+  if (plan.action === "restore") {
+    const result = await client.query(
+      `UPDATE lead_next_actions
+       SET status='pending', updated_by=$2, updated_at=CURRENT_TIMESTAMP
+       WHERE lead_id=$1
+       RETURNING *`,
+      [lead.lead_id, actorUserId],
+    );
+    await recordNextActionHistory(
+      client,
+      String(lead.lead_id),
+      previousAction,
+      result.rows[0],
+      actorUserId,
+    );
+    return;
+  }
   await scheduleCall(client, {
     leadId: String(lead.lead_id),
     dueAt: plan.dueAt,
