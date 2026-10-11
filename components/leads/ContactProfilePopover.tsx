@@ -1,18 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import {
-  BriefcaseBusiness,
-  Building2,
-  Cake,
-  Heart,
-  Mail,
-  MapPin,
-  Pencil,
-  Phone,
-  UserRound,
-  X,
-} from "lucide-react";
+import { createPortal } from "react-dom";
+import { Pencil, X } from "lucide-react";
 
 export type ContactProfile = {
   contact_id?: string;
@@ -111,46 +101,54 @@ function residenceLabel(profile: ContactProfile) {
 }
 
 function DetailRow({
-  icon: Icon,
   label,
   value,
 }: {
-  icon: typeof UserRound;
   label: string;
   value: string;
 }) {
   const isEmpty = value === "Not added";
   return (
-    <div className="flex gap-3 border-b border-white/[0.07] py-3 last:border-b-0">
-      <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-white/[0.05] text-[#a9afac]">
-        <Icon aria-hidden className="size-3.5" strokeWidth={1.8} />
-      </span>
-      <div className="min-w-0">
-        <p className="text-[10px] font-medium tracking-[0.08em] text-[#7f8582] uppercase">
-          {label}
-        </p>
-        <p
-          className={`mt-1 text-[12px] leading-5 [overflow-wrap:anywhere] ${isEmpty ? "text-[#777d79]" : "text-[#ecefed]"}`}
-        >
-          {value}
-        </p>
-      </div>
+    <div className="grid min-h-11 grid-cols-[112px_minmax(0,1fr)] items-center gap-3 border-b border-white/[0.07] py-2.5 last:border-b-0">
+      <p className="text-[10px] font-medium tracking-[0.08em] text-[#858b88] uppercase">
+        {label}
+      </p>
+      <p
+        className={`truncate text-right text-[12px] leading-5 ${isEmpty ? "text-[#6f7572]" : "text-[#ecefed]"}`}
+        title={value}
+      >
+        {value}
+      </p>
     </div>
   );
 }
 
+type PanelPosition = {
+  dockedLeft: boolean;
+  left: number;
+  pointerTop: number;
+  top: number;
+  width: number;
+};
+
 export function ContactProfilePopover({ name, profile, onSave }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [form, setForm] = useState<ContactProfileWrite>({});
+  const [panelPosition, setPanelPosition] = useState<PanelPosition | null>(null);
 
   useEffect(() => {
     if (!open) return;
     function dismiss(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        !rootRef.current?.contains(target) &&
+        !panelRef.current?.contains(target)
+      ) {
         setOpen(false);
         setEditing(false);
       }
@@ -167,6 +165,43 @@ export function ContactProfilePopover({ name, profile, onSave }: Props) {
     return () => {
       document.removeEventListener("pointerdown", dismiss);
       document.removeEventListener("keydown", dismissOnEscape, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function placePanel() {
+      const anchor = rootRef.current?.getBoundingClientRect();
+      if (!anchor) return;
+      const drawer = rootRef.current
+        ?.closest("aside")
+        ?.getBoundingClientRect();
+      const gap = 14;
+      const desiredWidth = 352;
+      const leftBoundary = drawer?.left ?? anchor.left;
+      const availableLeft = leftBoundary - gap;
+      const dockedLeft = availableLeft >= 316;
+      const width = dockedLeft
+        ? Math.min(desiredWidth, availableLeft - 16)
+        : Math.min(desiredWidth, window.innerWidth - 32);
+      const left = dockedLeft
+        ? leftBoundary - gap - width
+        : Math.max(16, Math.min(anchor.left, window.innerWidth - width - 16));
+      const top = Math.max(16, Math.min(anchor.top - 14, window.innerHeight - 180));
+      const pointerTop = Math.max(
+        24,
+        Math.min(72, anchor.top + anchor.height / 2 - top - 7),
+      );
+      setPanelPosition({ dockedLeft, left, pointerTop, top, width });
+    }
+
+    placePanel();
+    window.addEventListener("resize", placePanel);
+    window.addEventListener("scroll", placePanel, true);
+    return () => {
+      window.removeEventListener("resize", placePanel);
+      window.removeEventListener("scroll", placePanel, true);
     };
   }, [open]);
 
@@ -246,13 +281,28 @@ export function ContactProfilePopover({ name, profile, onSave }: Props) {
         </span>
       </button>
 
-      {open ? (
+      {open && panelPosition && typeof document !== "undefined"
+        ? createPortal(
         <section
           aria-label={`${name} contact profile`}
-          className="absolute top-[62px] left-0 z-[110] w-[390px] max-w-[calc(100vw-48px)] rounded-xl border border-[#343735] bg-[#171817] shadow-[0_24px_70px_rgba(0,0,0,0.58)] before:absolute before:-top-[7px] before:left-[17px] before:size-3.5 before:rotate-45 before:border-t before:border-l before:border-[#343735] before:bg-[#171817] max-[560px]:left-[-10px] max-[560px]:w-[calc(100vw-44px)]"
+          className="fixed z-[110] flex max-h-[calc(100vh-32px)] flex-col rounded-lg border border-[#333634] bg-[#171817] shadow-[0_24px_70px_rgba(0,0,0,0.58)]"
+          onMouseDown={(event) => event.stopPropagation()}
+          ref={panelRef}
           role="dialog"
+          style={{
+            left: panelPosition.left,
+            top: panelPosition.top,
+            width: panelPosition.width,
+          }}
         >
-          <header className="flex items-start justify-between border-b border-white/[0.08] px-4 py-3.5">
+          {panelPosition.dockedLeft ? (
+            <span
+              aria-hidden
+              className="absolute right-[-7px] size-3.5 rotate-45 border-t border-r border-[#333634] bg-[#171817]"
+              style={{ top: panelPosition.pointerTop }}
+            />
+          ) : null}
+          <header className="flex shrink-0 items-start justify-between border-b border-white/[0.08] px-4 py-3.5">
             <div className="min-w-0 pr-3">
               <p className="text-[10px] font-medium tracking-[0.14em] text-[#858b88] uppercase">
                 Contact profile
@@ -260,8 +310,8 @@ export function ContactProfilePopover({ name, profile, onSave }: Props) {
               <h3 className="mt-1 truncate text-sm font-semibold text-[#f1f3f2]">
                 {name}
               </h3>
-              <p className="mt-0.5 truncate text-[11px] text-[#919794]">
-                {profile.email || profile.phone_number || "Contact details unavailable"}
+              <p className="mt-0.5 text-[11px] text-[#858b88]">
+                Personal and residence details
               </p>
             </div>
             <div className="flex items-center gap-1">
@@ -290,8 +340,8 @@ export function ContactProfilePopover({ name, profile, onSave }: Props) {
           </header>
 
           {editing ? (
-            <form onSubmit={save}>
-              <div className="grid max-h-[58vh] grid-cols-2 gap-3 overflow-y-auto px-4 py-4 [scrollbar-color:#444_transparent] max-[430px]:grid-cols-1">
+            <form className="flex min-h-0 flex-1 flex-col" onSubmit={save}>
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-1 [scrollbar-color:#444_transparent]">
                 <ProfileInput
                   label="Occupation"
                   onChange={(value) => setField("occupation", value)}
@@ -308,10 +358,10 @@ export function ContactProfilePopover({ name, profile, onSave }: Props) {
                   type="date"
                   value={form.date_of_birth}
                 />
-                <label className="flex min-w-0 flex-col gap-1.5 text-[10px] font-medium tracking-[0.05em] text-[#969c99] uppercase">
-                  Marital status
+                <label className="grid min-h-12 grid-cols-[112px_minmax(0,1fr)] items-center gap-3 border-b border-white/[0.07] py-2 text-[10px] font-medium tracking-[0.05em] text-[#969c99] uppercase">
+                  <span>Marital status</span>
                   <select
-                    className="h-10 rounded-md border border-[#383c3a] bg-[#0f100f] px-3 text-[12px] normal-case tracking-normal text-[#eceeed] outline-none focus:border-[#777f7b]"
+                    className="h-9 min-w-0 rounded-md border border-[#383c3a] bg-[#0f100f] px-2.5 text-[12px] normal-case tracking-normal text-[#eceeed] outline-none focus:border-[#777f7b]"
                     onChange={(event) =>
                       setField(
                         "marital_status",
@@ -358,15 +408,11 @@ export function ContactProfilePopover({ name, profile, onSave }: Props) {
                   onChange={(value) => setField("country", value)}
                   value={form.country}
                 />
-                <label className="col-span-2 flex min-w-0 flex-col gap-1.5 text-[10px] font-medium tracking-[0.05em] text-[#969c99] uppercase max-[430px]:col-span-1">
-                  Home address
-                  <textarea
-                    className="min-h-20 resize-y rounded-md border border-[#383c3a] bg-[#0f100f] px-3 py-2.5 text-[12px] leading-5 normal-case tracking-normal text-[#eceeed] outline-none placeholder:text-[#5f6461] focus:border-[#777f7b]"
-                    onChange={(event) => setField("address", event.target.value)}
-                    placeholder="Apartment, street or locality"
-                    value={form.address ?? ""}
-                  />
-                </label>
+                <ProfileInput
+                  label="Home address"
+                  onChange={(value) => setField("address", value)}
+                  value={form.address}
+                />
               </div>
               {saveError ? (
                 <p className="mx-4 mb-3 rounded-md border border-[#693c3c] bg-[#2b1717] px-3 py-2 text-[11px] text-[#f0a8a8]">
@@ -391,51 +437,45 @@ export function ContactProfilePopover({ name, profile, onSave }: Props) {
               </footer>
             </form>
           ) : (
-            <div className="grid max-h-[58vh] grid-cols-2 gap-x-5 overflow-y-auto px-4 py-1 [scrollbar-color:#444_transparent] max-[430px]:grid-cols-1">
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-1 [scrollbar-color:#444_transparent]">
               <DetailRow
-                icon={Phone}
                 label="Phone"
                 value={profileValue(profile.phone_number)}
               />
               <DetailRow
-                icon={Mail}
                 label="Email"
                 value={profileValue(profile.email)}
               />
               <DetailRow
-                icon={BriefcaseBusiness}
                 label="Occupation"
                 value={profileValue(profile.occupation)}
               />
               <DetailRow
-                icon={Building2}
                 label="Employer"
                 value={profileValue(profile.company_works_at)}
               />
               <DetailRow
-                icon={Cake}
                 label="Birthday"
                 value={dateLabel(profile.date_of_birth)}
               />
               <DetailRow
-                icon={Heart}
                 label="Marital status"
                 value={maritalLabel(profile.marital_status)}
               />
               <DetailRow
-                icon={Heart}
                 label="Anniversary"
                 value={dateLabel(profile.anniversary_date)}
               />
               <DetailRow
-                icon={MapPin}
                 label="Where they stay"
                 value={residenceLabel(profile)}
               />
             </div>
           )}
-        </section>
-      ) : null}
+        </section>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
@@ -452,10 +492,10 @@ function ProfileInput({
   value?: string | null;
 }) {
   return (
-    <label className="flex min-w-0 flex-col gap-1.5 text-[10px] font-medium tracking-[0.05em] text-[#969c99] uppercase">
-      {label}
+    <label className="grid min-h-12 grid-cols-[112px_minmax(0,1fr)] items-center gap-3 border-b border-white/[0.07] py-2 text-[10px] font-medium tracking-[0.05em] text-[#969c99] uppercase">
+      <span>{label}</span>
       <input
-        className="h-10 min-w-0 rounded-md border border-[#383c3a] bg-[#0f100f] px-3 text-[12px] normal-case tracking-normal text-[#eceeed] outline-none placeholder:text-[#5f6461] focus:border-[#777f7b]"
+        className="h-9 min-w-0 rounded-md border border-[#383c3a] bg-[#0f100f] px-2.5 text-[12px] normal-case tracking-normal text-[#eceeed] outline-none placeholder:text-[#5f6461] focus:border-[#777f7b]"
         onChange={(event) => onChange(event.target.value)}
         type={type}
         value={value ?? ""}
