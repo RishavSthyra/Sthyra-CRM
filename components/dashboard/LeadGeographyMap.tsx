@@ -31,6 +31,10 @@ import {
   buildLeadBoundaryCounts,
   normalizeBoundaryName,
 } from "@/lib/leadBoundaryData";
+import {
+  buildLeadClusterIndex,
+  type LeadClusterPointProperties,
+} from "@/lib/leadMarkerClustering";
 
 export type GeographyPoint = {
   country: string | null;
@@ -49,6 +53,9 @@ type Props = {
   mappedLeads: number;
   unmappedLeads: number;
 };
+
+type HeatPointProperties = GeographyPoint & { weight: number };
+type VisibleBounds = [number, number, number, number];
 
 type CountryProperties = { name: string };
 type WorldTopology = Topology<{
@@ -192,6 +199,24 @@ function geometryBounds(geometry: Geometry) {
   return [[west, south], [east, north]] as [[number, number], [number, number]];
 }
 
+function visibleMapBounds(map: {
+  getBounds(): {
+    getWest(): number;
+    getEast(): number;
+    getSouth(): number;
+    getNorth(): number;
+  };
+}): VisibleBounds {
+  const bounds = map.getBounds();
+  const west = Math.max(-180, bounds.getWest());
+  const east = Math.min(180, bounds.getEast());
+  const south = Math.max(-85, bounds.getSouth());
+  const north = Math.min(85, bounds.getNorth());
+
+  if (east <= west) return [-180, south, 180, north];
+  return [west, south, east, north];
+}
+
 export function LeadGeographyMap({
   mappedLeads,
   points,
@@ -201,6 +226,12 @@ export function LeadGeographyMap({
   const districtCache = useRef(new Map<string, DistrictFeature[]>());
   const districtRequest = useRef(0);
   const [zoom, setZoom] = useState(1.25);
+  const [visibleBounds, setVisibleBounds] = useState<VisibleBounds>([
+    -180,
+    -85,
+    180,
+    85,
+  ]);
   const [selected, setSelected] = useState<GeographyPoint | null>(null);
   const [activeState, setActiveState] = useState<string | null>(null);
   const [districts, setDistricts] = useState<DistrictFeature[]>([]);
@@ -208,7 +239,7 @@ export function LeadGeographyMap({
   const [districtError, setDistrictError] = useState(false);
   const maxLeads = Math.max(1, ...points.map((point) => point.leads));
 
-  const pointData = useMemo<FeatureCollection<Point>>(
+  const pointData = useMemo<FeatureCollection<Point, HeatPointProperties>>(
     () => ({
       type: "FeatureCollection",
       features: points.map((point) => ({
@@ -224,6 +255,14 @@ export function LeadGeographyMap({
       })),
     }),
     [maxLeads, points],
+  );
+  const clusterIndex = useMemo(
+    () => buildLeadClusterIndex(points),
+    [points],
+  );
+  const visibleMarkers = useMemo(
+    () => clusterIndex.getClusters(visibleBounds, Math.floor(zoom)),
+    [clusterIndex, visibleBounds, zoom],
   );
   const countryAreas = useMemo(
     () =>
@@ -358,7 +397,10 @@ export function LeadGeographyMap({
           maxZoom={15}
           minZoom={1}
           onClick={handleMapClick}
-          onMoveEnd={(event) => setZoom(event.viewState.zoom)}
+          onMoveEnd={(event) => {
+            setZoom(event.viewState.zoom);
+            setVisibleBounds(visibleMapBounds(event.target));
+          }}
           ref={mapRef}
           reuseMaps
           style={{ height: "100%", minHeight: 430, width: "100%" }}
@@ -376,14 +418,51 @@ export function LeadGeographyMap({
           <Source data={pointData} id="lead-geography" type="geojson">
             <Layer {...heatLayer} />
           </Source>
-          {points.map((point) => {
+          {visibleMarkers.map((marker) => {
+            const [longitude, latitude] = marker.geometry.coordinates;
+            if ("cluster" in marker.properties && marker.properties.cluster) {
+              const clusterId = marker.properties.cluster_id;
+              const leadTotal = marker.properties.leads;
+              const size = Math.min(52, 30 + Math.round(Math.log2(leadTotal + 1) * 3));
+              return (
+                <Marker
+                  anchor="center"
+                  key={`cluster-${clusterId}`}
+                  latitude={latitude}
+                  longitude={longitude}
+                >
+                  <button
+                    aria-label={`${leadTotal} grouped leads. Zoom in to expand.`}
+                    className="grid place-items-center rounded-full border border-black bg-white text-[10px] font-semibold text-black shadow-[0_0_0_4px_rgba(255,255,255,0.18),0_0_22px_rgba(255,255,255,0.5)] transition-transform hover:scale-110 focus-visible:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      const expansionZoom = clusterIndex.getClusterExpansionZoom(clusterId);
+                      mapRef.current?.easeTo({
+                        center: [longitude, latitude],
+                        duration: 700,
+                        zoom: Math.min(12, expansionZoom),
+                      });
+                    }}
+                    style={{ height: size, width: size }}
+                    title={`${leadTotal.toLocaleString("en-IN")} grouped leads`}
+                    type="button"
+                  >
+                    {leadTotal.toLocaleString("en-IN")}
+                  </button>
+                </Marker>
+              );
+            }
+
+            const pointProperties = marker.properties as LeadClusterPointProperties;
+            const point = points[pointProperties.pointIndex];
+            if (!point) return null;
             const size = 8 + Math.round(10 * Math.sqrt(point.leads / maxLeads));
             return (
               <Marker
                 anchor="center"
                 key={`${point.precision}-${point.latitude}-${point.longitude}-${point.label}`}
-                latitude={point.latitude}
-                longitude={point.longitude}
+                latitude={latitude}
+                longitude={longitude}
               >
                 <button
                   aria-label={`${point.label}: ${point.leads} leads`}
