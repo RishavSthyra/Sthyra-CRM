@@ -48,6 +48,10 @@ type Lead = {
   stage_key?: string | null;
   stage_name?: string | null;
   opportunity_id?: string | null;
+  next_action_type?: string | null;
+  next_action_summary?: string | null;
+  next_follow_up_at?: string | null;
+  next_action_status?: string | null;
   updated_at?: string;
 };
 
@@ -125,12 +129,36 @@ type LeadCall = {
   call_id: string;
   direction: "inbound" | "outbound";
   status: string;
+  outcome?: string | null;
   phone_number: string;
   subject: string;
   summary?: string | null;
   started_at: string;
   duration_seconds?: number | null;
 };
+
+type CallOutcome =
+  | "connected"
+  | "interested"
+  | "follow_up"
+  | "no_answer"
+  | "voicemail"
+  | "callback_requested"
+  | "not_interested"
+  | "wrong_number"
+  | "do_not_call";
+
+const callOutcomes: { value: CallOutcome; label: string }[] = [
+  { value: "connected", label: "Answered" },
+  { value: "interested", label: "Interested" },
+  { value: "follow_up", label: "Follow up" },
+  { value: "no_answer", label: "No answer" },
+  { value: "voicemail", label: "Voicemail left" },
+  { value: "callback_requested", label: "Callback requested" },
+  { value: "not_interested", label: "Not interested" },
+  { value: "wrong_number", label: "Wrong number" },
+  { value: "do_not_call", label: "Do not call" },
+];
 
 type LeadEmail = {
   email_id: string;
@@ -228,6 +256,44 @@ function availableLeadActions(lead: Lead) {
   }
 
   return leadActions.filter((action) => allowed.has(action.value));
+}
+
+function followUpLabel(lead: Lead) {
+  if (lead.next_action_status !== "pending" || !lead.next_follow_up_at) {
+    return { label: "—", urgent: false };
+  }
+  const dueAt = new Date(lead.next_follow_up_at);
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const sameDay = (left: Date, right: Date) =>
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate();
+
+  const time = dueAt.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  if (dueAt.getTime() < now.getTime()) {
+    return {
+      label: `Overdue · ${dueAt.toLocaleDateString([], { day: "numeric", month: "short" })}`,
+      urgent: true,
+    };
+  }
+  if (sameDay(dueAt, now)) return { label: `Today · ${time}`, urgent: true };
+  if (sameDay(dueAt, tomorrow)) {
+    return { label: `Tomorrow · ${time}`, urgent: false };
+  }
+  return {
+    label: dueAt.toLocaleString([], {
+      day: "numeric",
+      month: "short",
+      hour: "numeric",
+      minute: "2-digit",
+    }),
+    urgent: false,
+  };
 }
 
 function leadHistoryActivity(
@@ -375,6 +441,11 @@ export default function LeadsPage() {
   const [noteTitle, setNoteTitle] = useState("");
   const [noteBody, setNoteBody] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
+  const [callComposerOpen, setCallComposerOpen] = useState(false);
+  const [callOutcome, setCallOutcome] = useState<CallOutcome>("no_answer");
+  const [callSummary, setCallSummary] = useState("");
+  const [callbackAt, setCallbackAt] = useState("");
+  const [callSaving, setCallSaving] = useState(false);
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [drawerError, setDrawerError] = useState<string | null>(null);
   const [drawerTab, setDrawerTab] = useState<
@@ -655,6 +726,10 @@ export default function LeadsPage() {
       setNoteComposerOpen(false);
       setNoteTitle("");
       setNoteBody("");
+      setCallComposerOpen(false);
+      setCallOutcome("no_answer");
+      setCallSummary("");
+      setCallbackAt("");
       setDrawerTab("activity");
 
       try {
@@ -827,6 +902,93 @@ export default function LeadsPage() {
     }
   }
 
+  async function createLeadCall(event: FormEvent) {
+    event.preventDefault();
+    const lead = leadDetail ?? selectedLead;
+    const projectId = lead?.project_id;
+    const phone = leadDetail?.contact?.phone_number ?? lead?.phone_number;
+    if (!lead || !projectId || !phone) {
+      toast.error("This lead needs a project and phone number before logging a call.");
+      return;
+    }
+    if (callOutcome === "callback_requested" && !callbackAt) {
+      toast.error("Choose the callback time promised to the customer.");
+      return;
+    }
+
+    setCallSaving(true);
+    try {
+      const now = new Date().toISOString();
+      const response = await fetchWithSession("/api/calls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_id: projectId,
+          lead_id: lead.lead_id,
+          direction: "outbound",
+          status: callOutcome === "no_answer" ? "no_answer" : "completed",
+          outcome: callOutcome,
+          phone_number: phone,
+          subject: "Pre-sales follow-up call",
+          summary: callSummary.trim() || null,
+          started_at: now,
+          ended_at: now,
+          next_follow_up_at:
+            callOutcome === "callback_requested" && callbackAt
+              ? new Date(callbackAt).toISOString()
+              : null,
+        }),
+      });
+      if (response.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      if (!response.ok) throw new Error(await getApiError(response));
+      const body = (await response.json()) as {
+        call?: LeadCall;
+        follow_up?:
+          | { action: "schedule"; dueAt: string; summary: string }
+          | { action: "clear" | "unchanged" };
+      };
+      if (body.call) setLeadCalls((current) => [body.call!, ...current]);
+      if (body.follow_up?.action === "schedule") {
+        const nextAction = {
+          next_action_type: "call",
+          next_action_summary: body.follow_up.summary,
+          next_follow_up_at: body.follow_up.dueAt,
+          next_action_status: "pending",
+        };
+        setSelectedLead((current) =>
+          current ? { ...current, ...nextAction } : current,
+        );
+        setLeadDetail((current) =>
+          current ? { ...current, ...nextAction } : current,
+        );
+      } else if (body.follow_up?.action === "clear") {
+        setSelectedLead((current) =>
+          current ? { ...current, next_action_status: "cancelled" } : current,
+        );
+        setLeadDetail((current) =>
+          current ? { ...current, next_action_status: "cancelled" } : current,
+        );
+      }
+
+      setCallComposerOpen(false);
+      setCallSummary("");
+      setCallbackAt("");
+      toast.success(
+        body.follow_up?.action === "schedule"
+          ? "Call logged and next call scheduled"
+          : "Call outcome logged",
+      );
+      await loadLeads();
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : "Unable to log call.");
+    } finally {
+      setCallSaving(false);
+    }
+  }
+
   async function runLeadAction(leadId: string, action: string) {
     let body: Record<string, unknown> = {};
     if (action === "change-stage") {
@@ -986,7 +1148,7 @@ export default function LeadsPage() {
             <div>
               <span>Needs follow-up</span>
               <strong>{data.summary?.needsFollowUp ?? "—"}</strong>
-              <small>Next action due soon</small>
+              <small>Due now or within 2 days</small>
             </div>
             <div>
               <span>Unassigned</span>
@@ -1317,9 +1479,21 @@ export default function LeadsPage() {
                       <td>{lead.source_id ? "Source" : "—"}</td>
                       <td>{lead.sub_source || "—"}</td>
                       <td>
-                        {lead.updated_at
-                          ? new Date(lead.updated_at).toLocaleDateString()
-                          : "—"}
+                        {(() => {
+                          const followUp = followUpLabel(lead);
+                          return (
+                            <span
+                              className={
+                                followUp.urgent
+                                  ? "font-medium text-[#f0b36c]"
+                                  : "text-[#b4b4b4]"
+                              }
+                              title={lead.next_action_summary || undefined}
+                            >
+                              {followUp.label}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td
                         className={
@@ -1613,6 +1787,10 @@ export default function LeadsPage() {
                           <strong>{phone || "—"}</strong>
                         </div>
                         <div>
+                          <span>Next call</span>
+                          <strong>{followUpLabel(currentLead).label}</strong>
+                        </div>
+                        <div>
                           <span>Email</span>
                           <strong>{email || "—"}</strong>
                         </div>
@@ -1707,6 +1885,80 @@ export default function LeadsPage() {
                         !drawerError &&
                         drawerTab === "calls" && (
                           <div className="space-y-2.5">
+                            <div className="flex items-center justify-between pb-1">
+                              <span className="text-[10px] text-[#777c79]">
+                                {leadCalls.length} {leadCalls.length === 1 ? "call" : "calls"}
+                              </span>
+                              <button
+                                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#315f50] bg-[#18382e] px-3 text-[10px] font-medium text-[#bdebdc] transition hover:bg-[#214a3d]"
+                                onClick={() => setCallComposerOpen((current) => !current)}
+                                type="button"
+                              >
+                                <Plus className="size-3" aria-hidden />
+                                Log call outcome
+                              </button>
+                            </div>
+                            {callComposerOpen && (
+                              <form
+                                className="space-y-3 rounded-xl border border-[#345d4f] bg-[#131715] p-3"
+                                onSubmit={createLeadCall}
+                              >
+                                <label className="block text-[10px] text-[#a9aeab]">
+                                  Outcome
+                                  <span className="relative mt-1 block">
+                                    <select
+                                      className="h-10 w-full appearance-none rounded-lg border border-[#343936] bg-[#0c0e0d] px-3 pr-9 text-xs text-[#f2f3f2] outline-none focus:border-[#4aa987]"
+                                      onChange={(event) => setCallOutcome(event.target.value as CallOutcome)}
+                                      value={callOutcome}
+                                    >
+                                      {callOutcomes.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-3.5 -translate-y-1/2 text-[#8f9692]" aria-hidden />
+                                  </span>
+                                </label>
+                                {callOutcome === "callback_requested" && (
+                                  <label className="block text-[10px] text-[#a9aeab]">
+                                    Callback time
+                                    <input
+                                      className="mt-1 h-10 w-full rounded-lg border border-[#343936] bg-[#0c0e0d] px-3 text-xs text-[#f2f3f2] outline-none focus:border-[#4aa987]"
+                                      onChange={(event) => setCallbackAt(event.target.value)}
+                                      required
+                                      type="datetime-local"
+                                      value={callbackAt}
+                                    />
+                                  </label>
+                                )}
+                                <label className="block text-[10px] text-[#a9aeab]">
+                                  Notes
+                                  <textarea
+                                    className="mt-1 min-h-20 w-full resize-y rounded-lg border border-[#343936] bg-[#0c0e0d] p-3 text-xs text-[#f2f3f2] outline-none focus:border-[#4aa987]"
+                                    onChange={(event) => setCallSummary(event.target.value)}
+                                    placeholder="What happened on the call?"
+                                    value={callSummary}
+                                  />
+                                </label>
+                                <div className="flex justify-end gap-2">
+                                  <button
+                                    className="h-8 rounded-lg border border-[#343936] px-3 text-[10px] text-[#b5bab7]"
+                                    onClick={() => setCallComposerOpen(false)}
+                                    type="button"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    className="h-8 rounded-lg bg-[#247b5d] px-3 text-[10px] font-semibold text-white disabled:opacity-50"
+                                    disabled={callSaving}
+                                    type="submit"
+                                  >
+                                    {callSaving ? "Saving…" : "Save outcome"}
+                                  </button>
+                                </div>
+                              </form>
+                            )}
                             {!leadCalls.length && (
                               <p className="py-8 text-center text-xs text-[#777c79]">
                                 No calls recorded for this lead.
@@ -1724,7 +1976,7 @@ export default function LeadsPage() {
                                     </strong>
                                     <p className="mt-1 text-[10px] text-[#888d8a]">
                                       {label(call.direction)} ·{" "}
-                                      {label(call.status)} · {call.phone_number}
+                                      {label(call.outcome || call.status)} · {call.phone_number}
                                     </p>
                                   </div>
                                   <Phone

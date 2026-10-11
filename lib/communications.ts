@@ -64,6 +64,7 @@ type CallInput = {
   started_at: string;
   ended_at?: string | null;
   duration_seconds?: number | null;
+  next_follow_up_at?: string | null;
 };
 
 type EmailInput = {
@@ -190,6 +191,12 @@ export function validateCallPayload(body: unknown): ValidationResult<CallInput> 
   const summary = validateText(body.summary, "summary", 10000, true, errors);
   const startedAt = timestamp(body.started_at, "started_at", false, errors);
   const endedAt = timestamp(body.ended_at, "ended_at", true, errors);
+  const nextFollowUpAt = timestamp(
+    body.next_follow_up_at,
+    "next_follow_up_at",
+    true,
+    errors,
+  );
   let duration: number | null | undefined;
   if (body.duration_seconds !== undefined) {
     if (body.duration_seconds === null) duration = null;
@@ -217,6 +224,7 @@ export function validateCallPayload(body: unknown): ValidationResult<CallInput> 
           started_at: startedAt as string,
           ended_at: endedAt,
           duration_seconds: duration,
+          next_follow_up_at: nextFollowUpAt,
         },
       };
 }

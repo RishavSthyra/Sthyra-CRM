@@ -67,12 +67,24 @@ export function validateInitiateCall(body: unknown): ValidationResult<InitiateCa
   return errors.length ? { ok: false, errors } : { ok: true, data: { project_id: project, lead_id: lead, contact_id: contact, phone_number: phone ?? undefined, subject: subject as string } };
 }
 
-export function validateDisposition(body: unknown): ValidationResult<{ outcome: typeof CALL_OUTCOMES[number]; summary?: string | null }> {
+export function validateDisposition(body: unknown): ValidationResult<{ outcome: typeof CALL_OUTCOMES[number]; summary?: string | null; next_follow_up_at?: string | null }> {
   if (!isObject(body) || Array.isArray(body)) return { ok: false, errors: ["Request body must be a JSON object"] };
-  const errors: string[] = [];
+  const allowed = new Set(["outcome", "summary", "next_follow_up_at"]);
+  const errors = Object.keys(body)
+    .filter((key) => !allowed.has(key))
+    .map((key) => `Unknown field: ${key}`);
   if (!CALL_OUTCOMES.includes(body.outcome as typeof CALL_OUTCOMES[number])) errors.push(`outcome must be one of: ${CALL_OUTCOMES.join(", ")}`);
   const summary = validateText(body.summary, "summary", 10000, true, errors);
-  return errors.length ? { ok: false, errors } : { ok: true, data: { outcome: body.outcome as typeof CALL_OUTCOMES[number], summary } };
+  let nextFollowUpAt: string | null | undefined;
+  if (body.next_follow_up_at === null) nextFollowUpAt = null;
+  else if (body.next_follow_up_at !== undefined) {
+    if (typeof body.next_follow_up_at !== "string" || Number.isNaN(Date.parse(body.next_follow_up_at))) {
+      errors.push("next_follow_up_at must be a valid ISO date-time or null");
+    } else {
+      nextFollowUpAt = new Date(body.next_follow_up_at).toISOString();
+    }
+  }
+  return errors.length ? { ok: false, errors } : { ok: true, data: { outcome: body.outcome as typeof CALL_OUTCOMES[number], summary, next_follow_up_at: nextFollowUpAt } };
 }
 
 export function validateTransfer(body: unknown): ValidationResult<{ to_user_id?: string; to_team_id?: string; to_phone_number?: string }> {

@@ -176,7 +176,7 @@ export async function GET(request: NextRequest) {
              FROM lead_next_actions na
              WHERE na.lead_id = l.lead_id
                AND na.status = 'pending'
-               AND na.due_at <= CURRENT_TIMESTAMP
+               AND na.due_at <= CURRENT_TIMESTAMP + INTERVAL '2 days'
            )
          )::integer AS needs_follow_up,
          COUNT(*) FILTER (
@@ -198,14 +198,28 @@ export async function GET(request: NextRequest) {
               owner_team.name AS owner_team_name,
               o.opportunity_id, o.opportunity_name,
               o.stage_key AS opportunity_stage_key,
-              o.status AS opportunity_status
+              o.status AS opportunity_status,
+              next_action.action_type AS next_action_type,
+              next_action.summary AS next_action_summary,
+              next_action.due_at AS next_follow_up_at,
+              next_action.status AS next_action_status
        FROM leads l JOIN contacts c ON c.contact_id=l.contact_id
        JOIN projects p ON p.project_id=l.project_id
        LEFT JOIN project_lead_stages s ON s.stage_id=l.stage_id
        LEFT JOIN users owner ON owner.user_id=l.current_owner_user_id
        LEFT JOIN teams owner_team ON owner_team.team_id=l.current_team_id
        LEFT JOIN opportunities o ON o.lead_id=l.lead_id
-       ${where} ORDER BY ${orderBy}
+       LEFT JOIN lead_next_actions next_action ON next_action.lead_id=l.lead_id
+       ${where}
+       ORDER BY
+         CASE
+           WHEN next_action.status='pending' AND next_action.due_at <= CURRENT_TIMESTAMP THEN 0
+           WHEN next_action.status='pending' AND next_action.due_at <= CURRENT_TIMESTAMP + INTERVAL '2 days' THEN 1
+           WHEN next_action.status='pending' THEN 2
+           ELSE 3
+         END,
+         CASE WHEN next_action.status='pending' THEN next_action.due_at END ASC NULLS LAST,
+         ${orderBy}
        LIMIT $${listValues.length - 1} OFFSET $${listValues.length}`,
       listValues,
     );

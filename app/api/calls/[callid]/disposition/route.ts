@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { parseActivityUuid } from "@/lib/activities";
 import { canAccessOperationsEntity, requireOperationsContext } from "@/lib/operationsAccess";
+import { applyCallFollowUp } from "@/lib/leadFollowUps";
 import { TERMINAL_CALL_STATUSES, addCallHistory, validateDisposition } from "@/lib/telephony";
 
 type Context = { params: Promise<{ callid: string }> };
@@ -22,8 +23,16 @@ export async function POST(request: NextRequest, context: Context) {
     if (!TERMINAL_CALL_STATUSES.has(String(call.status))) { await client.query("ROLLBACK"); return NextResponse.json({ error: "End the call before applying a disposition" }, { status: 409 }); }
     const result = await client.query(`UPDATE calls SET outcome=$1, summary=COALESCE($2,summary), updated_by=$3, updated_at=CURRENT_TIMESTAMP WHERE call_id=$4 RETURNING *`, [validation.data.outcome, validation.data.summary ?? null, scope.context.userId, callId]);
     await addCallHistory(client, callId, "disposition", String(call.status), String(call.status), scope.context.userId, { outcome: validation.data.outcome });
+    const followUp = await applyCallFollowUp(client, {
+      leadId: call.lead_id,
+      outcome: validation.data.outcome,
+      callStatus: String(call.status),
+      occurredAt: call.ended_at ?? call.started_at ?? new Date(),
+      requestedAt: validation.data.next_follow_up_at,
+      actorUserId: scope.context.userId,
+    });
     await client.query("COMMIT");
-    return NextResponse.json({ message: "Call disposition saved", call: result.rows[0] });
+    return NextResponse.json({ message: "Call disposition saved", call: result.rows[0], follow_up: followUp });
   } catch (error) { await client.query("ROLLBACK").catch(() => undefined); console.error("Failed to disposition call", error); return NextResponse.json({ error: "Unable to save call disposition" }, { status: 500 }); }
   finally { client.release(); }
 }

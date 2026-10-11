@@ -34,6 +34,10 @@ export async function GET(request: NextRequest, context: Context) {
               owner.last_name AS owner_last_name,
               owner.email AS owner_email,
               owner_team.name AS owner_team_name,
+              next_action.action_type AS next_action_type,
+              next_action.summary AS next_action_summary,
+              next_action.due_at AS next_follow_up_at,
+              next_action.status AS next_action_status,
               CASE WHEN s.stage_id IS NULL THEN NULL ELSE JSONB_BUILD_OBJECT(
                 'stage_id', s.stage_id, 'stage_key', s.stage_key,
                 'stage_name', s.stage_name, 'is_terminal', s.is_terminal
@@ -48,6 +52,7 @@ export async function GET(request: NextRequest, context: Context) {
        LEFT JOIN project_lead_stages s ON s.stage_id=l.stage_id
        LEFT JOIN users owner ON owner.user_id=l.current_owner_user_id
        LEFT JOIN teams owner_team ON owner_team.team_id=l.current_team_id
+       LEFT JOIN lead_next_actions next_action ON next_action.lead_id=l.lead_id
        LEFT JOIN opportunities o ON o.lead_id=l.lead_id
        WHERE ${filters.join(" AND ")}`,
       values,

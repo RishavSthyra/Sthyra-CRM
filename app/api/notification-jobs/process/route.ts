@@ -166,7 +166,7 @@ export async function POST(request: NextRequest) {
       const recipients = await resolveNotificationRecipients(client, {
         companyId: Number(row.company_id),
         userIds: [row.current_owner_user_id],
-        teamIds: [row.current_team_id],
+        teamIds: row.current_owner_user_id ? [] : [row.current_team_id],
       });
       const created = await createNotificationsForUsers(client, recipients, {
         companyId: Number(row.company_id),

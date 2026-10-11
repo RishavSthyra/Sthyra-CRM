@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import {
-  leadExists,
   NEXT_ACTION_COLUMNS,
   validateNextActionPayload,
 } from "@/lib/leadHistory";
 import { parseLeadId } from "@/lib/leads";
+import {
+  canUpdateLead,
+  requireLeadVisibility,
+} from "@/lib/leadVisibility";
 
 type Context = { params: Promise<{ leadid: string }> };
 
-export async function GET(_request: NextRequest, context: Context) {
+export async function GET(request: NextRequest, context: Context) {
+  const scope = await requireLeadVisibility(request, "LEADS_VIEW");
+  if (!scope.ok) return scope.response;
   const leadId = parseLeadId((await context.params).leadid);
   if (!leadId) {
     return NextResponse.json(
@@ -19,7 +24,7 @@ export async function GET(_request: NextRequest, context: Context) {
   }
 
   try {
-    if (!(await leadExists(pool, leadId))) {
+    if (!(await canUpdateLead(leadId, scope.context.leadVisibility))) {
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
     const result = await pool.query(
@@ -37,12 +42,17 @@ export async function GET(_request: NextRequest, context: Context) {
 }
 
 export async function PUT(request: NextRequest, context: Context) {
+  const scope = await requireLeadVisibility(request, "LEADS_UPDATE");
+  if (!scope.ok) return scope.response;
   const leadId = parseLeadId((await context.params).leadid);
   if (!leadId) {
     return NextResponse.json(
       { error: "leadId must be a valid UUID" },
       { status: 400 },
     );
+  }
+  if (!(await canUpdateLead(leadId, scope.context.leadVisibility))) {
+    return NextResponse.json({ error: "Lead not found" }, { status: 404 });
   }
 
   let body: unknown;
@@ -79,14 +89,16 @@ export async function PUT(request: NextRequest, context: Context) {
     );
     const result = await client.query(
       `INSERT INTO lead_next_actions (
-         lead_id, action_type, summary, due_at, status, notes
-       ) VALUES ($1,$2,$3,$4,$5,$6)
+         lead_id, action_type, summary, due_at, status, notes,
+         created_by, updated_by
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$7)
        ON CONFLICT (lead_id) DO UPDATE SET
          action_type=EXCLUDED.action_type,
          summary=EXCLUDED.summary,
          due_at=EXCLUDED.due_at,
          status=EXCLUDED.status,
          notes=EXCLUDED.notes,
+         updated_by=EXCLUDED.updated_by,
          updated_at=CURRENT_TIMESTAMP
        RETURNING ${NEXT_ACTION_COLUMNS}`,
       [
@@ -96,16 +108,18 @@ export async function PUT(request: NextRequest, context: Context) {
         validation.data.due_at,
         validation.data.status,
         validation.data.notes,
+        scope.context.userId,
       ],
     );
     await client.query(
       `INSERT INTO lead_next_action_history (
-         lead_id, previous_action, next_action
-       ) VALUES ($1,$2::jsonb,$3::jsonb)`,
+         lead_id, previous_action, next_action, performed_by
+       ) VALUES ($1,$2::jsonb,$3::jsonb,$4)`,
       [
         leadId,
         previous.rows[0] ? JSON.stringify(previous.rows[0]) : null,
         JSON.stringify(result.rows[0]),
+        scope.context.userId,
       ],
     );
     await client.query("COMMIT");

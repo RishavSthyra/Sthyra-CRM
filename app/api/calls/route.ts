@@ -7,6 +7,7 @@ import {
   validateCallPayload,
 } from "@/lib/communications";
 import { requireOperationsContext } from "@/lib/operationsAccess";
+import { applyCallFollowUp } from "@/lib/leadFollowUps";
 import { canAccessProject, getAccessibleProjectIds } from "@/lib/projectAccess";
 import { parsePagination } from "@/utils/parsePagination";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
@@ -186,8 +187,19 @@ export async function POST(request: NextRequest) {
         occurredAt: call.started_at,
       },
     );
+    const followUp = await applyCallFollowUp(client, {
+      leadId: call.lead_id,
+      outcome: call.outcome,
+      callStatus: call.status,
+      occurredAt: call.ended_at ?? call.started_at,
+      requestedAt: validation.data.next_follow_up_at,
+      actorUserId: scope.context.userId,
+    });
     await client.query("COMMIT");
-    return NextResponse.json({ message: "Call logged", call }, { status: 201 });
+    return NextResponse.json(
+      { message: "Call logged", call, follow_up: followUp },
+      { status: 201 },
+    );
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     const message = error instanceof Error ? error.message : "Unable to log call";

@@ -4,6 +4,10 @@ import {
   createNotificationsForUsers,
   resolveNotificationRecipients,
 } from "@/lib/notifications";
+import {
+  clearLeadNextAction,
+  ensureInitialLeadCall,
+} from "@/lib/leadFollowUps";
 
 export class OperationsReferenceError extends Error {
   constructor(message: string) {
@@ -334,6 +338,11 @@ export async function applyLeadOwnership(
       actorId,
     ],
   );
+  if (userId || teamId) {
+    await ensureInitialLeadCall(client, lead, actorId);
+  } else {
+    await clearLeadNextAction(client, String(lead.lead_id), actorId);
+  }
 }
 
 export async function chooseQueueAssignee(

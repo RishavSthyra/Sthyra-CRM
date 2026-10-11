@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import { addLeadHistory } from "@/lib/leads";
+import { clearLeadNextAction } from "@/lib/leadFollowUps";
 import { isObject } from "@/utils/isObject";
 
 export async function lockLead(
@@ -74,6 +75,13 @@ export async function transitionLead(
     metadata,
     performedBy,
   );
+  if (!["active", "nurture"].includes(toStatus)) {
+    await clearLeadNextAction(
+      client,
+      String(lead.lead_id),
+      performedBy,
+    );
+  }
   return result.rows[0];
 }
 
