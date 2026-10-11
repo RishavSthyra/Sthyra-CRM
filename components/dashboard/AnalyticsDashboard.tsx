@@ -353,7 +353,7 @@ export function AnalyticsDashboard() {
             <SectionHeading>Lead geography</SectionHeading>
             <article className={panelClass}>
               <PanelHeader
-                detail="Scroll or use + / − to drill down"
+                detail="Click a highlighted region or use + / − to drill down"
                 title="Geographic lead concentration"
               />
               <LeadGeographyMap
