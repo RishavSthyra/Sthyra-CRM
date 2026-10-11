@@ -19,6 +19,18 @@ export class OperationsConflictError extends Error {
   }
 }
 
+export function assignmentNotificationTargets(input: {
+  userId?: string | null;
+  teamId?: string | null;
+}) {
+  return input.userId
+    ? { userIds: [input.userId], teamIds: [] as string[] }
+    : {
+        userIds: [] as string[],
+        teamIds: input.teamId ? [input.teamId] : [],
+      };
+}
+
 export async function getLeadContext(
   client: PoolClient,
   leadId: string,
@@ -220,7 +232,7 @@ export async function createAssignment(
        company_id, project_id, lead_id, queue_id, assigned_to_user_id,
        assigned_to_team_id, assigned_by, status, priority, notes, accepted_at
      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
-       CASE WHEN $8='accepted' THEN CURRENT_TIMESTAMP ELSE NULL END)
+       CASE WHEN $8::varchar='accepted' THEN CURRENT_TIMESTAMP ELSE NULL END)
      RETURNING *`,
     [
       lead.company_id,
@@ -267,10 +279,10 @@ export async function createAssignment(
     );
   }
   await startSlaInstancesForAssignment(client, assignment, lead);
+  const notificationTargets = assignmentNotificationTargets(input);
   const recipients = await resolveNotificationRecipients(client, {
     companyId: Number(lead.company_id),
-    userIds: [input.userId],
-    teamIds: [input.teamId],
+    ...notificationTargets,
   });
   await createNotificationsForUsers(client, recipients, {
     companyId: Number(lead.company_id),
