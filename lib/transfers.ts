@@ -17,7 +17,7 @@ export const TRANSFER_COLUMNS = `
   tr.validation_errors, tr.requested_by, tr.validated_by, tr.decided_by,
   tr.validated_at, tr.submitted_at, tr.accepted_at, tr.rejected_at,
   tr.cancelled_at, tr.expired_at, tr.force_assigned_at, tr.expires_at,
-  tr.subject_name_snapshot, tr.created_at, tr.updated_at
+  tr.subject_name_snapshot, tr.batch_id, tr.created_at, tr.updated_at
 `;
 
 export type TransferInput = {
@@ -298,6 +298,49 @@ export async function addTransferHistory(
       performedBy,
     ],
   );
+}
+
+export async function syncTransferBatchStatus(
+  client: Queryable,
+  batchId: string | null | undefined,
+): Promise<string | null> {
+  if (!batchId) return null;
+  const statuses = await client.query<{
+    total: number;
+    pending: number;
+    accepted: number;
+    rejected: number;
+    cancelled: number;
+    expired: number;
+  }>(
+    `SELECT COUNT(*)::integer AS total,
+       COUNT(*) FILTER (WHERE status IN ('draft','validated','submitted'))::integer AS pending,
+       COUNT(*) FILTER (WHERE status IN ('accepted','force_assigned'))::integer AS accepted,
+       COUNT(*) FILTER (WHERE status='rejected')::integer AS rejected,
+       COUNT(*) FILTER (WHERE status='cancelled')::integer AS cancelled,
+       COUNT(*) FILTER (WHERE status='expired')::integer AS expired
+     FROM transfers WHERE batch_id=$1`,
+    [batchId],
+  );
+  const counts = statuses.rows[0];
+  if (!counts || !Number(counts.total)) return null;
+  const total = Number(counts.total);
+  const pending = Number(counts.pending);
+  const accepted = Number(counts.accepted);
+  let status = "submitted";
+  if (!pending && accepted === total) status = "accepted";
+  else if (!pending && Number(counts.rejected) === total) status = "rejected";
+  else if (!pending && Number(counts.cancelled) === total) status = "cancelled";
+  else if (!pending && Number(counts.expired) === total) status = "expired";
+  else if (accepted > 0) status = "partially_accepted";
+  await client.query(
+    `UPDATE transfer_batches SET status=$1,
+       decided_at=CASE WHEN $2::integer=0 THEN CURRENT_TIMESTAMP ELSE NULL END,
+       cancelled_at=CASE WHEN $1='cancelled' THEN CURRENT_TIMESTAMP ELSE cancelled_at END,
+       updated_at=CURRENT_TIMESTAMP WHERE batch_id=$3`,
+    [status, pending, batchId],
+  );
+  return status;
 }
 
 export async function getTransferValidationErrors(

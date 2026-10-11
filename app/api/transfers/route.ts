@@ -93,6 +93,7 @@ export async function GET(request: NextRequest) {
     "to_owner_user_id",
     "to_team_id",
     "requested_by",
+    "batch_id",
   ] as const) {
     const raw = request.nextUrl.searchParams.get(field);
     if (!raw) continue;
@@ -114,6 +115,11 @@ export async function GET(request: NextRequest) {
     const listValues = [...values, pagination.limit, pagination.offset];
     const result = await pool.query(
       `SELECT ${TRANSFER_COLUMNS}, p.project_name,
+        CASE WHEN tr.batch_id IS NULL THEN 1
+          ELSE COUNT(*) OVER (PARTITION BY tr.batch_id) END::integer AS batch_total,
+        CASE WHEN tr.batch_id IS NULL THEN 0
+          ELSE COUNT(*) FILTER (WHERE tr.status='submitted') OVER (PARTITION BY tr.batch_id)
+        END::integer AS batch_pending_count,
         COALESCE(
           NULLIF(BTRIM(o.opportunity_name), ''),
           NULLIF(BTRIM(CONCAT_WS(' ',c.first_name,c.last_name)), ''),
@@ -157,7 +163,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const scope = await requireLeadVisibility(request, "LEADS_VIEW");
+  const scope = await requireLeadVisibility(request, "LEADS_ASSIGN");
   if (!scope.ok) return scope.response;
   let body: unknown;
   try {

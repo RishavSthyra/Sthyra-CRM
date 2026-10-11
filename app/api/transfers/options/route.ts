@@ -5,7 +5,7 @@ import { canAccessProject } from "@/lib/projectAccess";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 
 export async function GET(request: NextRequest) {
-  const scope = await requireLeadVisibility(request, "LEADS_VIEW");
+  const scope = await requireLeadVisibility(request, "LEADS_ASSIGN");
   if (!scope.ok) return scope.response;
 
   const projectId = parsePositiveInteger(

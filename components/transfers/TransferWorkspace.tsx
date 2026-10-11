@@ -9,6 +9,7 @@ import {
   CircleAlert,
   FileCheck2,
   History,
+  ListChecks,
   LoaderCircle,
   RefreshCw,
   Search,
@@ -90,6 +91,9 @@ type Transfer = {
   force_assigned_at?: string | null;
   created_at: string;
   updated_at: string;
+  batch_id?: string | null;
+  batch_total?: number;
+  batch_pending_count?: number;
 };
 
 type TransferDetail = Transfer & {
@@ -184,6 +188,36 @@ type TransferOptions = {
   users: EligibleUser[];
   teams: EligibleTeam[];
   templates: ChecklistTemplate[];
+};
+
+type BulkChecklistItem = {
+  item_id: string;
+  label: string;
+  description?: string | null;
+  position: number;
+  is_required: boolean;
+};
+
+type BulkPreview = {
+  eligible: Array<{
+    lead_id: string;
+    subject_name: string;
+    email?: string | null;
+  }>;
+  blocked: Array<{
+    lead_id: string;
+    subject_name: string;
+    reason: string;
+  }>;
+  checklist_template_id?: string | null;
+  checklist_items: BulkChecklistItem[];
+  summary: { requested: number; eligible: number; blocked: number };
+};
+
+type BulkCreationResult = {
+  batch: { batch_id: string };
+  transfers: Transfer[];
+  blocked: BulkPreview["blocked"];
 };
 
 type DrawerTab = "overview" | "checklist" | "history";
@@ -567,6 +601,362 @@ function CreateTransferDrawer({
   );
 }
 
+function BulkTransferDrawer({
+  subjects,
+  options,
+  projectId,
+  onClose,
+  onCreated,
+}: {
+  subjects: TransferSubject[];
+  options: TransferOptions;
+  projectId: number;
+  onClose: () => void;
+  onCreated: (result: BulkCreationResult) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState<"configure" | "review">("configure");
+  const [preview, setPreview] = useState<BulkPreview | null>(null);
+  const [recipientKind, setRecipientKind] = useState<"user" | "team">("user");
+  const [recipientId, setRecipientId] = useState("");
+  const [templateId, setTemplateId] = useState("");
+  const [reason, setReason] = useState("");
+  const [notes, setNotes] = useState("");
+  const [expiresAt, setExpiresAt] = useState(
+    toLocalDateTime(DEFAULT_TRANSFER_EXPIRY),
+  );
+  const [confirmedItems, setConfirmedItems] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [onClose]);
+
+  const requestBody = useCallback(
+    (confirmed: string[] = []) => ({
+      project_id: projectId,
+      lead_ids: subjects.map((subject) => subject.subject_id),
+      [recipientKind === "user" ? "to_owner_user_id" : "to_team_id"]:
+        recipientId,
+      checklist_template_id: templateId || null,
+      reason: reason.trim(),
+      notes: notes.trim() || null,
+      expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+      confirmed_checklist_item_ids: confirmed,
+    }),
+    [expiresAt, notes, projectId, reason, recipientId, recipientKind, subjects, templateId],
+  );
+
+  async function review(event: FormEvent) {
+    event.preventDefault();
+    if (!recipientId) return toast.error("Select a recipient");
+    if (!reason.trim()) return toast.error("Add a reason for this handoff");
+    setBusy(true);
+    try {
+      const result = await api<BulkPreview>("/api/transfers/bulk/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody()),
+      });
+      setPreview(result);
+      setConfirmedItems(new Set());
+      setStep("review");
+    } catch (cause) {
+      toast.error(
+        cause instanceof Error ? cause.message : "Unable to review transfers",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createBatch() {
+    if (!preview?.eligible.length) return;
+    const requiredIds = preview.checklist_items
+      .filter((item) => item.is_required)
+      .map((item) => item.item_id);
+    if (requiredIds.some((itemId) => !confirmedItems.has(itemId))) {
+      toast.error("Confirm every required checklist item");
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await api<BulkCreationResult>("/api/transfers/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...requestBody([...confirmedItems]),
+          checklist_template_id: preview.checklist_template_id ?? null,
+        }),
+      });
+      toast.success(`${result.transfers.length} transfers submitted`);
+      if (result.blocked.length)
+        toast(`${result.blocked.length} lead${result.blocked.length === 1 ? " was" : "s were"} skipped`);
+      window.dispatchEvent(new Event("notifications:changed"));
+      await onCreated(result);
+    } catch (cause) {
+      toast.error(
+        cause instanceof Error ? cause.message : "Unable to submit transfers",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const requiredItems = preview?.checklist_items.filter(
+    (item) => item.is_required,
+  ) ?? [];
+  const allRequiredConfirmed = requiredItems.every((item) =>
+    confirmedItems.has(item.item_id),
+  );
+
+  return (
+    <>
+      <button
+        aria-label="Close bulk transfer panel"
+        className="fixed inset-0 z-[80] bg-black/75"
+        onClick={onClose}
+        type="button"
+      />
+      <aside
+        aria-modal="true"
+        className="fixed inset-y-0 right-0 z-[90] flex w-full max-w-[660px] flex-col overflow-hidden border-l border-[#2c2c2c] bg-[#111] shadow-[-30px_0_90px_rgba(0,0,0,.6)] max-[560px]:max-w-full"
+        role="dialog"
+      >
+        <header className="flex items-start justify-between px-6 pt-6 pb-5">
+          <div>
+            <h2 className="text-xl font-semibold text-white">
+              Transfer {subjects.length} leads
+            </h2>
+            <p className="mt-1 text-sm text-[#7d8581]">
+              One recipient, one auditable handoff batch.
+            </p>
+          </div>
+          <button
+            aria-label="Close"
+            className="grid size-9 place-items-center rounded-lg border border-[#2c2c2c] bg-[#191919] text-[#999] hover:bg-[#262626] hover:text-white"
+            onClick={onClose}
+            type="button"
+          >
+            <X className="size-5" />
+          </button>
+        </header>
+
+        {step === "configure" ? (
+          <form className="flex-1 overflow-y-auto bg-[#0b0b0b] p-6" onSubmit={review}>
+            <div className="mb-6 flex flex-wrap gap-2">
+              {subjects.slice(0, 6).map((subject) => (
+                <span
+                  className="rounded-full border border-white/[0.09] bg-white/[0.04] px-2.5 py-1 text-[11px] text-[#aeb5b1]"
+                  key={subject.subject_id}
+                >
+                  {subject.subject_name}
+                </span>
+              ))}
+              {subjects.length > 6 && (
+                <span className="px-2 py-1 text-[11px] text-[#737b77]">
+                  +{subjects.length - 6} more
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-4 max-[560px]:grid-cols-1">
+              <label>
+                <span className="mb-2 block text-xs text-[#9da5a1]">Send to</span>
+                <div className="relative">
+                  <select
+                    className={selectClass}
+                    onChange={(event) => {
+                      setRecipientKind(event.target.value as "user" | "team");
+                      setRecipientId("");
+                    }}
+                    value={recipientKind}
+                  >
+                    <option value="user">Person</option>
+                    <option value="team">Team</option>
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-[#7f8883]" />
+                </div>
+              </label>
+              <label>
+                <span className="mb-2 block text-xs text-[#9da5a1]">Recipient</span>
+                <div className="relative">
+                  <select
+                    className={selectClass}
+                    onChange={(event) => setRecipientId(event.target.value)}
+                    required
+                    value={recipientId}
+                  >
+                    <option value="">Select recipient</option>
+                    {recipientKind === "user"
+                      ? options.users.map((user) => (
+                          <option key={user.user_id} value={user.user_id}>
+                            {name(user.first_name, user.last_name, user.email)}
+                            {user.team_name ? ` · ${user.team_name}` : ""}
+                          </option>
+                        ))
+                      : options.teams.map((team) => (
+                          <option key={team.team_id} value={team.team_id}>
+                            {team.team_name}
+                          </option>
+                        ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-[#7f8883]" />
+                </div>
+              </label>
+              <label>
+                <span className="mb-2 block text-xs text-[#9da5a1]">Checklist</span>
+                <div className="relative">
+                  <select
+                    className={selectClass}
+                    onChange={(event) => setTemplateId(event.target.value)}
+                    value={templateId}
+                  >
+                    <option value="">Use project default</option>
+                    {options.templates.map((template) => (
+                      <option key={template.template_id} value={template.template_id}>
+                        {template.template_name} · {template.item_count} items
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-[#7f8883]" />
+                </div>
+              </label>
+              <label>
+                <span className="mb-2 block text-xs text-[#9da5a1]">Expires</span>
+                <input
+                  className={fieldClass}
+                  min={toLocalDateTime(new Date(RENDER_TIMESTAMP))}
+                  onChange={(event) => setExpiresAt(event.target.value)}
+                  type="datetime-local"
+                  value={expiresAt}
+                />
+              </label>
+            </div>
+            <div className="mt-6 space-y-4">
+              <label className="block">
+                <span className="mb-2 block text-xs text-[#9da5a1]">Reason *</span>
+                <input
+                  className={fieldClass}
+                  onChange={(event) => setReason(event.target.value)}
+                  placeholder="Why are these leads changing ownership?"
+                  required
+                  value={reason}
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-xs text-[#9da5a1]">Notes</span>
+                <textarea
+                  className={`${fieldClass} min-h-24 resize-y py-3`}
+                  onChange={(event) => setNotes(event.target.value)}
+                  placeholder="Context the recipient should know"
+                  value={notes}
+                />
+              </label>
+            </div>
+            <div className="mt-8 flex justify-end gap-3">
+              <button className="h-10 px-4 text-sm text-[#9da5a1]" onClick={onClose} type="button">
+                Cancel
+              </button>
+              <button
+                className="flex h-10 items-center gap-2 rounded-lg bg-[#2b8d70] px-5 text-sm font-semibold text-white disabled:opacity-45"
+                disabled={busy || !recipientId || !reason.trim()}
+                type="submit"
+              >
+                {busy && <LoaderCircle className="size-4 animate-spin" />}
+                Review transfer
+              </button>
+            </div>
+          </form>
+        ) : preview ? (
+          <div className="flex-1 overflow-y-auto bg-[#0b0b0b] p-6">
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                ["Selected", preview.summary.requested],
+                ["Ready", preview.summary.eligible],
+                ["Blocked", preview.summary.blocked],
+              ].map(([summaryLabel, value]) => (
+                <div className="rounded-xl border border-white/[0.08] bg-white/[0.025] p-4" key={summaryLabel}>
+                  <span className="text-[10px] text-[#737b77] uppercase">{summaryLabel}</span>
+                  <strong className="mt-1 block text-xl text-white">{value}</strong>
+                </div>
+              ))}
+            </div>
+
+            {preview.blocked.length > 0 && (
+              <section className="mt-6 rounded-xl border border-[#a85d55]/25 bg-[#2b1918]/35 p-4">
+                <p className="text-xs font-semibold text-[#e4a19a]">
+                  These leads will be skipped
+                </p>
+                <div className="mt-3 space-y-3">
+                  {preview.blocked.map((lead) => (
+                    <div className="text-xs" key={lead.lead_id}>
+                      <span className="text-[#d9ddda]">{lead.subject_name}</span>
+                      <span className="ml-2 text-[#a97c77]">{lead.reason}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {preview.checklist_items.length > 0 && (
+              <section className="mt-6">
+                <h3 className="text-sm font-semibold text-[#e4e8e5]">Confirm the batch checklist</h3>
+                <p className="mt-1 text-xs text-[#737b77]">
+                  Your confirmation is copied into every lead’s audit history.
+                </p>
+                <div className="mt-3 divide-y divide-white/[0.07] border-y border-white/[0.07]">
+                  {preview.checklist_items.map((item) => (
+                    <label className="flex cursor-pointer items-start gap-3 py-4" key={item.item_id}>
+                      <input
+                        checked={confirmedItems.has(item.item_id)}
+                        className="mt-0.5 size-4 accent-[#3eae8a]"
+                        onChange={(event) =>
+                          setConfirmedItems((current) => {
+                            const next = new Set(current);
+                            if (event.target.checked) next.add(item.item_id);
+                            else next.delete(item.item_id);
+                            return next;
+                          })
+                        }
+                        type="checkbox"
+                      />
+                      <span>
+                        <span className="block text-sm text-[#dce1de]">
+                          {item.label}
+                          {item.is_required && <i className="ml-2 text-[9px] not-italic text-[#d99b62] uppercase">Required</i>}
+                        </span>
+                        {item.description && <span className="mt-1 block text-xs text-[#737b77]">{item.description}</span>}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <div className="mt-8 flex justify-end gap-3">
+              <button className="h-10 px-4 text-sm text-[#9da5a1]" onClick={() => setStep("configure")} type="button">
+                Back
+              </button>
+              <button
+                className="flex h-10 items-center gap-2 rounded-lg bg-[#2b8d70] px-5 text-sm font-semibold text-white disabled:opacity-45"
+                disabled={busy || !preview.eligible.length || !allRequiredConfirmed}
+                onClick={() => void createBatch()}
+                type="button"
+              >
+                {busy ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}
+                Submit {preview.eligible.length} transfers
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </aside>
+    </>
+  );
+}
+
 const ACTION_COPY: Record<
   TransferAction,
   { title: string; description: string; confirm: string; destructive?: boolean }
@@ -670,6 +1060,62 @@ function ActionDialog({
   );
 }
 
+function BatchActionDialog({
+  action,
+  count,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  action: "accept" | "reject";
+  count: number;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: (reason: string) => void;
+}) {
+  const [reason, setReason] = useState("");
+  const accepting = action === "accept";
+  return (
+    <Modal
+      description={
+        accepting
+          ? `Ownership of all ${count} pending leads will move immediately.`
+          : `All ${count} pending transfers will be rejected with the same reason.`
+      }
+      onClose={onClose}
+      title={`${accepting ? "Accept" : "Reject"} ${count} transfers`}
+    >
+      <div className="p-6">
+        {!accepting && (
+          <label>
+            <span className="mb-2 block text-xs text-[#9da5a1]">Reason *</span>
+            <textarea
+              autoFocus
+              className={`${fieldClass} min-h-24 resize-y py-3`}
+              onChange={(event) => setReason(event.target.value)}
+              value={reason}
+            />
+          </label>
+        )}
+        <div className="mt-6 flex justify-end gap-3 border-t border-white/[0.08] pt-5">
+          <button className="h-10 px-4 text-sm text-[#9da5a1]" onClick={onClose} type="button">
+            Go back
+          </button>
+          <button
+            className={`flex h-10 items-center gap-2 rounded-lg px-5 text-sm font-semibold text-white disabled:opacity-45 ${accepting ? "bg-[#2b8d70] hover:bg-[#34a482]" : "bg-[#8f403a] hover:bg-[#a94b44]"}`}
+            disabled={busy || (!accepting && !reason.trim())}
+            onClick={() => onConfirm(reason.trim())}
+            type="button"
+          >
+            {busy && <LoaderCircle className="size-4 animate-spin" />}
+            {accepting ? "Accept all" : "Reject all"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 export function TransferWorkspace() {
   const router = useRouter();
   const lastLoadedTransfersQueryRef = useRef<string | null>(null);
@@ -686,6 +1132,9 @@ export function TransferWorkspace() {
   const [leadLoading, setLeadLoading] = useState(true);
   const [leadError, setLeadError] = useState<string | null>(null);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [batchFilter, setBatchFilter] = useState<string | null>(null);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -701,6 +1150,7 @@ export function TransferWorkspace() {
   const [recipientKind, setRecipientKind] = useState<"user" | "team">("user");
   const [recipientId, setRecipientId] = useState("");
   const [action, setAction] = useState<TransferAction | null>(null);
+  const [batchAction, setBatchAction] = useState<"accept" | "reject" | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [checklistBusy, setChecklistBusy] = useState(false);
 
@@ -736,6 +1186,13 @@ export function TransferWorkspace() {
           setWorkspaceTab("transfers");
           setSelectedId(requestedTransfer);
         }
+        const requestedBatch = new URLSearchParams(window.location.search).get(
+          "batch_id",
+        );
+        if (requestedBatch) {
+          setWorkspaceTab("transfers");
+          setBatchFilter(requestedBatch);
+        }
       })
       .catch((cause) => {
         if (!active) return;
@@ -764,6 +1221,7 @@ export function TransferWorkspace() {
       if (typeFilter !== "all") params.set("subject_type", typeFilter);
       if (statusFilter !== "all" && statusFilter !== "active")
         params.set("status", statusFilter);
+      if (batchFilter) params.set("batch_id", batchFilter);
       const queryKey = params.toString();
       const background =
         quiet || lastLoadedTransfersQueryRef.current === queryKey;
@@ -776,6 +1234,7 @@ export function TransferWorkspace() {
         );
         const rows = payload.transfers ?? [];
         lastLoadedTransfersQueryRef.current = queryKey;
+        if (batchFilter && rows.length) setSelectedId(rows[0].transfer_id);
         setTransfers(
           statusFilter === "active"
             ? rows.filter((item) => ACTIVE_STATUSES.includes(item.status))
@@ -790,7 +1249,7 @@ export function TransferWorkspace() {
         setRefreshing(false);
       }
     },
-    [projectFilter, statusFilter, typeFilter],
+    [batchFilter, projectFilter, statusFilter, typeFilter],
   );
 
   useEffect(() => {
@@ -921,6 +1380,15 @@ export function TransferWorkspace() {
   const selectedLead = leadOptions?.subjects.find(
     (lead) => lead.subject_id === selectedLeadId,
   );
+  const selectedLeads = (leadOptions?.subjects ?? []).filter((lead) =>
+    selectedLeadIds.has(lead.subject_id),
+  );
+  const selectableVisibleLeads = visibleLeads.filter(
+    (lead) => !lead.active_transfer_id,
+  );
+  const allVisibleLeadsSelected =
+    selectableVisibleLeads.length > 0 &&
+    selectableVisibleLeads.every((lead) => selectedLeadIds.has(lead.subject_id));
 
   const metrics = useMemo(
     () => ({
@@ -977,6 +1445,34 @@ export function TransferWorkspace() {
     } catch (cause) {
       toast.error(
         cause instanceof Error ? cause.message : "Transfer action failed",
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function runBatchAction(reason: string) {
+    if (!detail?.batch_id || !batchAction) return;
+    setActionBusy(true);
+    try {
+      await api(
+        `/api/transfer-batches/${detail.batch_id}/${batchAction}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(reason ? { reason } : {}),
+        },
+      );
+      toast.success(
+        `${detail.batch_pending_count ?? 0} transfers ${batchAction === "accept" ? "accepted" : "rejected"}`,
+      );
+      window.dispatchEvent(new Event("notifications:changed"));
+      setBatchAction(null);
+      setSelectedId(null);
+      await Promise.all([loadLeads(true), loadTransfers(true)]);
+    } catch (cause) {
+      toast.error(
+        cause instanceof Error ? cause.message : "Bulk transfer action failed",
       );
     } finally {
       setActionBusy(false);
@@ -1084,6 +1580,8 @@ export function TransferWorkspace() {
               onClick={() => {
                 setWorkspaceTab(tab as "leads" | "transfers");
                 setQuery("");
+                setSelectedLeadIds(new Set());
+                setBulkOpen(false);
                 if (tab === "leads" && projectFilter === "all") {
                   setProjectFilter(
                     String(context?.projects?.[0]?.project_id ?? ""),
@@ -1099,6 +1597,21 @@ export function TransferWorkspace() {
 
         {workspaceTab === "transfers" ? (
           <>
+            {batchFilter && (
+              <div className="mt-4 flex items-center justify-between rounded-xl border border-[#397b67]/35 bg-[#10231d] px-4 py-3 text-xs text-[#9bdac5]">
+                <span>Showing one bulk transfer batch</span>
+                <button
+                  className="font-semibold text-[#74d4b5] hover:text-white"
+                  onClick={() => {
+                    setBatchFilter(null);
+                    setSelectedId(null);
+                  }}
+                  type="button"
+                >
+                  Show all transfers
+                </button>
+              </div>
+            )}
             <section className="mt-4 overflow-hidden rounded-2xl border border-[#2c2c2c] bg-[#080808]">
               <header className="border-b border-[#2c2c2c] bg-[#191919] px-4 py-3 text-sm font-medium text-[#dedede]">
                 Overview
@@ -1271,6 +1784,11 @@ export function TransferWorkspace() {
                             </strong>
                             <span className="mt-1 block text-[10px] text-[#6f7773] capitalize">
                               {transfer.subject_type}
+                              {transfer.batch_id && (
+                                <span className="ml-2 rounded-full bg-[#173128] px-2 py-0.5 text-[#76cdb0] normal-case">
+                                  Bulk · {transfer.batch_total ?? 1}
+                                </span>
+                              )}
                             </span>
                           </td>
                           <td className="px-4 py-4 text-xs text-[#a4aca8]">
@@ -1322,6 +1840,7 @@ export function TransferWorkspace() {
                   onChange={(event) => {
                     setProjectFilter(event.target.value);
                     setSelectedLeadId(null);
+                    setSelectedLeadIds(new Set());
                     window.localStorage.setItem(
                       "sthyra-project-id",
                       event.target.value,
@@ -1342,10 +1861,31 @@ export function TransferWorkspace() {
             <section className="overflow-hidden rounded-2xl border border-[#2c2c2c] bg-[#080808]">
               <header className="flex items-center justify-between gap-4 border-b border-[#2c2c2c] bg-[#191919] px-4 py-3 text-xs text-[#888]">
                 <span>
-                  Select a lead to prepare an ownership transfer in the side
-                  panel.
+                  {selectedLeadIds.size
+                    ? `${selectedLeadIds.size} leads selected`
+                    : "Select one lead, or choose several for a bulk handoff."}
                 </span>
-                <span>{visibleLeads.length} leads</span>
+                <div className="flex items-center gap-3">
+                  {selectedLeadIds.size > 1 && (
+                    <button
+                      className="flex h-8 items-center gap-2 rounded-lg bg-[#2b8d70] px-3 text-xs font-semibold text-white hover:bg-[#34a482]"
+                      onClick={() => setBulkOpen(true)}
+                      type="button"
+                    >
+                      <ListChecks className="size-3.5" /> Transfer {selectedLeadIds.size}
+                    </button>
+                  )}
+                  {selectedLeadIds.size > 0 && (
+                    <button
+                      className="text-xs text-[#8e9692] hover:text-white"
+                      onClick={() => setSelectedLeadIds(new Set())}
+                      type="button"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <span>{visibleLeads.length} leads</span>
+                </div>
               </header>
 
               {leadLoading ? (
@@ -1383,6 +1923,24 @@ export function TransferWorkspace() {
                   <table className="w-full min-w-[900px] border-collapse text-left">
                     <thead className="bg-[#080808] text-[10px] tracking-[0.08em] text-[#777] uppercase">
                       <tr>
+                        <th className="w-12 px-4 py-3">
+                          <input
+                            aria-label="Select all transferable leads"
+                            checked={allVisibleLeadsSelected}
+                            className="size-4 accent-[#3eae8a]"
+                            onChange={(event) => {
+                              setSelectedLeadIds((current) => {
+                                const next = new Set(current);
+                                selectableVisibleLeads.forEach((lead) => {
+                                  if (event.target.checked) next.add(lead.subject_id);
+                                  else next.delete(lead.subject_id);
+                                });
+                                return next;
+                              });
+                            }}
+                            type="checkbox"
+                          />
+                        </th>
                         <th className="px-4 py-3 font-semibold">Lead</th>
                         <th className="px-4 py-3 font-semibold">Contact</th>
                         <th className="px-4 py-3 font-semibold">Stage</th>
@@ -1393,7 +1951,7 @@ export function TransferWorkspace() {
                     <tbody className="divide-y divide-[#2c2c2c]">
                       {visibleLeads.map((lead) => (
                         <tr
-                          className="h-[72px] cursor-pointer transition hover:bg-[#101010]"
+                          className={`h-[72px] cursor-pointer transition hover:bg-[#101010] ${selectedLeadIds.has(lead.subject_id) ? "bg-[#0f1d18]" : ""}`}
                           key={lead.subject_id}
                           onClick={() => {
                             if (lead.active_transfer_id) {
@@ -1405,6 +1963,24 @@ export function TransferWorkspace() {
                             setSelectedLeadId(lead.subject_id);
                           }}
                         >
+                          <td className="px-4 py-4">
+                            <input
+                              aria-label={`Select ${lead.subject_name || "lead"}`}
+                              checked={selectedLeadIds.has(lead.subject_id)}
+                              className="size-4 accent-[#3eae8a] disabled:opacity-30"
+                              disabled={Boolean(lead.active_transfer_id)}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(event) => {
+                                setSelectedLeadIds((current) => {
+                                  const next = new Set(current);
+                                  if (event.target.checked) next.add(lead.subject_id);
+                                  else next.delete(lead.subject_id);
+                                  return next;
+                                });
+                              }}
+                              type="checkbox"
+                            />
+                          </td>
                           <td className="px-4 py-4">
                             <strong className="block text-sm text-[#e5e9e6]">
                               {lead.subject_name || "Unnamed lead"}
@@ -1458,6 +2034,22 @@ export function TransferWorkspace() {
         )}
       </section>
 
+      {bulkOpen && leadOptions && selectedLeads.length > 1 && projectFilter !== "all" && (
+        <BulkTransferDrawer
+          onClose={() => setBulkOpen(false)}
+          onCreated={async (result) => {
+            setBulkOpen(false);
+            setSelectedLeadIds(new Set());
+            setSelectedLeadId(null);
+            setBatchFilter(result.batch.batch_id);
+            setWorkspaceTab("transfers");
+          }}
+          options={leadOptions}
+          projectId={Number(projectFilter)}
+          subjects={selectedLeads}
+        />
+      )}
+
       {selectedLead && leadOptions && (
         <CreateTransferDrawer
           onClose={() => setSelectedLeadId(null)}
@@ -1505,6 +2097,11 @@ export function TransferWorkspace() {
                         >
                           {label(detail.status)}
                         </span>
+                        {detail.batch_id && (
+                          <span className="rounded-full border border-[#397b67]/30 bg-[#10231d] px-2 py-0.5 text-[10px] text-[#76cdb0]">
+                            Bulk batch · {detail.batch_total ?? 1}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <button
@@ -1547,6 +2144,17 @@ export function TransferWorkspace() {
                             <Check className="size-3.5" /> Accept
                           </button>
                         )}
+                        {recipient &&
+                          detail.batch_id &&
+                          (detail.batch_pending_count ?? 0) > 1 && (
+                            <button
+                              className="flex h-9 items-center gap-1.5 rounded-lg border border-[#58b695]/30 px-3 text-xs font-semibold text-[#78d2b3] hover:bg-[#153328]"
+                              onClick={() => setBatchAction("accept")}
+                              type="button"
+                            >
+                              <ListChecks className="size-3.5" /> Accept all {detail.batch_pending_count}
+                            </button>
+                          )}
                         {recipient && (
                           <button
                             className="flex h-9 items-center gap-1.5 rounded-lg border border-[#bb665f]/30 px-3 text-xs text-[#e99a93] hover:bg-[#3a201e]"
@@ -1556,6 +2164,17 @@ export function TransferWorkspace() {
                             <XCircle className="size-3.5" /> Reject
                           </button>
                         )}
+                        {recipient &&
+                          detail.batch_id &&
+                          (detail.batch_pending_count ?? 0) > 1 && (
+                            <button
+                              className="flex h-9 items-center gap-1.5 rounded-lg border border-[#bb665f]/30 px-3 text-xs text-[#e99a93] hover:bg-[#3a201e]"
+                              onClick={() => setBatchAction("reject")}
+                              type="button"
+                            >
+                              Reject all
+                            </button>
+                          )}
                       </>
                     ) : null}
                     {ACTIVE_STATUSES.includes(detail.status) &&
@@ -1955,6 +2574,15 @@ export function TransferWorkspace() {
           busy={actionBusy}
           onClose={() => setAction(null)}
           onConfirm={(reason) => void runAction(reason)}
+        />
+      )}
+      {batchAction && detail?.batch_id && (
+        <BatchActionDialog
+          action={batchAction}
+          busy={actionBusy}
+          count={detail.batch_pending_count ?? 0}
+          onClose={() => setBatchAction(null)}
+          onConfirm={(reason) => void runBatchAction(reason)}
         />
       )}
     </main>

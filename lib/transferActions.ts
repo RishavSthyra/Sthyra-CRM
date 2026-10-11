@@ -15,6 +15,7 @@ import {
   getTransfer,
   getTransferValidationErrors,
   incompleteRequiredChecklistCount,
+  syncTransferBatchStatus,
   validateTransferReferences,
 } from "@/lib/transfers";
 import { isObject } from "@/utils/isObject";
@@ -332,6 +333,10 @@ export async function handleTransferAction(
       targetStatus,
       scope.context.userId,
       { reason: reason ?? null },
+    );
+    await syncTransferBatchStatus(
+      client,
+      (transfer.batch_id as string | null) ?? null,
     );
     const notifyRecipient = action === "submit";
     const recipients = await resolveNotificationRecipients(client, {

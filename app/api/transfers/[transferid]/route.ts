@@ -21,6 +21,8 @@ export async function GET(request: NextRequest, context: Context) {
   try {
     const result = await pool.query(
       `SELECT ${TRANSFER_COLUMNS}, p.project_name,
+        COALESCE(batch_stats.total, 1)::integer AS batch_total,
+        COALESCE(batch_stats.pending, 0)::integer AS batch_pending_count,
         COALESCE(
           NULLIF(BTRIM(o.opportunity_name), ''),
           NULLIF(BTRIM(CONCAT_WS(' ',c.first_name,c.last_name)), ''),
@@ -54,6 +56,11 @@ export async function GET(request: NextRequest, context: Context) {
        LEFT JOIN users previous_owner ON previous_owner.user_id=tr.from_owner_user_id
        LEFT JOIN teams previous_team ON previous_team.team_id=tr.from_team_id
        JOIN users requester ON requester.user_id=tr.requested_by
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*)::integer AS total,
+           COUNT(*) FILTER (WHERE sibling.status='submitted')::integer AS pending
+         FROM transfers sibling WHERE sibling.batch_id=tr.batch_id
+       ) batch_stats ON tr.batch_id IS NOT NULL
        WHERE tr.transfer_id=$1`,
       [access.transferId],
     );
