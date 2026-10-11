@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+.lead-map-popup .maplibregl-popup-content {
+  background: #101113;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0;
+  padding: 0;
+}
+
+.lead-map-popup.maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+  border-top-color: #101113;
+}
+
 @theme inline {
   --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);

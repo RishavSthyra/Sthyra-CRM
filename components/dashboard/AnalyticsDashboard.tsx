@@ -16,6 +16,10 @@ import {
 } from "recharts";
 import { CircleAlert, RefreshCw } from "lucide-react";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
+import {
+  LeadGeographyMap,
+  type GeographyPoint,
+} from "@/components/dashboard/LeadGeographyMap";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 
 type DataRow = Record<string, string | number | null>;
@@ -43,20 +47,25 @@ type Analytics = {
   inventory_mix: DataRow[];
   revenue_forecast: DataRow[];
   conversion_funnel: DataRow[];
+  lead_geography: {
+    points: GeographyPoint[];
+    mapped_leads: number;
+    unmapped_leads: number;
+  };
 };
 
 const MONOCHROME = [
-  "#111111",
-  "#3f3f3f",
-  "#686868",
-  "#929292",
-  "#b7b7b7",
-  "#d2d2d2",
-  "#e4e4e4",
+  "#f3f3f3",
+  "#d4d4d4",
+  "#adadad",
+  "#858585",
+  "#626262",
+  "#464646",
+  "#303030",
 ];
 
 const panelClass =
-  "overflow-hidden border border-black/10 bg-[#f5f5f3] text-[#111111] shadow-[0_1px_0_rgba(255,255,255,0.05)]";
+  "overflow-hidden border border-white/[0.12] bg-[#101113] text-[#f2f2f2]";
 
 function money(value: unknown, compact = false) {
   return new Intl.NumberFormat("en-IN", {
@@ -95,15 +104,15 @@ function RevenueTooltip({
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="min-w-44 border border-black/15 bg-white px-3 py-2.5 text-[11px] shadow-xl">
-      <p className="mb-2 text-[#6b6b6b]">{monthLabel(label) || label}</p>
+    <div className="min-w-44 border border-white/15 bg-[#111214] px-3 py-2.5 text-[11px] shadow-xl">
+      <p className="mb-2 text-[#858585]">{monthLabel(label) || label}</p>
       {payload.map((item) => (
         <div
           className="flex items-center justify-between gap-6 py-1"
           key={item.name}
         >
           <span style={{ color: item.color }}>{item.name}</span>
-          <strong className="text-black">{money(item.value, true)}</strong>
+          <strong className="text-white">{money(item.value, true)}</strong>
         </div>
       ))}
     </div>
@@ -112,7 +121,7 @@ function RevenueTooltip({
 
 function SectionHeading({ children }: { children: string }) {
   return (
-    <h2 className="mb-4 text-[17px] font-semibold tracking-[-0.01em] text-[#f1f1f1]">
+    <h2 className="mb-3 font-[Arial,Helvetica,sans-serif] text-[14px] font-semibold text-[#ededed]">
       {children}
     </h2>
   );
@@ -126,10 +135,10 @@ function PanelHeader({
   title: string;
 }) {
   return (
-    <div className="flex min-h-14 items-start justify-between gap-4 border-b border-black/10 px-5 py-4">
-      <h3 className="text-[13px] font-semibold leading-5">{title}</h3>
+    <div className="flex min-h-14 items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
+      <h3 className="font-[Arial,Helvetica,sans-serif] text-[12px] font-semibold leading-5">{title}</h3>
       {detail ? (
-        <span className="shrink-0 text-[10px] text-[#707070]">{detail}</span>
+        <span className="shrink-0 text-[10px] text-[#777777]">{detail}</span>
       ) : null}
     </div>
   );
@@ -252,14 +261,14 @@ export function AnalyticsDashboard() {
   return (
     <main className="h-dvh overflow-hidden bg-[#090b0d] text-white">
       <DashboardSidebar />
-      <section className="ml-[96px] h-dvh overflow-y-auto max-[700px]:ml-[84px]">
+      <section className="ml-[96px] h-dvh overflow-y-auto font-[Arial,Helvetica,sans-serif] max-[700px]:ml-[84px]">
         <div className="mx-auto w-full max-w-[1680px] px-7 py-6 max-[700px]:px-3">
           <header className="flex items-end justify-between gap-8 border-b border-white/15 pb-5 max-[820px]:items-start max-[820px]:flex-col">
             <div>
-              <p className="text-[10px] font-medium tracking-[0.14em] text-[#858585] uppercase">
-                CRM performance
+              <p className="text-[11px] text-[#777777]">
+                Performance overview
               </p>
-              <h1 className="mt-2 text-[32px] font-semibold tracking-[-0.035em]">
+              <h1 className="mt-2 text-[30px] font-semibold tracking-[-0.02em]">
                 Dashboard
               </h1>
               <p className="mt-2 text-[12px] text-[#858585]">
@@ -307,10 +316,10 @@ export function AnalyticsDashboard() {
 
           <section className="mt-7">
             <SectionHeading>Executive overview</SectionHeading>
-            <div className="grid grid-cols-4 gap-px overflow-hidden bg-[#dededb] max-[1050px]:grid-cols-2 max-[620px]:grid-cols-1">
+            <div className="grid grid-cols-4 gap-px overflow-hidden border border-white/[0.12] bg-white/[0.12] max-[1050px]:grid-cols-2 max-[620px]:grid-cols-1">
               {kpis.map(({ detail, label, value }) => (
                 <article
-                  className="min-h-40 bg-[#f5f5f3] px-5 py-5 text-[#111111]"
+                  className="min-h-36 bg-[#101113] px-5 py-5 text-[#f2f2f2]"
                   key={label}
                 >
                   <p className="min-h-9 text-[12px] font-semibold leading-4">
@@ -319,12 +328,27 @@ export function AnalyticsDashboard() {
                   <strong className="mt-4 block text-[34px] leading-none font-medium tracking-[-0.04em]">
                     {value}
                   </strong>
-                  <p className="mt-2 text-[11px] leading-4 text-[#5f5f5f]">
+                  <p className="mt-2 text-[11px] leading-4 text-[#777777]">
                     {detail}
                   </p>
                 </article>
               ))}
             </div>
+          </section>
+
+          <section className="mt-9">
+            <SectionHeading>Lead geography</SectionHeading>
+            <article className={panelClass}>
+              <PanelHeader
+                detail="Scroll or use + / − to drill down"
+                title="Geographic lead concentration"
+              />
+              <LeadGeographyMap
+                mappedLeads={data.lead_geography.mapped_leads}
+                points={data.lead_geography.points}
+                unmappedLeads={data.lead_geography.unmapped_leads}
+              />
+            </article>
           </section>
 
           <section className="mt-9">
@@ -343,21 +367,21 @@ export function AnalyticsDashboard() {
                     >
                       <defs>
                         <linearGradient id="revenueArea" x1="0" x2="0" y1="0" y2="1">
-                          <stop offset="0" stopColor="#111111" stopOpacity={0.14} />
-                          <stop offset="1" stopColor="#111111" stopOpacity={0} />
+                          <stop offset="0" stopColor="#ffffff" stopOpacity={0.16} />
+                          <stop offset="1" stopColor="#ffffff" stopOpacity={0} />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid stroke="#ddddda" vertical={false} />
+                      <CartesianGrid stroke="rgba(255,255,255,0.10)" vertical={false} />
                       <XAxis
                         axisLine={false}
                         dataKey="month"
-                        tick={{ fill: "#6b6b6b", fontSize: 10 }}
+                        tick={{ fill: "#777777", fontSize: 10 }}
                         tickFormatter={monthLabel}
                         tickLine={false}
                       />
                       <YAxis
                         axisLine={false}
-                        tick={{ fill: "#6b6b6b", fontSize: 10 }}
+                        tick={{ fill: "#777777", fontSize: 10 }}
                         tickFormatter={(value) => money(value, true)}
                         tickLine={false}
                         width={62}
@@ -367,7 +391,7 @@ export function AnalyticsDashboard() {
                         dataKey="actual_revenue"
                         fill="url(#revenueArea)"
                         name="Actual revenue"
-                        stroke="#111111"
+                        stroke="#ffffff"
                         strokeWidth={2.25}
                         type="monotone"
                       />
@@ -375,7 +399,7 @@ export function AnalyticsDashboard() {
                         dataKey="weighted_forecast"
                         dot={false}
                         name="Weighted forecast"
-                        stroke="#747474"
+                        stroke="#8b8b8b"
                         strokeDasharray="5 5"
                         strokeWidth={1.75}
                         type="monotone"
@@ -384,11 +408,11 @@ export function AnalyticsDashboard() {
                   </ResponsiveContainer>
                   {!hasRevenueData ? (
                     <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-6 pt-12">
-                      <div className="border border-black/10 bg-white/95 px-5 py-4 text-center shadow-sm">
+                      <div className="border border-white/15 bg-[#0b0c0e]/95 px-5 py-4 text-center shadow-xl">
                         <p className="text-xl font-semibold">
                           {money(data.summary.pipeline_value, true)} open pipeline
                         </p>
-                        <p className="mt-1 text-[11px] text-[#696969]">
+                        <p className="mt-1 text-[11px] text-[#858585]">
                           Add expected close dates to populate this forecast.
                         </p>
                       </div>
@@ -411,13 +435,13 @@ export function AnalyticsDashboard() {
                           <span className="truncate font-medium">
                             {String(stage.stage_name)}
                           </span>
-                          <span className="shrink-0 text-[#555555]">
+                          <span className="shrink-0 text-[#a0a0a0]">
                             {money(value, true)}
                           </span>
                         </div>
-                        <div className="h-2 bg-black/[0.08]">
+                        <div className="h-2 bg-white/[0.08]">
                           <i
-                            className="block h-full bg-black"
+                            className="block h-full bg-white"
                             style={{
                               opacity: Math.max(0.3, 1 - index * 0.1),
                               width: `${(value / maxStageValue) * 100}%`,
@@ -457,13 +481,13 @@ export function AnalyticsDashboard() {
                           {value.toLocaleString("en-IN")}
                         </span>
                         <i
-                          className="block min-h-1 w-full bg-black"
+                          className="block min-h-1 w-full bg-white"
                           style={{
                             height: `${Math.max(6, (value / maxFunnel) * 190)}px`,
                             opacity: Math.max(0.28, 1 - index * 0.12),
                           }}
                         />
-                        <span className="mt-2 truncate text-[10px] text-[#666666]">
+                        <span className="mt-2 truncate text-[10px] text-[#8b8b8b]">
                           {String(stage.stage)}
                         </span>
                       </div>
@@ -475,21 +499,21 @@ export function AnalyticsDashboard() {
                     </p>
                   ) : null}
                 </div>
-                <div className="grid grid-cols-3 border-t border-black/10 bg-white/35">
+                <div className="grid grid-cols-3 border-t border-white/10 bg-black/15">
                   <div className="px-5 py-4">
-                    <p className="text-[10px] text-[#696969]">Site visits</p>
+                    <p className="text-[10px] text-[#858585]">Site visits</p>
                     <strong className="mt-1 block text-xl">
                       {data.summary.completed_site_visits}
                     </strong>
                   </div>
-                  <div className="border-l border-black/10 px-5 py-4">
-                    <p className="text-[10px] text-[#696969]">Converted visits</p>
+                  <div className="border-l border-white/10 px-5 py-4">
+                    <p className="text-[10px] text-[#858585]">Converted visits</p>
                     <strong className="mt-1 block text-xl">
                       {data.summary.converted_site_visits}
                     </strong>
                   </div>
-                  <div className="border-l border-black/10 px-5 py-4">
-                    <p className="text-[10px] text-[#696969]">Visit conversion</p>
+                  <div className="border-l border-white/10 px-5 py-4">
+                    <p className="text-[10px] text-[#858585]">Visit conversion</p>
                     <strong className="mt-1 block text-xl">
                       {percent(data.summary.site_visit_conversion_rate)}
                     </strong>
@@ -500,7 +524,7 @@ export function AnalyticsDashboard() {
               <article className={panelClass}>
                 <PanelHeader detail="Top channels" title="Source performance" />
                 <div className="px-5 py-4">
-                  <div className="grid grid-cols-[minmax(0,1fr)_56px_72px] border-b border-black/10 pb-2 text-[9px] font-semibold tracking-[0.08em] text-[#6b6b6b] uppercase">
+                  <div className="grid grid-cols-[minmax(0,1fr)_56px_72px] border-b border-white/10 pb-2 text-[9px] font-semibold tracking-[0.08em] text-[#777777] uppercase">
                     <span>Source</span>
                     <span className="text-right">Leads</span>
                     <span className="text-right">Conversion</span>
@@ -509,22 +533,22 @@ export function AnalyticsDashboard() {
                     const leads = Number(source.leads ?? 0);
                     return (
                       <div
-                        className="grid grid-cols-[minmax(0,1fr)_56px_72px] items-center border-b border-black/[0.07] py-3 text-[11px] last:border-0"
+                        className="grid grid-cols-[minmax(0,1fr)_56px_72px] items-center border-b border-white/[0.07] py-3 text-[11px] last:border-0"
                         key={String(source.source_name)}
                       >
                         <div className="min-w-0 pr-4">
                           <p className="truncate font-medium">
                             {String(source.source_name)}
                           </p>
-                          <div className="mt-1.5 h-1 bg-black/[0.07]">
+                          <div className="mt-1.5 h-1 bg-white/[0.08]">
                             <i
-                              className="block h-full bg-black"
+                              className="block h-full bg-white"
                               style={{ width: `${(leads / maxSourceLeads) * 100}%` }}
                             />
                           </div>
                         </div>
                         <span className="text-right">{leads}</span>
-                        <span className="text-right text-[#606060]">
+                        <span className="text-right text-[#9a9a9a]">
                           {percent(source.conversion_rate)}
                         </span>
                       </div>
@@ -574,7 +598,7 @@ export function AnalyticsDashboard() {
                       <strong className="text-3xl font-medium">
                         {data.summary.available_inventory}
                       </strong>
-                      <span className="mt-1 text-[9px] tracking-[0.08em] text-[#707070] uppercase">
+                      <span className="mt-1 text-[9px] tracking-[0.08em] text-[#858585] uppercase">
                         available
                       </span>
                     </div>
@@ -585,7 +609,7 @@ export function AnalyticsDashboard() {
                         className="flex items-center justify-between gap-4 text-[11px]"
                         key={String(item.status)}
                       >
-                        <span className="flex min-w-0 items-center gap-2 capitalize text-[#555555]">
+                        <span className="flex min-w-0 items-center gap-2 capitalize text-[#a0a0a0]">
                           <i
                             className="size-2.5 shrink-0"
                             style={{
@@ -611,7 +635,7 @@ export function AnalyticsDashboard() {
                   title="Owner performance"
                 />
                 <div className="overflow-x-auto px-5 py-3">
-                  <div className="grid min-w-[620px] grid-cols-[42px_minmax(180px,1fr)_95px_95px_115px] border-b border-black/10 py-2 text-[9px] font-semibold tracking-[0.08em] text-[#6b6b6b] uppercase">
+                  <div className="grid min-w-[620px] grid-cols-[42px_minmax(180px,1fr)_95px_95px_115px] border-b border-white/10 py-2 text-[9px] font-semibold tracking-[0.08em] text-[#777777] uppercase">
                     <span>Rank</span>
                     <span>Owner</span>
                     <span className="text-right">Open</span>
@@ -620,7 +644,7 @@ export function AnalyticsDashboard() {
                   </div>
                   {data.owner_performance.map((owner, index) => (
                     <div
-                      className="grid min-w-[620px] grid-cols-[42px_minmax(180px,1fr)_95px_95px_115px] items-center border-b border-black/[0.07] py-3 text-[11px] last:border-0"
+                      className="grid min-w-[620px] grid-cols-[42px_minmax(180px,1fr)_95px_95px_115px] items-center border-b border-white/[0.07] py-3 text-[11px] last:border-0"
                       key={String(owner.user_id)}
                     >
                       <span className="text-[#777777]">{index + 1}</span>
@@ -630,7 +654,7 @@ export function AnalyticsDashboard() {
                       <span className="text-right">
                         {owner.open_opportunities}
                       </span>
-                      <span className="text-right text-[#555555]">
+                      <span className="text-right text-[#a0a0a0]">
                         {percent(owner.win_rate)}
                       </span>
                       <strong className="text-right font-semibold">

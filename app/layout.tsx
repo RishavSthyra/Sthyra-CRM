@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Bricolage_Grotesque, Geist_Mono, Inter } from "next/font/google";
 import { ToastProvider } from "@/components/providers/ToastProvider";
 import { WorkspaceAccessProvider } from "@/components/providers/WorkspaceAccessProvider";
+import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";
 
 const inter = Inter({

@@ -465,6 +465,25 @@ function mappedValue(
   return payload[key];
 }
 
+function mappedLeadGeography(
+  payload: Record<string, unknown>,
+  mapping: Record<string, unknown>,
+) {
+  const values = {
+    geo_country: mappedValue(payload, mapping, "country"),
+    geo_state: mappedValue(payload, mapping, "state"),
+    geo_district: mappedValue(payload, mapping, "district"),
+    geo_city: mappedValue(payload, mapping, "city"),
+    geo_latitude: mappedValue(payload, mapping, "latitude"),
+    geo_longitude: mappedValue(payload, mapping, "longitude"),
+  };
+  return Object.fromEntries(
+    Object.entries(values).filter(
+      ([, value]) => value !== undefined && value !== null && value !== "",
+    ),
+  );
+}
+
 export function normalizeWebsiteSubmission(
   form: PublicMarketingForm,
   body: unknown,
@@ -507,6 +526,7 @@ export function normalizeWebsiteSubmission(
           ? mappedValue(fields, mapping, "budget")
           : undefined,
       buying_reason: mappedValue(fields, mapping, "buying_reason"),
+      qualification_data: mappedLeadGeography(fields, mapping),
     },
     attribution: normalizeAttribution(body.attribution),
     metadata: { ingestion: "website_form" },
@@ -549,11 +569,18 @@ export function normalizeGoogleLeadSubmission(
       email: values.get("EMAIL"),
       phone_number: values.get("PHONE_NUMBER"),
       address: values.get("CITY"),
+      country: values.get("COUNTRY"),
     },
     lead: {
       preferred_location: values.get("PREFERRED_LOCATION"),
       preferred_config: values.get("PROPERTY_TYPE"),
       buying_reason: values.get("PURCHASE_TIMELINE"),
+      qualification_data: {
+        geo_country: values.get("COUNTRY"),
+        geo_state: values.get("STATE"),
+        geo_district: values.get("DISTRICT"),
+        geo_city: values.get("CITY"),
+      },
     },
     attribution: {
       event_type: "lead_generated",

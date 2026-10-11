@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { requireOperationsContext } from "@/lib/operationsAccess";
 import { canAccessProject, getAccessibleProjectIds } from "@/lib/projectAccess";
+import { buildLeadGeography } from "@/lib/leadGeography";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 
 const ALLOWED_RANGES = new Set([30, 90, 180, 365]);
@@ -65,6 +66,7 @@ export async function GET(request: NextRequest) {
       visitOutcomes,
       revenueForecast,
       monthlyTrend,
+      geography,
     ] = await Promise.all([
       client.query(
         `SELECT
@@ -269,6 +271,57 @@ export async function GET(request: NextRequest) {
          GROUP BY months.month ORDER BY months.month`,
         params,
       ),
+      client.query(
+        `WITH lead_locations AS (
+           SELECT
+             NULLIF(BTRIM(COALESCE(
+               lead.qualification_data->>'geo_country',
+               lead.qualification_data->>'country',
+               contact.country
+             )), '') AS country,
+             NULLIF(BTRIM(COALESCE(
+               lead.qualification_data->>'geo_state',
+               lead.qualification_data->>'state'
+             )), '') AS state,
+             NULLIF(BTRIM(COALESCE(
+               lead.qualification_data->>'geo_district',
+               lead.qualification_data->>'district'
+             )), '') AS district,
+             NULLIF(BTRIM(COALESCE(
+               lead.qualification_data->>'geo_city',
+               lead.qualification_data->>'city'
+             )), '') AS city,
+             CASE
+               WHEN COALESCE(
+                 lead.qualification_data->>'geo_latitude',
+                 lead.qualification_data->>'latitude'
+               ) ~ '^-?[0-9]+(?:\\.[0-9]+)?$'
+               THEN COALESCE(
+                 lead.qualification_data->>'geo_latitude',
+                 lead.qualification_data->>'latitude'
+               )::numeric
+             END AS latitude,
+             CASE
+               WHEN COALESCE(
+                 lead.qualification_data->>'geo_longitude',
+                 lead.qualification_data->>'longitude'
+               ) ~ '^-?[0-9]+(?:\\.[0-9]+)?$'
+               THEN COALESCE(
+                 lead.qualification_data->>'geo_longitude',
+                 lead.qualification_data->>'longitude'
+               )::numeric
+             END AS longitude
+           FROM leads lead
+           JOIN contacts contact ON contact.contact_id=lead.contact_id
+           WHERE lead.project_id ${projectFilter}
+             AND lead.received_at >= CURRENT_TIMESTAMP - ($2 * INTERVAL '1 day')
+         )
+         SELECT country, state, district, city, latitude, longitude,
+                COUNT(*)::integer AS leads
+         FROM lead_locations
+         GROUP BY country, state, district, city, latitude, longitude`,
+        params,
+      ),
     ]);
 
     await client.query("COMMIT");
@@ -310,6 +363,10 @@ export async function GET(request: NextRequest) {
       revenue_forecast: numericRows(revenueForecast.rows),
       monthly_trend: numericRows(monthlyTrend.rows),
       conversion_funnel: numericRows(funnel.rows),
+      lead_geography: buildLeadGeography(
+        numericRows(geography.rows),
+        leadsReceived,
+      ),
     });
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
