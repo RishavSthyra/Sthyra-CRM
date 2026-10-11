@@ -14,6 +14,7 @@ import {
   addLeadVisibilityFilter,
   requireLeadVisibility,
 } from "@/lib/leadVisibility";
+import { buildLeadListOrderBy } from "@/lib/leadListOrdering";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 import { parsePagination } from "@/utils/parsePagination";
 
@@ -163,6 +164,7 @@ export async function GET(request: NextRequest) {
   if (!orderBy) {
     return NextResponse.json({ error: "Invalid lead sort" }, { status: 400 });
   }
+  const listOrderBy = buildLeadListOrderBy(stageKey, orderBy);
   const where = `WHERE ${filters.join(" AND ")}`;
   try {
     const summary = await pool.query(
@@ -211,15 +213,7 @@ export async function GET(request: NextRequest) {
        LEFT JOIN opportunities o ON o.lead_id=l.lead_id
        LEFT JOIN lead_next_actions next_action ON next_action.lead_id=l.lead_id
        ${where}
-       ORDER BY
-         CASE
-           WHEN next_action.status='pending' AND next_action.due_at <= CURRENT_TIMESTAMP THEN 0
-           WHEN next_action.status='pending' AND next_action.due_at <= CURRENT_TIMESTAMP + INTERVAL '2 days' THEN 1
-           WHEN next_action.status='pending' THEN 2
-           ELSE 3
-         END,
-         CASE WHEN next_action.status='pending' THEN next_action.due_at END ASC NULLS LAST,
-         ${orderBy}
+       ORDER BY ${listOrderBy}
        LIMIT $${listValues.length - 1} OFFSET $${listValues.length}`,
       listValues,
     );
