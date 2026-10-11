@@ -5,3 +5,35 @@
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-bricolage);
 }
+
+input:is(
+  [type="date"],
+  [type="datetime-local"],
+  [type="month"],
+  [type="time"],
+  [type="week"]
+) {
+  color-scheme: dark;
+}
+
+input:is(
+    [type="date"],
+    [type="datetime-local"],
+    [type="month"],
+    [type="time"],
+    [type="week"]
+  )::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.78;
+}
+
+input:is(
+    [type="date"],
+    [type="datetime-local"],
+    [type="month"],
+    [type="time"],
+    [type="week"]
+  ):disabled::-webkit-calendar-picker-indicator {
+  cursor: not-allowed;
+  opacity: 0.38;
+}

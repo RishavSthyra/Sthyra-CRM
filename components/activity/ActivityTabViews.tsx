@@ -749,7 +749,7 @@ export function EmailView({
         )}
         {composing ? (
           <form
-            className="fixed right-6 bottom-0 z-[70] flex h-[min(560px,calc(100dvh-96px))] w-[min(620px,calc(100vw-112px))] flex-col overflow-hidden rounded-t-xl border border-b-0 border-[#3a3d3b] bg-[#151716] shadow-[0_28px_90px_rgba(0,0,0,.78)] max-[700px]:right-3 max-[700px]:left-[84px] max-[700px]:w-auto"
+            className="fixed right-6 bottom-2 z-[70] flex h-[min(560px,calc(100dvh-112px))] w-[min(620px,calc(100vw-112px))] flex-col overflow-hidden rounded-xl border border-[#3a3d3b] bg-[#151716] shadow-[0_28px_90px_rgba(0,0,0,.78)] max-[700px]:right-3 max-[700px]:left-[84px] max-[700px]:w-auto"
             onSubmit={sendEmail}
           >
             <div className="flex h-11 items-center justify-between border-b border-[#2c2f2d] bg-[#1b1e1c] px-4">
