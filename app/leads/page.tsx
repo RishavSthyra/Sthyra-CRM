@@ -24,6 +24,11 @@ import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 import { getWorkspaceContext } from "@/lib/clientWorkspaceContext";
 import { DEFAULT_PROJECT_LEAD_STAGES } from "@/lib/defaultLeadStages";
+import {
+  DEAD_LEADS_TAB_KEY,
+  getLeadListView,
+  getLeadStatusLabel,
+} from "@/lib/leadListViews";
 
 type Lead = {
   lead_id: string;
@@ -373,7 +378,11 @@ function leadOwnerName(lead: Lead) {
 }
 
 function LeadStatus({ lead }: { lead: Lead }) {
-  const value = lead.temperature || lead.stage_name || lead.status || "active";
+  const value = getLeadStatusLabel({
+    stageName: lead.stage_name,
+    status: lead.status,
+    temperature: lead.temperature,
+  });
   const dot =
     value.toLowerCase() === "hot"
       ? "bg-[#f0a3a3]"
@@ -582,7 +591,9 @@ export default function LeadsPage() {
     const params = new URLSearchParams({ page: String(page), limit: "10" });
     params.set("project_id", selectedProjectId);
     if (search.trim()) params.set("search", search.trim());
-    if (stage !== "all") params.set("stage_key", stage);
+    const leadListView = getLeadListView(stage);
+    if (leadListView.stageKey) params.set("stage_key", leadListView.stageKey);
+    if (leadListView.view) params.set("view", leadListView.view);
     if (status !== "all") params.set("status", status);
     if (temperature !== "all") params.set("temperature", temperature);
     if (assignment !== "all") params.set("assignment", assignment);
@@ -1183,6 +1194,7 @@ export default function LeadsPage() {
             {[
               { stage_key: "all", stage_name: "All" },
               ...visiblePipelineStages,
+              { stage_key: DEAD_LEADS_TAB_KEY, stage_name: "Dead leads" },
             ].map((item) => (
               <button
                 aria-selected={stage === item.stage_key}
@@ -1364,7 +1376,9 @@ export default function LeadsPage() {
         <section className="overflow-hidden rounded-2xl border border-[#2c2c2c] bg-[#080808]">
           <header className="flex items-center justify-between border-b border-[#2c2c2c] bg-[#191919] p-3 font-[var(--font-bricolage)] text-sm">
             <strong>
-              {selectedProject
+              {stage === DEAD_LEADS_TAB_KEY
+                ? "Dead leads"
+                : selectedProject
                 ? `${selectedProject.project_name} leads`
                 : "All leads"}
             </strong>

@@ -15,6 +15,7 @@ import {
   requireLeadVisibility,
 } from "@/lib/leadVisibility";
 import { buildLeadListOrderBy } from "@/lib/leadListOrdering";
+import { DEAD_LEAD_STATUSES } from "@/lib/leadListViews";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 import { parsePagination } from "@/utils/parsePagination";
 
@@ -79,7 +80,21 @@ export async function GET(request: NextRequest) {
     values.push(status);
     filters.push(`l.status=$${values.length}`);
   }
+  const view = request.nextUrl.searchParams.get("view");
+  if (view && view !== "dead") {
+    return NextResponse.json({ error: "Invalid lead view" }, { status: 400 });
+  }
   const stageKey = request.nextUrl.searchParams.get("stage_key");
+  if (view && stageKey) {
+    return NextResponse.json(
+      { error: "view and stage_key cannot be combined" },
+      { status: 400 },
+    );
+  }
+  if (view === "dead") {
+    values.push([...DEAD_LEAD_STATUSES]);
+    filters.push(`l.status=ANY($${values.length}::varchar[])`);
+  }
   if (stageKey) {
     if (!/^[a-z0-9]+(?:_[a-z0-9]+)*$/.test(stageKey)) {
       return NextResponse.json(
@@ -98,6 +113,8 @@ export async function GET(request: NextRequest) {
           AND stage_filter.stage_key=$${values.length}
       )`,
     );
+    values.push([...DEAD_LEAD_STATUSES]);
+    filters.push(`l.status<>ALL($${values.length}::varchar[])`);
   }
   const temperature = request.nextUrl.searchParams.get("temperature");
   if (temperature) {
