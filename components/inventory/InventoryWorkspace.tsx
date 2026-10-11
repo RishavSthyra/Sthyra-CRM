@@ -470,10 +470,11 @@ function UnitDrawer({
                           <p className="truncate text-sm font-medium text-[#d6dad7]">
                             {room.room_name}
                           </p>
-                          <p className="mt-0.5 text-xs text-[#6f7773]">
-                            {room.room_type || "Room"}
-                            {room.notes ? ` · ${room.notes}` : ""}
-                          </p>
+                          {room.notes && (
+                            <p className="mt-0.5 text-xs text-[#6f7773]">
+                              {room.notes}
+                            </p>
+                          )}
                         </div>
                         <div className="shrink-0 text-right">
                           <p className="text-sm text-[#c9cfcb]">

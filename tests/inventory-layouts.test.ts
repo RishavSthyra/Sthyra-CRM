@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateInventoryLayout } from "../lib/inventoryLayouts";
+import {
+  inferInventoryRoomType,
+  validateInventoryLayout,
+} from "../lib/inventoryLayouts";
+
+test("inventory layouts infer internal room categories from the room name", () => {
+  assert.equal(inferInventoryRoomType("Master Bedroom"), "Bedroom");
+  assert.equal(inferInventoryRoomType("Dining Room"), "Dining");
+  assert.equal(inferInventoryRoomType("Walk-in wardrobe"), null);
+});
 
 test("inventory layouts calculate room area from feet", () => {
   const result = validateInventoryLayout({
@@ -41,7 +50,10 @@ test("inventory layouts convert metric room dimensions to square feet", () => {
     assets: [],
   });
   assert.equal(result.ok, true);
-  if (result.ok) assert.equal(result.data.rooms[0].area_sqft, 129.17);
+  if (result.ok) {
+    assert.equal(result.data.rooms[0].area_sqft, 129.17);
+    assert.equal(result.data.rooms[0].room_type, "Kitchen");
+  }
 });
 
 test("inventory layouts reject incomplete dimensions and unsafe asset URLs", () => {

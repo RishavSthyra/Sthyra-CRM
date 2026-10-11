@@ -21,6 +21,7 @@ import {
 } from "react";
 import toast from "react-hot-toast";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
+import { inferInventoryRoomType } from "@/lib/inventoryLayouts";
 import type {
   AssetType,
   InventoryAttributeDefinition,
@@ -236,7 +237,7 @@ function layoutPayload(layout: InventoryLayout) {
     notes: layout.notes || null,
     rooms: layout.rooms.map((room) => ({
       room_name: room.room_name,
-      room_type: room.room_type || null,
+      room_type: room.room_type || inferInventoryRoomType(room.room_name),
       length: numberOrNull(room.length),
       width: numberOrNull(room.width),
       measurement_unit: room.measurement_unit,
@@ -270,7 +271,7 @@ function LayoutEditor({
     });
   }
   return (
-    <section className="mt-6 rounded-xl border border-white/[0.09] bg-black/15 p-4">
+    <section className="mt-6 border-t border-white/[0.08] pt-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h3 className="text-sm font-semibold text-[#e4e8e5]">{title}</h3>
@@ -287,7 +288,7 @@ function LayoutEditor({
         </button>
       </div>
 
-      <div className="mt-4 space-y-3">
+      <div className="mt-4 border-y border-white/[0.08]">
         {layout.rooms.map((room, index) => {
           const length = Number(room.length || 0);
           const width = Number(room.width || 0);
@@ -295,51 +296,66 @@ function LayoutEditor({
             ? length * width * (room.measurement_unit === "m" ? 10.7639 : 1)
             : Number(room.area_sqft || 0);
           return (
-            <div className="rounded-lg border border-white/[0.08] bg-[#0a0d0b] p-3" key={room.room_id || index}>
-              <div className="grid gap-3 sm:grid-cols-[1.2fr_1fr_.7fr_.7fr_.55fr_36px]">
+            <div
+              className="border-b border-white/[0.07] py-3 last:border-b-0"
+              key={room.room_id || index}
+            >
+              <div className="grid items-center gap-3 sm:grid-cols-[minmax(170px,1.25fr)_minmax(250px,1fr)_90px_36px]">
                 <input
                   aria-label={`Room ${index + 1} name`}
                   className={inputClass}
-                  onChange={(event) => patchRoom(index, { room_name: event.target.value })}
+                  onChange={(event) =>
+                    patchRoom(index, {
+                      room_name: event.target.value,
+                      room_type: inferInventoryRoomType(event.target.value),
+                    })
+                  }
                   placeholder="Living room"
                   required
                   value={room.room_name}
                 />
-                <input
-                  aria-label={`Room ${index + 1} type`}
-                  className={inputClass}
-                  onChange={(event) => patchRoom(index, { room_type: event.target.value })}
-                  placeholder="Living"
-                  value={room.room_type ?? ""}
-                />
-                <input
-                  aria-label={`Room ${index + 1} length`}
-                  className={inputClass}
-                  min="0.01"
-                  onChange={(event) => patchRoom(index, { length: event.target.value })}
-                  placeholder="Length"
-                  step="0.01"
-                  type="number"
-                  value={room.length ?? ""}
-                />
-                <input
-                  aria-label={`Room ${index + 1} width`}
-                  className={inputClass}
-                  min="0.01"
-                  onChange={(event) => patchRoom(index, { width: event.target.value })}
-                  placeholder="Width"
-                  step="0.01"
-                  type="number"
-                  value={room.width ?? ""}
-                />
-                <SelectControl
-                  aria-label={`Room ${index + 1} measurement unit`}
-                  onChange={(event) => patchRoom(index, { measurement_unit: event.target.value as "ft" | "m" })}
-                  value={room.measurement_unit}
-                >
-                  <option value="ft">ft</option>
-                  <option value="m">m</option>
-                </SelectControl>
+                <div className="grid grid-cols-[1fr_14px_1fr_76px] items-center gap-2">
+                  <input
+                    aria-label={`Room ${index + 1} length`}
+                    className={inputClass}
+                    min="0.01"
+                    onChange={(event) =>
+                      patchRoom(index, { length: event.target.value })
+                    }
+                    placeholder="Length"
+                    step="0.01"
+                    type="number"
+                    value={room.length ?? ""}
+                  />
+                  <span className="text-center text-xs text-[#69716d]">×</span>
+                  <input
+                    aria-label={`Room ${index + 1} width`}
+                    className={inputClass}
+                    min="0.01"
+                    onChange={(event) =>
+                      patchRoom(index, { width: event.target.value })
+                    }
+                    placeholder="Width"
+                    step="0.01"
+                    type="number"
+                    value={room.width ?? ""}
+                  />
+                  <SelectControl
+                    aria-label={`Room ${index + 1} measurement unit`}
+                    onChange={(event) =>
+                      patchRoom(index, {
+                        measurement_unit: event.target.value as "ft" | "m",
+                      })
+                    }
+                    value={room.measurement_unit}
+                  >
+                    <option value="ft">ft</option>
+                    <option value="m">m</option>
+                  </SelectControl>
+                </div>
+                <span className="text-right text-xs tabular-nums text-[#747d78] max-sm:text-left">
+                  {area > 0 ? `${area.toFixed(2)} sq ft` : "Area —"}
+                </span>
                 <button
                   aria-label={`Remove ${room.room_name || `room ${index + 1}`}`}
                   className="grid size-9 place-items-center self-center rounded-lg text-[#7f8783] hover:bg-[#ff665a]/10 hover:text-[#ff9188]"
@@ -349,24 +365,21 @@ function LayoutEditor({
                   <Trash2 className="size-3.5" />
                 </button>
               </div>
-              <div className="mt-2 flex items-center justify-between gap-3">
-                <input
-                  aria-label={`Room ${index + 1} notes`}
-                  className="h-8 min-w-0 flex-1 rounded-md border border-white/[0.07] bg-transparent px-2 text-xs text-[#b9c0bc] outline-none placeholder:text-[#555d59] focus:border-[#57d6b1]/40"
-                  onChange={(event) => patchRoom(index, { notes: event.target.value })}
-                  placeholder="Optional notes"
-                  value={room.notes ?? ""}
-                />
-                <span className="shrink-0 text-[11px] text-[#717a75]">
-                  {area > 0 ? `${area.toFixed(2)} sq ft` : "Add dimensions"}
-                </span>
-              </div>
+              <input
+                aria-label={`Room ${index + 1} notes`}
+                className="mt-1 h-8 w-full border-0 bg-transparent px-1 text-xs text-[#aeb5b1] outline-none placeholder:text-[#545b57] focus:placeholder:text-[#747c77]"
+                onChange={(event) =>
+                  patchRoom(index, { notes: event.target.value })
+                }
+                placeholder="Add an optional note"
+                value={room.notes ?? ""}
+              />
             </div>
           );
         })}
         {!layout.rooms.length && (
           <button
-            className="w-full rounded-lg border border-dashed border-white/[0.1] py-5 text-xs text-[#7e8782] hover:border-white/[0.17] hover:text-[#bcc3bf]"
+            className="w-full py-6 text-xs text-[#7e8782] hover:text-[#bcc3bf]"
             onClick={() => onChange({ ...layout, rooms: [emptyRoom()] })}
             type="button"
           >

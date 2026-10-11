@@ -3,6 +3,26 @@ import { isObject } from "@/utils/isObject";
 
 type Queryable = Pick<Pool | PoolClient, "query">;
 
+const ROOM_TYPE_PATTERNS: Array<[RegExp, string]> = [
+  [/\b(bed|bedroom)\b/i, "Bedroom"],
+  [/\bliving\b/i, "Living"],
+  [/\bdining\b/i, "Dining"],
+  [/\bkitchen\b/i, "Kitchen"],
+  [/\b(bath|bathroom|toilet|washroom)\b/i, "Bathroom"],
+  [/\bbalcon(?:y|ies)\b/i, "Balcony"],
+  [/\b(study|office)\b/i, "Study"],
+  [/\b(utility|laundry)\b/i, "Utility"],
+  [/\b(foyer|entrance)\b/i, "Foyer"],
+  [/\b(terrace|deck|patio)\b/i, "Terrace"],
+  [/\b(store|storage)\b/i, "Storage"],
+];
+
+export function inferInventoryRoomType(roomName: string) {
+  return (
+    ROOM_TYPE_PATTERNS.find(([pattern]) => pattern.test(roomName))?.[1] ?? null
+  );
+}
+
 export type InventoryLayoutRoomInput = {
   room_name: string;
   room_type: string | null;
@@ -93,9 +113,11 @@ export function validateInventoryLayout(
         required: true,
         maximum: 150,
       });
-      const roomType = text(raw.room_type, `${prefix}.room_type`, errors, {
-        maximum: 80,
-      });
+      const roomType =
+        text(raw.room_type, `${prefix}.room_type`, errors, { maximum: 80 }) ??
+        inferInventoryRoomType(
+          typeof raw.room_name === "string" ? raw.room_name : "",
+        );
       const length = positiveNumber(raw.length, `${prefix}.length`, errors);
       const width = positiveNumber(raw.width, `${prefix}.width`, errors);
       const suppliedArea = positiveNumber(
