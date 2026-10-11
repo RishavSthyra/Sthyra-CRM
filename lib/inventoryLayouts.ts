@@ -23,6 +23,30 @@ export function inferInventoryRoomType(roomName: string) {
   );
 }
 
+type InventoryTemplateArea = {
+  saleable_area_sqft?: number | string | null;
+  built_up_area_sqft?: number | string | null;
+  carpet_area_sqft?: number | string | null;
+};
+
+export function getInventoryTemplateAreaSqft(
+  template: InventoryTemplateArea | null | undefined,
+): number | null {
+  if (!template) return null;
+
+  for (const value of [
+    template.saleable_area_sqft,
+    template.built_up_area_sqft,
+    template.carpet_area_sqft,
+  ]) {
+    if (value === null || value === undefined || value === "") continue;
+    const parsed = typeof value === "number" ? value : Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+
+  return null;
+}
+
 export type InventoryLayoutRoomInput = {
   room_name: string;
   room_type: string | null;

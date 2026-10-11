@@ -1,9 +1,37 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  getInventoryTemplateAreaSqft,
   inferInventoryRoomType,
   validateInventoryLayout,
 } from "../lib/inventoryLayouts";
+
+test("inventory units inherit the most useful area from their template", () => {
+  assert.equal(
+    getInventoryTemplateAreaSqft({
+      saleable_area_sqft: "1450",
+      built_up_area_sqft: 1320,
+      carpet_area_sqft: 1080,
+    }),
+    1450,
+  );
+  assert.equal(
+    getInventoryTemplateAreaSqft({
+      saleable_area_sqft: null,
+      built_up_area_sqft: 1320,
+      carpet_area_sqft: 1080,
+    }),
+    1320,
+  );
+  assert.equal(
+    getInventoryTemplateAreaSqft({
+      saleable_area_sqft: null,
+      built_up_area_sqft: null,
+      carpet_area_sqft: 1080,
+    }),
+    1080,
+  );
+});
 
 test("inventory layouts infer internal room categories from the room name", () => {
   assert.equal(inferInventoryRoomType("Master Bedroom"), "Bedroom");

@@ -21,7 +21,10 @@ import {
 } from "react";
 import toast from "react-hot-toast";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
-import { inferInventoryRoomType } from "@/lib/inventoryLayouts";
+import {
+  getInventoryTemplateAreaSqft,
+  inferInventoryRoomType,
+} from "@/lib/inventoryLayouts";
 import type {
   AssetType,
   InventoryAttributeDefinition,
@@ -639,22 +642,26 @@ function AddUnitForm({
   const customDefinitions = attributes.filter(
     (attribute) => attribute.applies_to === "unit",
   );
+  const initialTemplateId =
+    unit?.unit_type_id ?? unitTypes[0]?.unit_type_id ?? "";
+  const initialTemplate = unitTypes.find(
+    (type) => type.unit_type_id === initialTemplateId,
+  );
+  const initialArea =
+    unit?.area_sqft ?? getInventoryTemplateAreaSqft(initialTemplate);
   const [form, setForm] = useState({
     unit_code: unit?.unit_code ?? "",
     unit_name: unit?.unit_name ?? "",
-    unit_type_id: unit?.unit_type_id ?? unitTypes[0]?.unit_type_id ?? "",
+    unit_type_id: initialTemplateId,
     node_id: unit?.node_id ?? "",
     orientation: unit?.orientation ?? "",
-    area_sqft: unit?.area_sqft === null ? "" : String(unit?.area_sqft ?? ""),
+    area_sqft: initialArea === null ? "" : String(initialArea),
     price_override:
       unit?.price_override === null ? "" : String(unit?.price_override ?? ""),
     currency: unit?.currency ?? "INR",
   });
   const [layoutMode, setLayoutMode] = useState<"inherited" | "custom">(
     unit?.layout_mode ?? "inherited",
-  );
-  const initialTemplate = unitTypes.find(
-    (type) => type.unit_type_id === (unit?.unit_type_id ?? unitTypes[0]?.unit_type_id),
   );
   const [layout, setLayout] = useState<InventoryLayout>(
     unit?.layout_mode === "custom" && unitDetail?.custom_layout
@@ -743,12 +750,19 @@ function AddUnitForm({
         </Field>
         <Field label="Unit template">
           <SelectControl
-            onChange={(event) =>
+            onChange={(event) => {
+              const unitTypeId = event.target.value;
+              const template = unitTypes.find(
+                (type) => type.unit_type_id === unitTypeId,
+              );
+              const inheritedArea = getInventoryTemplateAreaSqft(template);
               setForm((current) => ({
                 ...current,
-                unit_type_id: event.target.value,
-              }))
-            }
+                unit_type_id: unitTypeId,
+                area_sqft:
+                  inheritedArea === null ? "" : String(inheritedArea),
+              }));
+            }}
             required
             value={form.unit_type_id}
           >
@@ -804,7 +818,9 @@ function AddUnitForm({
                 area_sqft: event.target.value,
               }))
             }
-            placeholder="1450"
+            placeholder={
+              selectedTemplate ? "Not set on template" : "Select a template"
+            }
             step="0.01"
             type="number"
             value={form.area_sqft}
