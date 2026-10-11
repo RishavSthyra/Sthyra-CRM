@@ -682,16 +682,16 @@ export function EmailView({
   }
 
   if (loading) return <LoadingRows />;
-  if (!rows.length && !composing) return (
-    <div className="relative min-h-[620px]">
-      <EmptyState label="emails" />
-      <CreateButton label="Compose" onClick={() => beginCompose("new")} />
-    </div>
-  );
-
   return (
-    <div className="grid min-h-[620px] grid-cols-[minmax(310px,44%)_minmax(0,56%)] max-[900px]:grid-cols-1">
-      <section className="border-r border-[#292929] px-4 py-4 max-[900px]:border-r-0 max-[900px]:border-b">
+    <div
+      className={
+        rows.length
+          ? "grid min-h-[620px] grid-cols-[minmax(310px,44%)_minmax(0,56%)] max-[900px]:grid-cols-1"
+          : "relative min-h-[620px]"
+      }
+    >
+      {rows.length > 0 && (
+        <section className="border-r border-[#292929] px-4 py-4 max-[900px]:border-r-0 max-[900px]:border-b">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-[#eceeed]">Inbox ({rows.length})</h2>
           <MoreHorizontal className="size-4 text-[#b2b5b3]" aria-hidden />
@@ -724,9 +724,17 @@ export function EmailView({
             );
           })}
         </div>
-      </section>
+        </section>
+      )}
 
-      <section className="relative min-h-[620px] bg-[#0b0c0b] px-5 py-4">
+      <section
+        className={
+          rows.length
+            ? "relative min-h-[620px] bg-[#0b0c0b] px-5 py-4"
+            : "relative min-h-[620px]"
+        }
+      >
+        {!rows.length && <EmptyState label="emails" />}
         {composing && selected && (
           <EmailMessageView
             email={selected}
@@ -740,7 +748,10 @@ export function EmailView({
           />
         )}
         {composing ? (
-          <form className="absolute right-4 bottom-4 z-20 flex h-[540px] max-h-[calc(100%-32px)] w-[min(620px,calc(100%-32px))] flex-col overflow-hidden rounded-xl border border-[#3a3d3b] bg-[#151716] shadow-[0_28px_90px_rgba(0,0,0,.78)]" onSubmit={sendEmail}>
+          <form
+            className="fixed right-6 bottom-0 z-[70] flex h-[min(560px,calc(100dvh-96px))] w-[min(620px,calc(100vw-112px))] flex-col overflow-hidden rounded-t-xl border border-b-0 border-[#3a3d3b] bg-[#151716] shadow-[0_28px_90px_rgba(0,0,0,.78)] max-[700px]:right-3 max-[700px]:left-[84px] max-[700px]:w-auto"
+            onSubmit={sendEmail}
+          >
             <div className="flex h-11 items-center justify-between border-b border-[#2c2f2d] bg-[#1b1e1c] px-4">
               <span className="text-xs font-medium text-[#e7e9e8]">
                 {composeMode === "reply" ? "Reply" : composeMode === "forward" ? "Forward message" : "New message"}
@@ -820,7 +831,9 @@ export function EmailView({
             />
             <CreateButton label="Compose" onClick={() => beginCompose("new")} />
           </>
-        ) : null}
+        ) : (
+          <CreateButton label="Compose" onClick={() => beginCompose("new")} />
+        )}
       </section>
     </div>
   );
