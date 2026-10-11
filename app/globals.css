@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+.lead-geography-map .maplibregl-canvas {
+  filter: invert(1) grayscale(1) brightness(0.72) contrast(1.2);
+}
+
 .lead-map-popup .maplibregl-popup-content {
   background: #101113;
   border: 1px solid rgba(255, 255, 255, 0.14);

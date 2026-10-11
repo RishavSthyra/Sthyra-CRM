@@ -37,24 +37,21 @@ type SelectedPoint = GeographyPoint;
 const darkMapStyle: StyleSpecification = {
   version: 8,
   sources: {
-    "carto-dark": {
+    openstreetmap: {
       type: "raster",
       tiles: [
-        "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-        "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-        "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-        "https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+        "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
       ],
       tileSize: 256,
       attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     },
   },
   layers: [
     {
-      id: "carto-dark",
+      id: "openstreetmap",
       type: "raster",
-      source: "carto-dark",
+      source: "openstreetmap",
       minzoom: 0,
       maxzoom: 20,
     },
@@ -82,15 +79,15 @@ const heatLayer: HeatmapLayerSpecification = {
       ["linear"],
       ["heatmap-density"],
       0,
-      "rgba(255,255,255,0)",
+      "rgba(0,0,0,0)",
       0.2,
-      "rgba(255,255,255,0.12)",
+      "rgba(0,0,0,0.12)",
       0.45,
-      "rgba(255,255,255,0.28)",
+      "rgba(0,0,0,0.28)",
       0.7,
-      "rgba(255,255,255,0.55)",
+      "rgba(0,0,0,0.55)",
       1,
-      "rgba(255,255,255,0.95)",
+      "rgba(0,0,0,0.95)",
     ],
     "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 0, 16, 5, 34, 10, 54],
     "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 8, 0.9, 11, 0.15],
@@ -112,9 +109,9 @@ const pointLayer: CircleLayerSpecification = {
       10,
       ["interpolate", ["linear"], ["get", "weight"], 0, 7, 1, 22],
     ],
-    "circle-color": "#ffffff",
+    "circle-color": "#000000",
     "circle-opacity": ["interpolate", ["linear"], ["zoom"], 1, 0.2, 8, 0.72],
-    "circle-stroke-color": "#0b0c0e",
+    "circle-stroke-color": "#f4f4f4",
     "circle-stroke-width": 1.5,
   },
 };
@@ -184,7 +181,7 @@ export function LeadGeographyMap({
 
   return (
     <div className="grid min-h-[430px] grid-cols-[minmax(0,1fr)_340px] max-[1050px]:grid-cols-1">
-      <div className="relative min-h-[430px] border-r border-white/10 max-[1050px]:border-r-0 max-[1050px]:border-b">
+      <div className="lead-geography-map relative min-h-[430px] border-r border-white/10 max-[1050px]:border-r-0 max-[1050px]:border-b">
         <Map
           initialViewState={{ latitude: 18, longitude: 12, zoom: 1.25 }}
           interactiveLayerIds={["lead-points"]}
