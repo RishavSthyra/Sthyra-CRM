@@ -49,12 +49,10 @@ export async function GET(request: NextRequest) {
     : getAccessibleProjectIds(scope.context.access);
   const params = [projectIds, rangeParam];
   const projectFilter = "= ANY($1::integer[])";
-  const client = await pool.connect();
 
   try {
-    await client.query(
-      "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
-    );
+    // These aggregates do not depend on one another. Running them through the
+    // pool avoids serializing every dashboard report on a single connection.
     const [
       summary,
       stages,
@@ -62,13 +60,10 @@ export async function GET(request: NextRequest) {
       funnel,
       owners,
       inventoryMix,
-      inventoryMovement,
-      visitOutcomes,
       revenueForecast,
-      monthlyTrend,
       geography,
     ] = await Promise.all([
-      client.query(
+      pool.query(
         `SELECT
            (SELECT COUNT(*) FROM opportunities o WHERE o.project_id ${projectFilter} AND o.status='open')::integer AS open_opportunities,
            COALESCE((SELECT SUM(o.amount) FROM opportunities o WHERE o.project_id ${projectFilter} AND o.status='open'), 0) AS pipeline_value,
@@ -93,7 +88,7 @@ export async function GET(request: NextRequest) {
            (SELECT COUNT(*) FROM inventory_units u WHERE u.project_id ${projectFilter} AND u.status='available')::integer AS available_inventory`,
         params,
       ),
-      client.query(
+      pool.query(
         `SELECT
            stage.stage_key,
            stage.stage_name,
@@ -112,7 +107,7 @@ export async function GET(request: NextRequest) {
          ORDER BY MIN(stage.position), stage.stage_name`,
         [projectIds],
       ),
-      client.query(
+      pool.query(
         `SELECT
            COALESCE(source.source_name,'Unknown') AS source_name,
            COUNT(lead.lead_id)::integer AS leads,
@@ -129,7 +124,7 @@ export async function GET(request: NextRequest) {
          LIMIT 10`,
         params,
       ),
-      client.query(
+      pool.query(
         `SELECT stage, stage_order, records FROM (
            SELECT 'Leads' AS stage, 1 AS stage_order,
              COUNT(*)::integer AS records
@@ -169,7 +164,7 @@ export async function GET(request: NextRequest) {
          ) conversion ORDER BY stage_order`,
         params,
       ),
-      client.query(
+      pool.query(
         `SELECT
            user_record.user_id,
            TRIM(CONCAT(user_record.first_name,' ',user_record.last_name)) AS owner_name,
@@ -192,41 +187,14 @@ export async function GET(request: NextRequest) {
          LIMIT 10`,
         [projectIds, rangeParam, scope.context.access.company.company_id],
       ),
-      client.query(
+      pool.query(
         `SELECT status, COUNT(*)::integer AS units
          FROM inventory_units
          WHERE project_id ${projectFilter}
          GROUP BY status ORDER BY units DESC`,
         [projectIds],
       ),
-      client.query(
-        `SELECT
-           TO_CHAR(DATE_TRUNC('month', history.created_at),'YYYY-MM') AS month,
-           history.to_status AS status,
-           COUNT(*)::integer AS movements
-         FROM inventory_unit_status_history history
-         JOIN inventory_units unit_record ON unit_record.unit_id=history.unit_id
-         WHERE unit_record.project_id ${projectFilter}
-           AND history.created_at >= CURRENT_TIMESTAMP - ($2 * INTERVAL '1 day')
-         GROUP BY DATE_TRUNC('month', history.created_at), history.to_status
-         ORDER BY DATE_TRUNC('month', history.created_at), history.to_status`,
-        params,
-      ),
-      client.query(
-        `SELECT
-           COALESCE(visit.outcome,
-             CASE WHEN appointment.status='no_show' THEN 'no_show'
-                  WHEN appointment.status='cancelled' THEN 'cancelled'
-                  ELSE 'pending' END) AS outcome,
-           COUNT(*)::integer AS visits
-         FROM appointments appointment
-         JOIN site_visits visit ON visit.visit_id=appointment.appointment_id
-         WHERE appointment.project_id ${projectFilter}
-           AND appointment.starts_at >= CURRENT_TIMESTAMP - ($2 * INTERVAL '1 day')
-         GROUP BY 1 ORDER BY visits DESC`,
-        params,
-      ),
-      client.query(
+      pool.query(
         `WITH months AS (
            SELECT GENERATE_SERIES(
              DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months',
@@ -249,29 +217,7 @@ export async function GET(request: NextRequest) {
          GROUP BY months.month ORDER BY months.month`,
         [projectIds],
       ),
-      client.query(
-        `WITH months AS (
-           SELECT GENERATE_SERIES(
-             DATE_TRUNC('month', CURRENT_DATE - ($2 * INTERVAL '1 day')),
-             DATE_TRUNC('month', CURRENT_DATE),
-             INTERVAL '1 month'
-           ) AS month
-         )
-         SELECT
-           TO_CHAR(months.month,'YYYY-MM') AS month,
-           COUNT(DISTINCT lead.lead_id)::integer AS leads,
-           COUNT(DISTINCT opportunity.opportunity_id) FILTER (WHERE opportunity.outcome='won')::integer AS wins
-         FROM months
-         LEFT JOIN leads lead
-           ON lead.project_id ${projectFilter}
-          AND DATE_TRUNC('month',lead.received_at)=months.month
-         LEFT JOIN opportunities opportunity
-           ON opportunity.project_id ${projectFilter}
-          AND DATE_TRUNC('month',opportunity.closed_at)=months.month
-         GROUP BY months.month ORDER BY months.month`,
-        params,
-      ),
-      client.query(
+      pool.query(
         `WITH lead_locations AS (
            SELECT
              NULLIF(BTRIM(COALESCE(
@@ -324,7 +270,6 @@ export async function GET(request: NextRequest) {
       ),
     ]);
 
-    await client.query("COMMIT");
     const summaryRow = numericRows(summary.rows)[0] ?? {};
     const leadsReceived = Number(summaryRow.leads_received ?? 0);
     const leadsQualified = Number(summaryRow.leads_qualified ?? 0);
@@ -358,10 +303,7 @@ export async function GET(request: NextRequest) {
           : 0,
       })),
       inventory_mix: numericRows(inventoryMix.rows),
-      inventory_movement: numericRows(inventoryMovement.rows),
-      site_visit_outcomes: numericRows(visitOutcomes.rows),
       revenue_forecast: numericRows(revenueForecast.rows),
-      monthly_trend: numericRows(monthlyTrend.rows),
       conversion_funnel: numericRows(funnel.rows),
       lead_geography: buildLeadGeography(
         numericRows(geography.rows),
@@ -369,13 +311,10 @@ export async function GET(request: NextRequest) {
       ),
     });
   } catch (error) {
-    await client.query("ROLLBACK").catch(() => undefined);
     console.error("Failed to load dashboard analytics", error);
     return NextResponse.json(
       { error: "Unable to load dashboard analytics" },
       { status: 500 },
     );
-  } finally {
-    client.release();
   }
 }

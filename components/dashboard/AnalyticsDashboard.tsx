@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState } from "react";
 import {
   Area,
@@ -16,11 +17,23 @@ import {
 } from "recharts";
 import { CircleAlert, RefreshCw } from "lucide-react";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
-import {
-  LeadGeographyMap,
-  type GeographyPoint,
-} from "@/components/dashboard/LeadGeographyMap";
+import type { GeographyPoint } from "@/components/dashboard/LeadGeographyMap";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
+
+const LeadGeographyMap = dynamic(
+  () =>
+    import("@/components/dashboard/LeadGeographyMap").then(
+      (module) => module.LeadGeographyMap,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="grid min-h-[430px] place-items-center bg-[#0b0c0e] text-[11px] text-[#858585]">
+        Loading map…
+      </div>
+    ),
+  },
+);
 
 type DataRow = Record<string, string | number | null>;
 

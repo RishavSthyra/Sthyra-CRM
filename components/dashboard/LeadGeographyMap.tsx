@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import type { FeatureCollection, Point } from "geojson";
+import type { StyleSpecification } from "maplibre-gl";
 import Map, {
   Layer,
   NavigationControl,
@@ -32,6 +33,33 @@ type Props = {
 };
 
 type SelectedPoint = GeographyPoint;
+
+const darkMapStyle: StyleSpecification = {
+  version: 8,
+  sources: {
+    "carto-dark": {
+      type: "raster",
+      tiles: [
+        "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+        "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+        "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+        "https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+      ],
+      tileSize: 256,
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    },
+  },
+  layers: [
+    {
+      id: "carto-dark",
+      type: "raster",
+      source: "carto-dark",
+      minzoom: 0,
+      maxzoom: 20,
+    },
+  ],
+};
 
 const heatLayer: HeatmapLayerSpecification = {
   id: "lead-heat",
@@ -155,12 +183,12 @@ export function LeadGeographyMap({
   }
 
   return (
-    <div className="grid min-h-[430px] grid-cols-[minmax(0,1fr)_270px] max-[920px]:grid-cols-1">
-      <div className="relative min-h-[430px] border-r border-white/10 max-[920px]:border-r-0 max-[920px]:border-b">
+    <div className="grid min-h-[430px] grid-cols-[minmax(0,1fr)_340px] max-[1050px]:grid-cols-1">
+      <div className="relative min-h-[430px] border-r border-white/10 max-[1050px]:border-r-0 max-[1050px]:border-b">
         <Map
           initialViewState={{ latitude: 18, longitude: 12, zoom: 1.25 }}
           interactiveLayerIds={["lead-points"]}
-          mapStyle="https://tiles.openfreemap.org/styles/dark"
+          mapStyle={darkMapStyle}
           maxZoom={15}
           minZoom={1}
           onClick={handleMapClick}
@@ -211,7 +239,7 @@ export function LeadGeographyMap({
         ) : null}
       </div>
 
-      <aside className="bg-[#101113] p-5 text-white">
+      <aside className="min-w-0 overflow-hidden bg-[#101113] p-5 text-white">
         <div className="grid grid-cols-2 gap-px bg-white/10">
           <div className="bg-[#101113] p-3">
             <p className="text-[9px] text-[#7e7e7e]">Mapped</p>
@@ -229,17 +257,17 @@ export function LeadGeographyMap({
         <p className="mt-5 border-b border-white/10 pb-2 text-[9px] font-semibold tracking-[0.08em] text-[#8a8a8a] uppercase">
           Lead concentration
         </p>
-        <div className="mt-1 max-h-[285px] overflow-y-auto">
+        <div className="mt-1 -mr-2 max-h-[285px] overflow-y-auto pr-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {points.slice(0, 12).map((point, index) => (
             <button
-              className="grid w-full grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2 border-b border-white/[0.07] py-3 text-left transition hover:bg-white/[0.04]"
+              className="grid w-full grid-cols-[22px_minmax(0,1fr)_auto] items-start gap-2 border-b border-white/[0.07] py-3 pr-1 text-left transition hover:bg-white/[0.04]"
               key={`${point.precision}-${point.latitude}-${point.longitude}-${point.label}`}
               onClick={() => focusPoint(point)}
               type="button"
             >
               <span className="text-[9px] text-[#666666]">{index + 1}</span>
               <span className="min-w-0">
-                <span className="block truncate text-[10px] font-medium text-[#e9e9e9]">
+                <span className="block text-[10px] leading-4 font-medium break-words text-[#e9e9e9]">
                   {point.label}
                 </span>
                 <span className="mt-0.5 block text-[8px] capitalize text-[#747474]">
