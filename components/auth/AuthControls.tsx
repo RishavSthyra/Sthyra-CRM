@@ -215,7 +215,7 @@ export function SocialButtons({
       </a>
       {[["apple", "Continue with Apple"]].map(([provider, label]) => (
         <button
-          className="flex h-12 cursor-not-allowed items-center justify-center gap-2.5 rounded-[10px] border border-[#342e2e] bg-[#222]/20 px-3 text-sm text-white/65"
+          className="flex h-12 cursor-not-allowed items-center justify-center gap-2.5 rounded-[10px] border border-[#342e2e]/70 bg-[#222]/10 px-3 text-sm text-white/40 grayscale"
           disabled
           key={provider}
           title={`${label} is not configured yet`}
@@ -223,7 +223,7 @@ export function SocialButtons({
         >
           <span className="relative size-6 overflow-hidden">
             <Image
-              className="object-contain"
+              className="object-contain opacity-55"
               src={`/auth/${provider}.png`}
               alt=""
               fill

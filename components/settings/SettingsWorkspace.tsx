@@ -1286,21 +1286,20 @@ function EmailAccountsPanel(props: PanelProps) {
                 }
                 type="button"
               >
-                <span className="absolute left-4 size-[18px] overflow-hidden">
-                  <Image alt="" fill sizes="18px" src="/auth/google.png" />
+                <span className="absolute left-4 size-6 overflow-hidden">
+                  <Image alt="" fill sizes="24px" src="/auth/google.png" />
                 </span>
                 Continue with Google
               </button>
               <button
-                className="relative flex h-12 w-full items-center justify-center rounded-lg border border-white/[0.13] bg-[#1b1e1c] px-12 text-[11px] font-semibold text-[#eef1ef] transition hover:border-white/20 hover:bg-[#222624]"
-                onClick={() =>
-                  router.push("/api/email-connections/microsoft/start")
-                }
+                className="relative flex h-12 w-full cursor-not-allowed items-center justify-center rounded-lg border border-white/[0.08] bg-[#171917] px-12 text-[11px] font-semibold text-[#777d79] grayscale"
+                disabled
+                title="Microsoft connection is not configured yet"
                 type="button"
               >
                 <span
                   aria-hidden
-                  className="absolute left-4 grid size-[17px] grid-cols-2 gap-[1.5px]"
+                  className="absolute left-4 grid size-[17px] grid-cols-2 gap-[1.5px] opacity-55"
                 >
                   <i className="bg-[#f35325]" />
                   <i className="bg-[#81bc06]" />
