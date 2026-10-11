@@ -43,6 +43,7 @@ import {
   type ManagedQuotation,
 } from "@/components/opportunities/QuotationManager";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
+import { getWorkspaceContext } from "@/lib/clientWorkspaceContext";
 import { canAccessWorkspaceModule } from "@/lib/moduleAccess";
 
 type Project = {
@@ -914,7 +915,7 @@ export function OpportunityWorkspace() {
 
   useEffect(() => {
     let active = true;
-    void api<ProjectContext>("/api/auth/project-context")
+    void getWorkspaceContext<ProjectContext>()
       .then((payload) => {
         if (!active) return;
         if (

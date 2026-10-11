@@ -21,6 +21,20 @@ const MODULE_PERMISSIONS: Record<WorkspaceModule, string> = {
   people: "PEOPLE_MANAGE",
 };
 
+const MODULE_ROUTES: Array<{
+  route: string;
+  module: WorkspaceModule;
+}> = [
+  { route: "/opportunities", module: "opportunities" },
+  { route: "/team-members", module: "people" },
+  { route: "/inventory", module: "inventory" },
+  { route: "/marketing", module: "marketing" },
+  { route: "/transfers", module: "transfers" },
+  { route: "/activity", module: "activity" },
+  { route: "/calendar", module: "calendar" },
+  { route: "/leads", module: "leads" },
+];
+
 export function canAccessWorkspaceModule(
   roleKey: string | null | undefined,
   permissions: readonly string[] | null | undefined,
@@ -28,4 +42,15 @@ export function canAccessWorkspaceModule(
 ): boolean {
   if (isSuperAdminRole(roleKey)) return true;
   return (permissions ?? []).includes(MODULE_PERMISSIONS[module]);
+}
+
+export function workspaceModuleForPathname(
+  pathname: string,
+): WorkspaceModule | null {
+  return (
+    MODULE_ROUTES.find(
+      ({ route }) =>
+        pathname === route || pathname.startsWith(`${route}/`),
+    )?.module ?? null
+  );
 }

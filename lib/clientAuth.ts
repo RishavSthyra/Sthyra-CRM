@@ -4,6 +4,8 @@ export type ApiErrorBody = {
   details?: string[];
 };
 
+const WORKSPACE_SESSION_REFRESHED_EVENT = "workspace-session:refreshed";
+
 export async function getApiError(response: Response): Promise<string> {
   const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
   if (body.details?.length) {
@@ -22,7 +24,12 @@ async function refreshSession(): Promise<boolean> {
       method: "POST",
       credentials: "include",
     })
-      .then((response) => response.ok)
+      .then((response) => {
+        if (response.ok && typeof window !== "undefined") {
+          window.dispatchEvent(new Event(WORKSPACE_SESSION_REFRESHED_EVENT));
+        }
+        return response.ok;
+      })
       .catch(() => false)
       .finally(() => {
         refreshPromise = null;

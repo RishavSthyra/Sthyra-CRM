@@ -22,6 +22,7 @@ import {
 } from "@/components/activity/RichTextEditor";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
+import { getWorkspaceContext } from "@/lib/clientWorkspaceContext";
 import { DEFAULT_PROJECT_LEAD_STAGES } from "@/lib/defaultLeadStages";
 
 type Lead = {
@@ -385,17 +386,7 @@ export default function LeadsPage() {
 
     async function loadProjectContext() {
       try {
-        const response = await fetchWithSession("/api/auth/project-context", {
-          cache: "no-store",
-        });
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        const body = (await response.json()) as ProjectContextResponse;
-        if (!response.ok) {
-          throw new Error(body.error || "Unable to retrieve projects");
-        }
+        const body = await getWorkspaceContext<ProjectContextResponse>();
         if (cancelled) return;
 
         const projects = body.projects ?? [];

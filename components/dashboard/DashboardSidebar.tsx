@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import {
@@ -22,10 +22,13 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
+import { clearWorkspaceContextCache } from "@/lib/clientWorkspaceContext";
 import {
   canAccessWorkspaceModule,
+  workspaceModuleForPathname,
   type WorkspaceModule,
 } from "@/lib/moduleAccess";
+import { useWorkspaceAccess } from "@/components/providers/WorkspaceAccessProvider";
 
 type NavigationItem = {
   href: string;
@@ -124,21 +127,35 @@ function NavItem({
   );
 }
 
+function NavigationSkeleton() {
+  return (
+    <div
+      aria-hidden="true"
+      className="flex w-full animate-pulse flex-col items-center gap-2 py-1"
+    >
+      {Array.from({ length: 8 }, (_, index) => (
+        <div className="flex w-full flex-col items-center gap-1" key={index}>
+          <span className="size-8 rounded-lg bg-white/[0.07]" />
+          <span className="h-2 w-9 rounded-full bg-white/[0.06]" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function DashboardSidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { access, ensureLoaded, status } = useWorkspaceAccess();
   const [unreadCount, setUnreadCount] = useState(0);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [access, setAccess] = useState<{
-    roleKey: string;
-    permissions: string[];
-  } | null>(null);
 
   const canShow = useCallback(
     (item: NavigationItem) =>
       !item.module ||
       (access !== null &&
         canAccessWorkspaceModule(
-          access.roleKey,
+          access.role_key,
           access.permissions,
           item.module,
         )),
@@ -146,27 +163,24 @@ export function DashboardSidebar() {
   );
 
   useEffect(() => {
-    let active = true;
-    void fetchWithSession("/api/auth/project-context", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) return;
-        const body = (await response.json()) as {
-          role_key?: string;
-          permissions?: string[];
-        };
-        if (!active) return;
-        setAccess({
-          roleKey: String(body.role_key ?? ""),
-          permissions: Array.isArray(body.permissions)
-            ? body.permissions.map(String)
-            : [],
-        });
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, []);
+    const task = window.setTimeout(() => void ensureLoaded(), 0);
+    return () => window.clearTimeout(task);
+  }, [ensureLoaded]);
+
+  useEffect(() => {
+    if (!access) return;
+    const guardedModule = workspaceModuleForPathname(pathname);
+    if (
+      guardedModule &&
+      !canAccessWorkspaceModule(
+        access.role_key,
+        access.permissions,
+        guardedModule,
+      )
+    ) {
+      router.replace("/dashboard");
+    }
+  }, [access, pathname, router]);
 
   const loadUnreadCount = useCallback(async () => {
     try {
@@ -215,6 +229,7 @@ export function DashboardSidebar() {
         credentials: "include",
       });
       if (!response.ok) throw new Error(await getApiError(response));
+      clearWorkspaceContextCache();
       window.location.replace("/login");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to log out");
@@ -243,41 +258,48 @@ export function DashboardSidebar() {
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <nav
           aria-label="Workspace navigation"
+          aria-busy={status === "loading" || status === "idle"}
           className="flex flex-col items-center gap-0.5"
         >
-          {primaryItems.filter(canShow).map((item) => (
-            <NavItem
-              active={isActive(item.href)}
-              href={item.href}
-              icon={item.icon}
-              key={item.href}
-              label={item.label}
-            />
-          ))}
-          <div className="my-1.5 h-px w-8 bg-white/[0.12]" />
-          {secondaryItems.filter(canShow).map((item) => (
-            <NavItem
-              active={isActive(item.href)}
-              href={item.href}
-              icon={item.icon}
-              key={item.href}
-              label={item.label}
-            />
-          ))}
-          <NavItem
-            active={isActive("/notifications")}
-            badge={unreadCount}
-            href="/notifications"
-            icon={Bell}
-            label="Notifications"
-          />
-          <div className="my-1.5 h-px w-8 bg-white/[0.12]" />
-          <NavItem
-            active={isActive("/settings") || isActive("/preferences")}
-            href="/settings"
-            icon={Settings}
-            label="Settings"
-          />
+          {access ? (
+            <>
+              {primaryItems.filter(canShow).map((item) => (
+                <NavItem
+                  active={isActive(item.href)}
+                  href={item.href}
+                  icon={item.icon}
+                  key={item.href}
+                  label={item.label}
+                />
+              ))}
+              <div className="my-1.5 h-px w-8 bg-white/[0.12]" />
+              {secondaryItems.filter(canShow).map((item) => (
+                <NavItem
+                  active={isActive(item.href)}
+                  href={item.href}
+                  icon={item.icon}
+                  key={item.href}
+                  label={item.label}
+                />
+              ))}
+              <NavItem
+                active={isActive("/notifications")}
+                badge={unreadCount}
+                href="/notifications"
+                icon={Bell}
+                label="Notifications"
+              />
+              <div className="my-1.5 h-px w-8 bg-white/[0.12]" />
+              <NavItem
+                active={isActive("/settings") || isActive("/preferences")}
+                href="/settings"
+                icon={Settings}
+                label="Settings"
+              />
+            </>
+          ) : (
+            <NavigationSkeleton />
+          )}
         </nav>
       </div>
       <div className="shrink-0 border-t border-white/[0.09] px-1.5 py-2">

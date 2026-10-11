@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canAccessWorkspaceModule } from "../lib/moduleAccess";
+import {
+  canAccessWorkspaceModule,
+  workspaceModuleForPathname,
+} from "../lib/moduleAccess";
 
 test("workspace modules are hidden without their permission", () => {
   const permissions = ["LEADS_VIEW", "LEADS_UPDATE"];
@@ -46,4 +49,14 @@ test("workspace administrators retain full module navigation", () => {
     canAccessWorkspaceModule("COMPANY_OWNER", [], "marketing"),
     false,
   );
+});
+
+test("workspace routes resolve to the module enforced by the shared guard", () => {
+  assert.equal(workspaceModuleForPathname("/inventory"), "inventory");
+  assert.equal(
+    workspaceModuleForPathname("/opportunities/example"),
+    "opportunities",
+  );
+  assert.equal(workspaceModuleForPathname("/team-members"), "people");
+  assert.equal(workspaceModuleForPathname("/settings"), null);
 });

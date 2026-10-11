@@ -55,6 +55,7 @@ import {
 } from "lucide-react";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
+import { getWorkspaceContext } from "@/lib/clientWorkspaceContext";
 import { generateCodeFromName } from "@/utils/generateCodeFromName";
 import {
   hasAuditLogAccess,
@@ -512,7 +513,7 @@ export function SettingsWorkspace() {
       const [meData, contextData, preferenceData, sessionData] =
         await Promise.all([
           api("/api/auth/me"),
-          api("/api/auth/project-context"),
+          getWorkspaceContext<ContextData>(),
           api("/api/notification-preferences"),
           api("/api/auth/sessions"),
         ]);

@@ -41,6 +41,7 @@ import toast from "react-hot-toast";
 import { SiteVisitDetails } from "@/components/calendar/SiteVisitDetails";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
+import { getWorkspaceContext } from "@/lib/clientWorkspaceContext";
 import { getAppointmentTiming } from "@/lib/appointmentTiming";
 
 type CalendarView = "day" | "week" | "month" | "year";
@@ -530,15 +531,7 @@ export function CalendarWorkspace() {
     let active = true;
     async function loadContext() {
       try {
-        const response = await fetchWithSession("/api/auth/project-context", {
-          cache: "no-store",
-        });
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (!response.ok) throw new Error(await getApiError(response));
-        const body = (await response.json()) as ProjectContext;
+        const body = await getWorkspaceContext<ProjectContext>();
         if (!active) return;
         const available = body.projects ?? [];
         const saved = window.localStorage.getItem("sthyra-project-id");

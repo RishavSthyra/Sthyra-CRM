@@ -39,6 +39,7 @@ import {
 import toast from "react-hot-toast";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
+import { getWorkspaceContext } from "@/lib/clientWorkspaceContext";
 import { ImportTemplateHint, InventoryDialog } from "./InventoryDialogs";
 import { InventoryAttributesManager } from "./InventoryAttributesManager";
 import { InventoryPricingWorkspace } from "./InventoryPricingWorkspace";
@@ -1041,9 +1042,7 @@ export function InventoryWorkspace() {
     let cancelled = false;
     async function loadContext() {
       try {
-        const result = await fetchJson<ProjectContext>(
-          "/api/auth/project-context",
-        );
+        const result = await getWorkspaceContext<ProjectContext>();
         if (cancelled) return;
         setContext(result);
         const requestedId = Number(

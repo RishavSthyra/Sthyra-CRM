@@ -28,6 +28,7 @@ import {
 import toast from "react-hot-toast";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
+import { getWorkspaceContext } from "@/lib/clientWorkspaceContext";
 
 type Project = {
   project_id: number;
@@ -706,7 +707,7 @@ export function TransferWorkspace() {
   useEffect(() => {
     let active = true;
     void Promise.all([
-      api<WorkspaceContext>("/api/auth/project-context"),
+      getWorkspaceContext<WorkspaceContext>(),
       api<{ user: CurrentUser }>("/api/auth/me"),
     ])
       .then(([workspace, me]) => {

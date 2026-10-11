@@ -30,6 +30,7 @@ import {
 import { RichTextContent } from "@/components/activity/RichTextEditor";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
+import { getWorkspaceContext } from "@/lib/clientWorkspaceContext";
 
 type ActivityTab = "activity" | "calls" | "email" | "tasks" | "notes";
 type ActivityFilter = "all" | "appointment" | "call" | "email" | "task" | "note";
@@ -539,15 +540,7 @@ export default function ActivityPage() {
     let active = true;
     async function loadContext() {
       try {
-        const response = await fetchWithSession("/api/auth/project-context", {
-          cache: "no-store",
-        });
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (!response.ok) throw new Error(await getApiError(response));
-        const body = (await response.json()) as ProjectContext;
+        const body = await getWorkspaceContext<ProjectContext>();
         if (!active) return;
         const projects = body.projects ?? [];
         const params = new URLSearchParams(window.location.search);

@@ -29,6 +29,10 @@ import {
 } from "recharts";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { fetchWithSession } from "@/lib/clientAuth";
+import {
+  getWorkspaceContext,
+  WorkspaceContextRequestError,
+} from "@/lib/clientWorkspaceContext";
 import { canAccessWorkspaceModule } from "@/lib/moduleAccess";
 
 type Tab =
@@ -182,22 +186,12 @@ export function MarketingWorkspace() {
 
   useEffect(() => {
     let active = true;
-    void fetchWithSession("/api/auth/project-context", { cache: "no-store" })
-      .then(async (response) => {
+    void getWorkspaceContext<{
+      role_key?: string;
+      permissions?: string[];
+    }>()
+      .then((context) => {
         if (!active) return;
-        if (response.status === 401) {
-          router.replace("/login");
-          return;
-        }
-        if (!response.ok) {
-          setAuthorized(false);
-          router.replace("/dashboard");
-          return;
-        }
-        const context = (await response.json()) as {
-          role_key?: string;
-          permissions?: string[];
-        };
         const allowed = canAccessWorkspaceModule(
           context.role_key,
           context.permissions,
@@ -206,8 +200,14 @@ export function MarketingWorkspace() {
         setAuthorized(allowed);
         if (!allowed) router.replace("/dashboard");
       })
-      .catch(() => {
-        if (active) setAuthorized(false);
+      .catch((error) => {
+        if (!active) return;
+        setAuthorized(false);
+        router.replace(
+          error instanceof WorkspaceContextRequestError && error.status === 401
+            ? "/login"
+            : "/dashboard",
+        );
       });
     return () => {
       active = false;

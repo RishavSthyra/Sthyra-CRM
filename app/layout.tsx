@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Bricolage_Grotesque, Geist_Mono, Inter } from "next/font/google";
 import { ToastProvider } from "@/components/providers/ToastProvider";
+import { WorkspaceAccessProvider } from "@/components/providers/WorkspaceAccessProvider";
 import "./globals.css";
 
 const inter = Inter({
@@ -30,8 +31,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${inter.variable} ${geistMono.variable} ${bricolage.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-black font-[var(--font-inter),Arial,Helvetica,sans-serif] text-white">
-        {children}
-        <ToastProvider />
+        <WorkspaceAccessProvider>
+          {children}
+          <ToastProvider />
+        </WorkspaceAccessProvider>
       </body>
     </html>
   );
