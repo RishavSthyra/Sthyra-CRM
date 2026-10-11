@@ -3,6 +3,7 @@
 import {
   ArrowRight,
   Building2,
+  ChevronDown,
   FileSpreadsheet,
   Layers3,
   LoaderCircle,
@@ -11,7 +12,13 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+  type SelectHTMLAttributes,
+} from "react";
 import toast from "react-hot-toast";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 import type {
@@ -30,6 +37,44 @@ import type {
 const inputClass =
   "h-11 w-full rounded-lg border border-white/[0.11] bg-[#0b0e0c] px-3 text-sm text-white outline-none transition placeholder:text-[#606763] focus:border-[#57d6b1]/55 focus:ring-2 focus:ring-[#57d6b1]/10";
 const labelClass = "mb-2 block text-xs font-medium text-[#aeb4b1]";
+
+function SelectControl({
+  children,
+  className = "",
+  ...props
+}: SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <span className="relative block min-w-0">
+      <select
+        {...props}
+        className={`${inputClass} appearance-none pr-10 ${className}`}
+      >
+        {children}
+      </select>
+      <ChevronDown
+        aria-hidden="true"
+        className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-[#aeb5b1]"
+      />
+    </span>
+  );
+}
+
+function inventoryNodePath(node: InventoryNode, nodes: InventoryNode[]) {
+  const nodesById = new Map(nodes.map((item) => [item.node_id, item]));
+  const names: string[] = [];
+  const visited = new Set<string>();
+  let current: InventoryNode | undefined = node;
+
+  while (current && !visited.has(current.node_id)) {
+    visited.add(current.node_id);
+    names.unshift(current.node_name);
+    current = current.parent_node_id
+      ? nodesById.get(current.parent_node_id)
+      : undefined;
+  }
+
+  return names.join(" / ");
+}
 
 type DialogProps = {
   kind: InventoryDialogKind;
@@ -98,7 +143,7 @@ function DialogShell({
       }}
       role="dialog"
     >
-      <div className="max-h-[calc(100dvh-32px)] w-full max-w-[820px] overflow-y-auto rounded-2xl border border-white/[0.13] bg-[#111512] shadow-[0_30px_100px_rgba(0,0,0,.7)]">
+      <div className="max-h-[calc(100dvh-32px)] w-full max-w-[820px] overflow-y-auto rounded-2xl border border-white/[0.13] bg-[#111512] shadow-[0_30px_100px_rgba(0,0,0,.7)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="sticky top-0 z-10 flex items-start justify-between border-b border-white/[0.09] bg-[#111512]/95 px-6 py-5 backdrop-blur-xl">
           <div>
             <h2 className="text-lg font-semibold tracking-[-0.02em] text-white">
@@ -287,15 +332,14 @@ function LayoutEditor({
                   type="number"
                   value={room.width ?? ""}
                 />
-                <select
+                <SelectControl
                   aria-label={`Room ${index + 1} measurement unit`}
-                  className={inputClass}
                   onChange={(event) => patchRoom(index, { measurement_unit: event.target.value as "ft" | "m" })}
                   value={room.measurement_unit}
                 >
                   <option value="ft">ft</option>
                   <option value="m">m</option>
-                </select>
+                </SelectControl>
                 <button
                   aria-label={`Remove ${room.room_name || `room ${index + 1}`}`}
                   className="grid size-9 place-items-center self-center rounded-lg text-[#7f8783] hover:bg-[#ff665a]/10 hover:text-[#ff9188]"
@@ -334,9 +378,8 @@ function LayoutEditor({
       <div className="mt-5 grid gap-3 sm:grid-cols-[170px_minmax(0,1fr)_36px]">
         {layout.assets.map((asset, index) => (
           <div className="contents" key={asset.layout_asset_id || index}>
-            <select
+            <SelectControl
               aria-label={`Layout file ${index + 1} type`}
-              className={inputClass}
               onChange={(event) => onChange({
                 ...layout,
                 assets: layout.assets.map((item, position) => position === index ? { ...item, asset_kind: event.target.value as typeof item.asset_kind } : item),
@@ -346,7 +389,7 @@ function LayoutEditor({
               <option value="floor_plan">Floor plan</option>
               <option value="render">Render</option>
               <option value="document">Document</option>
-            </select>
+            </SelectControl>
             <input
               aria-label={`Layout file ${index + 1} URL`}
               className={inputClass}
@@ -520,8 +563,7 @@ function CustomAttributeFields({
               label={`${definition.label}${definition.is_required ? " *" : ""}`}
             >
               {definition.data_type === "select" ? (
-                <select
-                  className={inputClass}
+                <SelectControl
                   disabled={!definition.is_active}
                   onChange={(event) =>
                     update(definition.attribute_key, event.target.value)
@@ -535,7 +577,7 @@ function CustomAttributeFields({
                       {option}
                     </option>
                   ))}
-                </select>
+                </SelectControl>
               ) : (
                 <input
                   className={inputClass}
@@ -687,8 +729,7 @@ function AddUnitForm({
           />
         </Field>
         <Field label="Unit template">
-          <select
-            className={inputClass}
+          <SelectControl
             onChange={(event) =>
               setForm((current) => ({
                 ...current,
@@ -704,11 +745,10 @@ function AddUnitForm({
                 {type.type_name} · {type.type_code}
               </option>
             ))}
-          </select>
+          </SelectControl>
         </Field>
-        <Field label="Structure location">
-          <select
-            className={inputClass}
+        <Field label="Location in project">
+          <SelectControl
             onChange={(event) =>
               setForm((current) => ({
                 ...current,
@@ -717,14 +757,16 @@ function AddUnitForm({
             }
             value={form.node_id}
           >
-            <option value="">No location</option>
+            <option value="">Not assigned to a structure</option>
             {nodes.map((node) => (
               <option key={node.node_id} value={node.node_id}>
-                {"— ".repeat(node.depth)}
-                {node.node_name}
+                {inventoryNodePath(node, nodes)}
               </option>
             ))}
-          </select>
+          </SelectControl>
+          <span className="mt-1.5 block text-[11px] leading-4 text-[#707975]">
+            The phase, tower, building, wing or floor containing this unit.
+          </span>
         </Field>
         <Field label="Orientation">
           <input
@@ -936,9 +978,8 @@ function AddUnitTypeForm({
     <form className="p-6" onSubmit={submit}>
       <FormGrid>
         <Field label="Asset type">
-          <select
+          <SelectControl
             autoFocus
-            className={inputClass}
             onChange={(event) =>
               setForm((current) => ({
                 ...current,
@@ -954,7 +995,7 @@ function AddUnitTypeForm({
                 {type.display_name}
               </option>
             ))}
-          </select>
+          </SelectControl>
         </Field>
         <Field label="Type code">
           <input
@@ -1123,9 +1164,8 @@ function AddNodeForm({
     <form className="p-6" onSubmit={submit}>
       <FormGrid>
         <Field label="Parent location" wide>
-          <select
+          <SelectControl
             autoFocus
-            className={inputClass}
             onChange={(event) =>
               setForm((current) => ({
                 ...current,
@@ -1139,15 +1179,16 @@ function AddNodeForm({
               .filter((node) => node.node_id !== inventoryNode?.node_id)
               .map((node) => (
                 <option key={node.node_id} value={node.node_id}>
-                  {"— ".repeat(node.depth)}
-                  {node.node_name}
+                  {inventoryNodePath(node, nodes)}
                 </option>
               ))}
-          </select>
+          </SelectControl>
+          <span className="mt-1.5 block text-[11px] leading-4 text-[#707975]">
+            Use Project root for a top-level phase, tower or building.
+          </span>
         </Field>
         <Field label="Kind">
-          <select
-            className={inputClass}
+          <SelectControl
             onChange={(event) =>
               setForm((current) => ({
                 ...current,
@@ -1172,7 +1213,7 @@ function AddNodeForm({
                 {kind.charAt(0).toUpperCase() + kind.slice(1)}
               </option>
             ))}
-          </select>
+          </SelectControl>
         </Field>
         <Field label="Code">
           <input
@@ -1359,8 +1400,7 @@ function GenerateForm({
 
       <FormGrid>
         <Field label="Place inside" wide>
-          <select
-            className={inputClass}
+          <SelectControl
             onChange={(event) =>
               setCommon((current) => ({
                 ...current,
@@ -1372,11 +1412,10 @@ function GenerateForm({
             <option value="">Project root</option>
             {nodes.map((node) => (
               <option key={node.node_id} value={node.node_id}>
-                {"— ".repeat(node.depth)}
-                {node.node_name}
+                {inventoryNodePath(node, nodes)}
               </option>
             ))}
-          </select>
+          </SelectControl>
         </Field>
 
         {mode === "stacked" ? (
@@ -1445,9 +1484,8 @@ function GenerateForm({
         ) : (
           <>
             <Field label="Unit template">
-              <select
+              <SelectControl
                 autoFocus
-                className={inputClass}
                 onChange={(event) =>
                   setSeries((current) => ({
                     ...current,
@@ -1463,7 +1501,7 @@ function GenerateForm({
                     {type.type_name}
                   </option>
                 ))}
-              </select>
+              </SelectControl>
             </Field>
             <Field label="Quantity">
               <input
@@ -1562,9 +1600,8 @@ function GenerateForm({
                   required
                   value={stack.stack_code}
                 />
-                <select
+                <SelectControl
                   aria-label={`Stack ${index + 1} unit type`}
-                  className={inputClass}
                   onChange={(event) =>
                     setStacks((current) =>
                       current.map((item, itemIndex) =>
@@ -1583,7 +1620,7 @@ function GenerateForm({
                       {type.type_name}
                     </option>
                   ))}
-                </select>
+                </SelectControl>
                 <button
                   aria-label={`Remove stack ${index + 1}`}
                   className="grid size-9 place-items-center self-center rounded-lg text-[#747c78] hover:bg-[#ff665a]/10 hover:text-[#ff8076] disabled:opacity-30"
