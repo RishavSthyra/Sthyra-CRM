@@ -221,23 +221,38 @@ export async function GET(request: NextRequest) {
         `WITH lead_locations AS (
            SELECT
              NULLIF(BTRIM(COALESCE(
+               CASE WHEN contact.latitude IS NOT NULL AND contact.longitude IS NOT NULL
+                 THEN contact.country END,
                lead.qualification_data->>'geo_country',
                lead.qualification_data->>'country',
                contact.country
              )), '') AS country,
              NULLIF(BTRIM(COALESCE(
+               CASE WHEN contact.latitude IS NOT NULL AND contact.longitude IS NOT NULL
+                 THEN contact.state END,
                lead.qualification_data->>'geo_state',
-               lead.qualification_data->>'state'
+               lead.qualification_data->>'state',
+               contact.state
              )), '') AS state,
+             CASE
+               WHEN contact.latitude IS NOT NULL AND contact.longitude IS NOT NULL
+               THEN NULL
+               ELSE NULLIF(BTRIM(COALESCE(
+                 lead.qualification_data->>'geo_district',
+                 lead.qualification_data->>'district',
+                 contact.district
+               )), '')
+             END AS district,
              NULLIF(BTRIM(COALESCE(
-               lead.qualification_data->>'geo_district',
-               lead.qualification_data->>'district'
-             )), '') AS district,
-             NULLIF(BTRIM(COALESCE(
+               CASE WHEN contact.latitude IS NOT NULL AND contact.longitude IS NOT NULL
+                 THEN contact.city END,
                lead.qualification_data->>'geo_city',
-               lead.qualification_data->>'city'
+               lead.qualification_data->>'city',
+               contact.city
              )), '') AS city,
              CASE
+               WHEN contact.latitude IS NOT NULL AND contact.longitude IS NOT NULL
+               THEN contact.latitude
                WHEN COALESCE(
                  lead.qualification_data->>'geo_latitude',
                  lead.qualification_data->>'latitude'
@@ -246,8 +261,11 @@ export async function GET(request: NextRequest) {
                  lead.qualification_data->>'geo_latitude',
                  lead.qualification_data->>'latitude'
                )::numeric
+               ELSE contact.latitude
              END AS latitude,
              CASE
+               WHEN contact.latitude IS NOT NULL AND contact.longitude IS NOT NULL
+               THEN contact.longitude
                WHEN COALESCE(
                  lead.qualification_data->>'geo_longitude',
                  lead.qualification_data->>'longitude'
@@ -256,6 +274,7 @@ export async function GET(request: NextRequest) {
                  lead.qualification_data->>'geo_longitude',
                  lead.qualification_data->>'longitude'
                )::numeric
+               ELSE contact.longitude
              END AS longitude
            FROM leads lead
            JOIN contacts contact ON contact.contact_id=lead.contact_id

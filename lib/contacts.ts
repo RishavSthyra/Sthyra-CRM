@@ -1,6 +1,8 @@
 import type { PoolClient, QueryResult } from "pg";
+import { validateLocationSelection } from "@/lib/locationCatalog";
 import { isUuid } from "@/lib/permissions";
 import { isObject } from "@/utils/isObject";
+import { validateCoordinate } from "@/utils/validateCoordinate";
 import { validateDate } from "@/utils/validateDate";
 import { validateText } from "@/utils/validateText";
 
@@ -15,6 +17,7 @@ export const CONTACT_COLUMNS = `
   date_of_birth::text AS date_of_birth,
   is_nri,
   country,
+  country_code,
   company_works_at,
   occupation,
   is_married,
@@ -25,6 +28,9 @@ export const CONTACT_COLUMNS = `
   district,
   state,
   postal_code,
+  state_code,
+  latitude,
+  longitude,
   merged_into_contact_id,
   archived_at,
   created_at,
@@ -41,6 +47,7 @@ const CONTACT_FIELDS = [
   "date_of_birth",
   "is_nri",
   "country",
+  "country_code",
   "company_works_at",
   "occupation",
   "is_married",
@@ -51,6 +58,9 @@ const CONTACT_FIELDS = [
   "district",
   "state",
   "postal_code",
+  "state_code",
+  "latitude",
+  "longitude",
 ] as const;
 
 export type ContactField = (typeof CONTACT_FIELDS)[number];
@@ -64,6 +74,7 @@ export type ContactWrite = Partial<{
   date_of_birth: string | null;
   is_nri: boolean;
   country: string | null;
+  country_code: string | null;
   company_works_at: string | null;
   occupation: string | null;
   is_married: boolean;
@@ -74,6 +85,9 @@ export type ContactWrite = Partial<{
   district: string | null;
   state: string | null;
   postal_code: string | null;
+  state_code: string | null;
+  latitude: number | null;
+  longitude: number | null;
 }>;
 
 export const MARITAL_STATUSES = [
@@ -99,6 +113,8 @@ export const CONTACT_PROFILE_FIELDS = [
   "state",
   "postal_code",
   "country",
+  "country_code",
+  "state_code",
 ] as const;
 
 type ValidationResult =
@@ -224,6 +240,16 @@ export function validateContactPayload(
   if (country !== undefined) {
     data.country = country;
   }
+  const countryCode = validateText(
+    body.country_code,
+    "country_code",
+    2,
+    true,
+    errors,
+  );
+  if (countryCode !== undefined) {
+    data.country_code = countryCode?.toUpperCase() ?? null;
+  }
   const company = validateText(
     body.company_works_at,
     "company_works_at",
@@ -281,11 +307,19 @@ export function validateContactPayload(
     ["district", 100],
     ["state", 100],
     ["postal_code", 20],
+    ["state_code", 10],
   ] as const) {
     const value = validateText(body[field], field, maxLength, true, errors);
     if (value !== undefined) {
       data[field] = value;
     }
+  }
+  if (typeof data.state_code === "string") {
+    data.state_code = data.state_code.toUpperCase();
+  }
+  for (const field of ["latitude", "longitude"] as const) {
+    const value = validateCoordinate(body[field], field, errors);
+    if (value !== undefined) data[field] = value;
   }
 
   if (!options.partial) {
@@ -321,7 +355,28 @@ export function validateContactProfilePayload(body: unknown): ValidationResult {
       errors: unknownFields.map((field) => `Unknown profile field: ${field}`),
     };
   }
-  return validateContactPayload(body, { partial: true });
+  const validation = validateContactPayload(body, { partial: true });
+  if (!validation.ok) return validation;
+
+  const locationFields = [
+    "country",
+    "country_code",
+    "state",
+    "state_code",
+    "city",
+  ];
+  if (locationFields.some((field) => Object.hasOwn(body, field))) {
+    const location = validateLocationSelection(body);
+    if (!location.ok) return location;
+    validation.data.country = location.location?.country ?? null;
+    validation.data.country_code = location.location?.country_code ?? null;
+    validation.data.state = location.location?.state ?? null;
+    validation.data.state_code = location.location?.state_code ?? null;
+    validation.data.city = location.location?.city ?? null;
+    validation.data.latitude = location.location?.latitude ?? null;
+    validation.data.longitude = location.location?.longitude ?? null;
+  }
+  return validation;
 }
 
 export function parseContactId(value: string): string | null {
@@ -366,6 +421,7 @@ export async function createContact(
        date_of_birth,
        is_nri,
        country,
+       country_code,
        company_works_at,
        occupation,
        is_married,
@@ -375,9 +431,12 @@ export async function createContact(
        city,
        district,
        state,
-       postal_code
+       postal_code,
+       state_code,
+       latitude,
+       longitude
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
      RETURNING ${CONTACT_COLUMNS}`,
     [
       companyId,
@@ -390,6 +449,7 @@ export async function createContact(
       contact.date_of_birth ?? null,
       contact.is_nri ?? false,
       contact.country ?? null,
+      contact.country_code ?? null,
       contact.company_works_at ?? null,
       contact.occupation ?? null,
       contact.is_married ?? false,
@@ -400,6 +460,9 @@ export async function createContact(
       contact.district ?? null,
       contact.state ?? null,
       contact.postal_code ?? null,
+      contact.state_code ?? null,
+      contact.latitude ?? null,
+      contact.longitude ?? null,
     ],
   );
   const created = result.rows[0] as ContactRow;

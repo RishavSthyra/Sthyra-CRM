@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { validateContactProfilePayload } from "../lib/contacts";
+import {
+  listCities,
+  listCountries,
+  listStates,
+  validateLocationSelection,
+} from "../lib/locationCatalog";
 
 test("contact profile accepts and normalizes personal and residence details", () => {
   const result = validateContactProfilePayload({
@@ -13,8 +19,10 @@ test("contact profile accepts and normalizes personal and residence details", ()
     city: "Bengaluru",
     district: "Bengaluru Urban",
     state: "Karnataka",
+    state_code: "KA",
     postal_code: "560025",
     country: "India",
+    country_code: "IN",
   });
 
   assert.equal(result.ok, true);
@@ -23,6 +31,37 @@ test("contact profile accepts and normalizes personal and residence details", ()
     assert.equal(result.data.marital_status, "married");
     assert.equal(result.data.is_married, true);
     assert.equal(result.data.city, "Bengaluru");
+    assert.equal(result.data.country_code, "IN");
+    assert.equal(result.data.state_code, "KA");
+    assert.ok(Math.abs(Number(result.data.latitude) - 12.97194) < 0.001);
+    assert.ok(Math.abs(Number(result.data.longitude) - 77.59369) < 0.001);
+  }
+});
+
+test("location choices cascade from country to state to city", () => {
+  assert.ok(listCountries().some((country) => country.iso_code === "IN"));
+  assert.ok(
+    listStates("IN")?.some((state) => state.iso_code === "KA"),
+  );
+  assert.ok(
+    listCities("IN", "KA")?.some((city) => city.name === "Bengaluru"),
+  );
+});
+
+test("contact locations reject arbitrary and mismatched place names", () => {
+  const arbitrary = validateLocationSelection({ country: "Biryani" });
+  assert.equal(arbitrary.ok, false);
+
+  const mismatched = validateLocationSelection({
+    city: "Mumbai",
+    country: "India",
+    country_code: "IN",
+    state: "Karnataka",
+    state_code: "KA",
+  });
+  assert.equal(mismatched.ok, false);
+  if (!mismatched.ok) {
+    assert.ok(mismatched.errors[0]?.includes("selected state and country"));
   }
 });
 

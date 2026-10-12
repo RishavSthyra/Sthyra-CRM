@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Pencil, X } from "lucide-react";
+import { fetchWithSession } from "@/lib/clientAuth";
 
 export type ContactProfile = {
   contact_id?: string;
@@ -28,6 +29,10 @@ export type ContactProfile = {
   state?: string | null;
   postal_code?: string | null;
   country?: string | null;
+  country_code?: string | null;
+  state_code?: string | null;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
 };
 
 export type ContactProfileWrite = Pick<
@@ -43,7 +48,14 @@ export type ContactProfileWrite = Pick<
   | "state"
   | "postal_code"
   | "country"
+  | "country_code"
+  | "state_code"
 >;
+
+type LocationOption = {
+  iso_code?: string;
+  name: string;
+};
 
 type Props = {
   name: string;
@@ -139,6 +151,12 @@ export function ContactProfilePopover({ name, profile, onSave }: Props) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [form, setForm] = useState<ContactProfileWrite>({});
+  const [countries, setCountries] = useState<LocationOption[]>([]);
+  const [states, setStates] = useState<LocationOption[]>([]);
+  const [cities, setCities] = useState<LocationOption[]>([]);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationNotice, setLocationNotice] = useState<string | null>(null);
+  const locationRequestRef = useRef(0);
   const [panelPosition, setPanelPosition] = useState<PanelPosition | null>(null);
 
   useEffect(() => {
@@ -205,9 +223,24 @@ export function ContactProfilePopover({ name, profile, onSave }: Props) {
     };
   }, [open]);
 
+  async function requestLocations(
+    level: "countries" | "states" | "cities",
+    countryCode?: string,
+    stateCode?: string,
+  ) {
+    const search = new URLSearchParams({ level });
+    if (countryCode) search.set("country", countryCode);
+    if (stateCode) search.set("state", stateCode);
+    const response = await fetchWithSession(`/api/locations?${search}`);
+    if (!response.ok) throw new Error("Unable to load the location list");
+    const body = (await response.json()) as { locations?: LocationOption[] };
+    return body.locations ?? [];
+  }
+
   function beginEditing() {
     setSaveError(null);
-    setForm({
+    setLocationNotice(null);
+    const initialForm: ContactProfileWrite = {
       company_works_at: profile.company_works_at ?? "",
       occupation: profile.occupation ?? "",
       date_of_birth: profile.date_of_birth ?? "",
@@ -219,8 +252,164 @@ export function ContactProfilePopover({ name, profile, onSave }: Props) {
       state: profile.state ?? "",
       postal_code: profile.postal_code ?? "",
       country: profile.country ?? "",
-    });
+      country_code: profile.country_code ?? "",
+      state_code: profile.state_code ?? "",
+    };
+    setForm(initialForm);
     setEditing(true);
+    void prepareLocationEditor(initialForm);
+  }
+
+  async function prepareLocationEditor(initialForm: ContactProfileWrite) {
+    const requestId = ++locationRequestRef.current;
+    setLocationLoading(true);
+    try {
+      const countryOptions = await requestLocations("countries");
+      if (locationRequestRef.current !== requestId) return;
+      setCountries(countryOptions);
+      const country = countryOptions.find(
+        (option) =>
+          option.iso_code === initialForm.country_code ||
+          option.name.toLocaleLowerCase("en") ===
+            String(initialForm.country ?? "").toLocaleLowerCase("en"),
+      );
+      if (!country?.iso_code) {
+        setStates([]);
+        setCities([]);
+        if (initialForm.country || initialForm.state || initialForm.city) {
+          setLocationNotice(
+            "The previous location was not verified. Select a country, state and city again.",
+          );
+        }
+        setForm((current) => ({
+          ...current,
+          city: "",
+          country: "",
+          country_code: "",
+          state: "",
+          state_code: "",
+        }));
+        return;
+      }
+
+      const stateOptions = await requestLocations("states", country.iso_code);
+      if (locationRequestRef.current !== requestId) return;
+      setStates(stateOptions);
+      const state = stateOptions.find(
+        (option) =>
+          option.iso_code === initialForm.state_code ||
+          option.name.toLocaleLowerCase("en") ===
+            String(initialForm.state ?? "").toLocaleLowerCase("en"),
+      );
+      const cityOptions =
+        stateOptions.length > 0 && !state
+          ? []
+          : await requestLocations(
+              "cities",
+              country.iso_code,
+              state?.iso_code,
+            );
+      if (locationRequestRef.current !== requestId) return;
+      setCities(cityOptions);
+      const city = cityOptions.find(
+        (option) =>
+          option.name.toLocaleLowerCase("en") ===
+          String(initialForm.city ?? "").toLocaleLowerCase("en"),
+      );
+      if (
+        (initialForm.state && stateOptions.length > 0 && !state) ||
+        (initialForm.city && !city)
+      ) {
+        setLocationNotice(
+          "Part of the previous location was not verified. Please confirm the missing selection.",
+        );
+      }
+      setForm((current) => ({
+        ...current,
+        city: city?.name ?? "",
+        country: country.name,
+        country_code: country.iso_code,
+        state: state?.name ?? "",
+        state_code: state?.iso_code ?? "",
+      }));
+    } catch (cause) {
+      setSaveError(
+        cause instanceof Error ? cause.message : "Unable to load locations",
+      );
+    } finally {
+      if (locationRequestRef.current === requestId) setLocationLoading(false);
+    }
+  }
+
+  async function selectCountry(countryCode: string) {
+    const country = countries.find((option) => option.iso_code === countryCode);
+    const requestId = ++locationRequestRef.current;
+    setLocationNotice(null);
+    setStates([]);
+    setCities([]);
+    setForm((current) => ({
+      ...current,
+      city: "",
+      country: country?.name ?? "",
+      country_code: country?.iso_code ?? "",
+      district: "",
+      state: "",
+      state_code: "",
+    }));
+    if (!country?.iso_code) {
+      setLocationLoading(false);
+      return;
+    }
+    setLocationLoading(true);
+    try {
+      const stateOptions = await requestLocations("states", country.iso_code);
+      if (locationRequestRef.current !== requestId) return;
+      setStates(stateOptions);
+      if (stateOptions.length === 0) {
+        const cityOptions = await requestLocations("cities", country.iso_code);
+        if (locationRequestRef.current === requestId) setCities(cityOptions);
+      }
+    } catch (cause) {
+      setSaveError(
+        cause instanceof Error ? cause.message : "Unable to load locations",
+      );
+    } finally {
+      if (locationRequestRef.current === requestId) setLocationLoading(false);
+    }
+  }
+
+  async function selectState(stateCode: string) {
+    const state = states.find((option) => option.iso_code === stateCode);
+    const countryCode = String(form.country_code ?? "");
+    const requestId = ++locationRequestRef.current;
+    setLocationNotice(null);
+    setCities([]);
+    setForm((current) => ({
+      ...current,
+      city: "",
+      district: "",
+      state: state?.name ?? "",
+      state_code: state?.iso_code ?? "",
+    }));
+    if (!countryCode || !state?.iso_code) {
+      setLocationLoading(false);
+      return;
+    }
+    setLocationLoading(true);
+    try {
+      const cityOptions = await requestLocations(
+        "cities",
+        countryCode,
+        state.iso_code,
+      );
+      if (locationRequestRef.current === requestId) setCities(cityOptions);
+    } catch (cause) {
+      setSaveError(
+        cause instanceof Error ? cause.message : "Unable to load locations",
+      );
+    } finally {
+      if (locationRequestRef.current === requestId) setLocationLoading(false);
+    }
   }
 
   function setField<K extends keyof ContactProfileWrite>(
@@ -249,6 +438,8 @@ export function ContactProfilePopover({ name, profile, onSave }: Props) {
         state: emptyToNull(String(form.state ?? "")),
         postal_code: emptyToNull(String(form.postal_code ?? "")),
         country: emptyToNull(String(form.country ?? "")),
+        country_code: emptyToNull(String(form.country_code ?? "")),
+        state_code: emptyToNull(String(form.state_code ?? "")),
       });
       setEditing(false);
     } catch (cause) {
@@ -383,20 +574,49 @@ export function ContactProfilePopover({ name, profile, onSave }: Props) {
                   type="date"
                   value={form.anniversary_date}
                 />
-                <ProfileInput
-                  label="City"
-                  onChange={(value) => setField("city", value)}
-                  value={form.city}
+                <p className="border-b border-white/[0.07] py-3 text-[11px] leading-5 text-[#858b88]">
+                  Select a verified location for accurate dashboard mapping.
+                  Street and locality text are not used as map coordinates.
+                </p>
+                {locationNotice ? (
+                  <p className="mt-2 rounded-md border border-[#62542f] bg-[#241f12] px-3 py-2 text-[11px] leading-4 text-[#d7c27f]">
+                    {locationNotice}
+                  </p>
+                ) : null}
+                <ProfileSelect
+                  disabled={locationLoading && countries.length === 0}
+                  label="Country"
+                  onChange={(value) => void selectCountry(value)}
+                  options={countries}
+                  placeholder={locationLoading ? "Loading countries…" : "Select country"}
+                  value={String(form.country_code ?? "")}
                 />
+                {form.country_code && states.length > 0 ? (
+                  <ProfileSelect
+                    disabled={locationLoading}
+                    label="State / province"
+                    onChange={(value) => void selectState(value)}
+                    options={states}
+                    placeholder={locationLoading ? "Loading states…" : "Select state"}
+                    value={String(form.state_code ?? "")}
+                  />
+                ) : null}
+                {form.country_code &&
+                (states.length === 0 || form.state_code) ? (
+                  <ProfileSelect
+                    disabled={locationLoading}
+                    label="City"
+                    onChange={(value) => setField("city", value)}
+                    options={cities}
+                    placeholder={locationLoading ? "Loading cities…" : "Select city"}
+                    value={String(form.city ?? "")}
+                    valueByName
+                  />
+                ) : null}
                 <ProfileInput
-                  label="District"
+                  label="District / locality"
                   onChange={(value) => setField("district", value)}
                   value={form.district}
-                />
-                <ProfileInput
-                  label="State"
-                  onChange={(value) => setField("state", value)}
-                  value={form.state}
                 />
                 <ProfileInput
                   label="PIN / postal code"
@@ -404,12 +624,7 @@ export function ContactProfilePopover({ name, profile, onSave }: Props) {
                   value={form.postal_code}
                 />
                 <ProfileInput
-                  label="Country"
-                  onChange={(value) => setField("country", value)}
-                  value={form.country}
-                />
-                <ProfileInput
-                  label="Home address"
+                  label="Street address"
                   onChange={(value) => setField("address", value)}
                   value={form.address}
                 />
@@ -429,7 +644,7 @@ export function ContactProfilePopover({ name, profile, onSave }: Props) {
                 </button>
                 <button
                   className="h-9 rounded-md bg-[#ecefed] px-4 text-[11px] font-semibold text-[#141615] disabled:cursor-not-allowed disabled:opacity-55"
-                  disabled={saving}
+                  disabled={saving || locationLoading}
                   type="submit"
                 >
                   {saving ? "Saving…" : "Save contact"}
@@ -500,6 +715,46 @@ function ProfileInput({
         type={type}
         value={value ?? ""}
       />
+    </label>
+  );
+}
+
+function ProfileSelect({
+  disabled = false,
+  label,
+  onChange,
+  options,
+  placeholder,
+  value,
+  valueByName = false,
+}: {
+  disabled?: boolean;
+  label: string;
+  onChange: (value: string) => void;
+  options: LocationOption[];
+  placeholder: string;
+  value: string;
+  valueByName?: boolean;
+}) {
+  return (
+    <label className="grid min-h-12 grid-cols-[112px_minmax(0,1fr)] items-center gap-3 border-b border-white/[0.07] py-2 text-[10px] font-medium tracking-[0.05em] text-[#969c99] uppercase">
+      <span>{label}</span>
+      <select
+        className="h-9 min-w-0 rounded-md border border-[#383c3a] bg-[#0f100f] px-2.5 text-[12px] normal-case tracking-normal text-[#eceeed] outline-none focus:border-[#777f7b] disabled:cursor-wait disabled:opacity-55"
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        value={value}
+      >
+        <option value="">{placeholder}</option>
+        {options.map((option) => {
+          const optionValue = valueByName ? option.name : option.iso_code ?? option.name;
+          return (
+            <option key={`${option.iso_code ?? ""}:${option.name}`} value={optionValue}>
+              {option.name}
+            </option>
+          );
+        })}
+      </select>
     </label>
   );
 }
