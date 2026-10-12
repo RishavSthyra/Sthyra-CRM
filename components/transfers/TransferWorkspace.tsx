@@ -22,7 +22,6 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -188,6 +187,37 @@ type TransferOptions = {
   users: EligibleUser[];
   teams: EligibleTeam[];
   templates: ChecklistTemplate[];
+  pagination: TransferPagination;
+};
+
+type TransferPagination = {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  transferableTotal?: number;
+  unavailableTotal?: number;
+};
+
+const EMPTY_PAGINATION: TransferPagination = {
+  page: 1,
+  limit: 10,
+  total: 0,
+  totalPages: 0,
+};
+
+type TransferSummary = {
+  active: number;
+  awaiting: number;
+  accepted: number;
+  overdue: number;
+};
+
+const EMPTY_TRANSFER_SUMMARY: TransferSummary = {
+  active: 0,
+  awaiting: 0,
+  accepted: 0,
+  overdue: 0,
 };
 
 type BulkChecklistItem = {
@@ -647,7 +677,16 @@ function BulkTransferDrawer({
       expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
       confirmed_checklist_item_ids: confirmed,
     }),
-    [expiresAt, notes, projectId, reason, recipientId, recipientKind, subjects, templateId],
+    [
+      expiresAt,
+      notes,
+      projectId,
+      reason,
+      recipientId,
+      recipientKind,
+      subjects,
+      templateId,
+    ],
   );
 
   async function review(event: FormEvent) {
@@ -694,7 +733,9 @@ function BulkTransferDrawer({
       });
       toast.success(`${result.transfers.length} transfers submitted`);
       if (result.blocked.length)
-        toast(`${result.blocked.length} lead${result.blocked.length === 1 ? " was" : "s were"} skipped`);
+        toast(
+          `${result.blocked.length} lead${result.blocked.length === 1 ? " was" : "s were"} skipped`,
+        );
       window.dispatchEvent(new Event("notifications:changed"));
       await onCreated(result);
     } catch (cause) {
@@ -706,9 +747,8 @@ function BulkTransferDrawer({
     }
   }
 
-  const requiredItems = preview?.checklist_items.filter(
-    (item) => item.is_required,
-  ) ?? [];
+  const requiredItems =
+    preview?.checklist_items.filter((item) => item.is_required) ?? [];
   const allRequiredConfirmed = requiredItems.every((item) =>
     confirmedItems.has(item.item_id),
   );
@@ -746,7 +786,10 @@ function BulkTransferDrawer({
         </header>
 
         {step === "configure" ? (
-          <form className="flex-1 overflow-y-auto bg-[#0b0b0b] p-6" onSubmit={review}>
+          <form
+            className="flex-1 overflow-y-auto bg-[#0b0b0b] p-6"
+            onSubmit={review}
+          >
             <div className="mb-6 flex flex-wrap gap-2">
               {subjects.slice(0, 6).map((subject) => (
                 <span
@@ -764,7 +807,9 @@ function BulkTransferDrawer({
             </div>
             <div className="grid grid-cols-2 gap-4 max-[560px]:grid-cols-1">
               <label>
-                <span className="mb-2 block text-xs text-[#9da5a1]">Send to</span>
+                <span className="mb-2 block text-xs text-[#9da5a1]">
+                  Send to
+                </span>
                 <div className="relative">
                   <select
                     className={selectClass}
@@ -781,7 +826,9 @@ function BulkTransferDrawer({
                 </div>
               </label>
               <label>
-                <span className="mb-2 block text-xs text-[#9da5a1]">Recipient</span>
+                <span className="mb-2 block text-xs text-[#9da5a1]">
+                  Recipient
+                </span>
                 <div className="relative">
                   <select
                     className={selectClass}
@@ -807,7 +854,9 @@ function BulkTransferDrawer({
                 </div>
               </label>
               <label>
-                <span className="mb-2 block text-xs text-[#9da5a1]">Checklist</span>
+                <span className="mb-2 block text-xs text-[#9da5a1]">
+                  Checklist
+                </span>
                 <div className="relative">
                   <select
                     className={selectClass}
@@ -816,7 +865,10 @@ function BulkTransferDrawer({
                   >
                     <option value="">Use project default</option>
                     {options.templates.map((template) => (
-                      <option key={template.template_id} value={template.template_id}>
+                      <option
+                        key={template.template_id}
+                        value={template.template_id}
+                      >
                         {template.template_name} · {template.item_count} items
                       </option>
                     ))}
@@ -825,7 +877,9 @@ function BulkTransferDrawer({
                 </div>
               </label>
               <label>
-                <span className="mb-2 block text-xs text-[#9da5a1]">Expires</span>
+                <span className="mb-2 block text-xs text-[#9da5a1]">
+                  Expires
+                </span>
                 <input
                   className={fieldClass}
                   min={toLocalDateTime(new Date(RENDER_TIMESTAMP))}
@@ -837,7 +891,9 @@ function BulkTransferDrawer({
             </div>
             <div className="mt-6 space-y-4">
               <label className="block">
-                <span className="mb-2 block text-xs text-[#9da5a1]">Reason *</span>
+                <span className="mb-2 block text-xs text-[#9da5a1]">
+                  Reason *
+                </span>
                 <input
                   className={fieldClass}
                   onChange={(event) => setReason(event.target.value)}
@@ -857,7 +913,11 @@ function BulkTransferDrawer({
               </label>
             </div>
             <div className="mt-8 flex justify-end gap-3">
-              <button className="h-10 px-4 text-sm text-[#9da5a1]" onClick={onClose} type="button">
+              <button
+                className="h-10 px-4 text-sm text-[#9da5a1]"
+                onClick={onClose}
+                type="button"
+              >
                 Cancel
               </button>
               <button
@@ -878,9 +938,16 @@ function BulkTransferDrawer({
                 ["Ready", preview.summary.eligible],
                 ["Blocked", preview.summary.blocked],
               ].map(([summaryLabel, value]) => (
-                <div className="rounded-xl border border-white/[0.08] bg-white/[0.025] p-4" key={summaryLabel}>
-                  <span className="text-[10px] text-[#737b77] uppercase">{summaryLabel}</span>
-                  <strong className="mt-1 block text-xl text-white">{value}</strong>
+                <div
+                  className="rounded-xl border border-white/[0.08] bg-white/[0.025] p-4"
+                  key={summaryLabel}
+                >
+                  <span className="text-[10px] text-[#737b77] uppercase">
+                    {summaryLabel}
+                  </span>
+                  <strong className="mt-1 block text-xl text-white">
+                    {value}
+                  </strong>
                 </div>
               ))}
             </div>
@@ -893,7 +960,9 @@ function BulkTransferDrawer({
                 <div className="mt-3 space-y-3">
                   {preview.blocked.map((lead) => (
                     <div className="text-xs" key={lead.lead_id}>
-                      <span className="text-[#d9ddda]">{lead.subject_name}</span>
+                      <span className="text-[#d9ddda]">
+                        {lead.subject_name}
+                      </span>
                       <span className="ml-2 text-[#a97c77]">{lead.reason}</span>
                     </div>
                   ))}
@@ -903,13 +972,18 @@ function BulkTransferDrawer({
 
             {preview.checklist_items.length > 0 && (
               <section className="mt-6">
-                <h3 className="text-sm font-semibold text-[#e4e8e5]">Confirm the batch checklist</h3>
+                <h3 className="text-sm font-semibold text-[#e4e8e5]">
+                  Confirm the batch checklist
+                </h3>
                 <p className="mt-1 text-xs text-[#737b77]">
                   Your confirmation is copied into every lead’s audit history.
                 </p>
                 <div className="mt-3 divide-y divide-white/[0.07] border-y border-white/[0.07]">
                   {preview.checklist_items.map((item) => (
-                    <label className="flex cursor-pointer items-start gap-3 py-4" key={item.item_id}>
+                    <label
+                      className="flex cursor-pointer items-start gap-3 py-4"
+                      key={item.item_id}
+                    >
                       <input
                         checked={confirmedItems.has(item.item_id)}
                         className="mt-0.5 size-4 accent-[#3eae8a]"
@@ -926,9 +1000,17 @@ function BulkTransferDrawer({
                       <span>
                         <span className="block text-sm text-[#dce1de]">
                           {item.label}
-                          {item.is_required && <i className="ml-2 text-[9px] not-italic text-[#d99b62] uppercase">Required</i>}
+                          {item.is_required && (
+                            <i className="ml-2 text-[9px] not-italic text-[#d99b62] uppercase">
+                              Required
+                            </i>
+                          )}
                         </span>
-                        {item.description && <span className="mt-1 block text-xs text-[#737b77]">{item.description}</span>}
+                        {item.description && (
+                          <span className="mt-1 block text-xs text-[#737b77]">
+                            {item.description}
+                          </span>
+                        )}
                       </span>
                     </label>
                   ))}
@@ -937,16 +1019,26 @@ function BulkTransferDrawer({
             )}
 
             <div className="mt-8 flex justify-end gap-3">
-              <button className="h-10 px-4 text-sm text-[#9da5a1]" onClick={() => setStep("configure")} type="button">
+              <button
+                className="h-10 px-4 text-sm text-[#9da5a1]"
+                onClick={() => setStep("configure")}
+                type="button"
+              >
                 Back
               </button>
               <button
                 className="flex h-10 items-center gap-2 rounded-lg bg-[#2b8d70] px-5 text-sm font-semibold text-white disabled:opacity-45"
-                disabled={busy || !preview.eligible.length || !allRequiredConfirmed}
+                disabled={
+                  busy || !preview.eligible.length || !allRequiredConfirmed
+                }
                 onClick={() => void createBatch()}
                 type="button"
               >
-                {busy ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}
+                {busy ? (
+                  <LoaderCircle className="size-4 animate-spin" />
+                ) : (
+                  <Send className="size-4" />
+                )}
                 Submit {preview.eligible.length} transfers
               </button>
             </div>
@@ -1098,7 +1190,11 @@ function BatchActionDialog({
           </label>
         )}
         <div className="mt-6 flex justify-end gap-3 border-t border-white/[0.08] pt-5">
-          <button className="h-10 px-4 text-sm text-[#9da5a1]" onClick={onClose} type="button">
+          <button
+            className="h-10 px-4 text-sm text-[#9da5a1]"
+            onClick={onClose}
+            type="button"
+          >
             Go back
           </button>
           <button
@@ -1129,13 +1225,22 @@ export function TransferWorkspace() {
     "leads",
   );
   const [leadOptions, setLeadOptions] = useState<TransferOptions | null>(null);
+  const [leadPage, setLeadPage] = useState(1);
   const [leadLoading, setLeadLoading] = useState(true);
   const [leadError, setLeadError] = useState<string | null>(null);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
-  const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
+  const [selectedLeadsById, setSelectedLeadsById] = useState<
+    Map<string, TransferSubject>
+  >(new Map());
   const [bulkOpen, setBulkOpen] = useState(false);
   const [batchFilter, setBatchFilter] = useState<string | null>(null);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
+  const [transferPage, setTransferPage] = useState(1);
+  const [transferPagination, setTransferPagination] =
+    useState<TransferPagination>(EMPTY_PAGINATION);
+  const [transferSummary, setTransferSummary] = useState<TransferSummary>(
+    EMPTY_TRANSFER_SUMMARY,
+  );
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1150,7 +1255,9 @@ export function TransferWorkspace() {
   const [recipientKind, setRecipientKind] = useState<"user" | "team">("user");
   const [recipientId, setRecipientId] = useState("");
   const [action, setAction] = useState<TransferAction | null>(null);
-  const [batchAction, setBatchAction] = useState<"accept" | "reject" | null>(null);
+  const [batchAction, setBatchAction] = useState<"accept" | "reject" | null>(
+    null,
+  );
   const [actionBusy, setActionBusy] = useState(false);
   const [checklistBusy, setChecklistBusy] = useState(false);
 
@@ -1216,12 +1323,15 @@ export function TransferWorkspace() {
   const loadTransfers = useCallback(
     async (quiet = false) => {
       if (!projectFilter) return;
-      const params = new URLSearchParams({ limit: "100" });
+      const params = new URLSearchParams({
+        limit: "10",
+        page: String(transferPage),
+      });
       if (projectFilter !== "all") params.set("project_id", projectFilter);
       if (typeFilter !== "all") params.set("subject_type", typeFilter);
-      if (statusFilter !== "all" && statusFilter !== "active")
-        params.set("status", statusFilter);
+      if (statusFilter !== "all") params.set("status", statusFilter);
       if (batchFilter) params.set("batch_id", batchFilter);
+      if (query.trim()) params.set("q", query.trim());
       const queryKey = params.toString();
       const background =
         quiet || lastLoadedTransfersQueryRef.current === queryKey;
@@ -1229,17 +1339,17 @@ export function TransferWorkspace() {
       else setLoading(true);
       setError(null);
       try {
-        const payload = await api<{ transfers?: Transfer[] }>(
-          `/api/transfers?${params.toString()}`,
-        );
+        const payload = await api<{
+          transfers?: Transfer[];
+          pagination?: TransferPagination;
+          summary?: TransferSummary;
+        }>(`/api/transfers?${params.toString()}`);
         const rows = payload.transfers ?? [];
         lastLoadedTransfersQueryRef.current = queryKey;
         if (batchFilter && rows.length) setSelectedId(rows[0].transfer_id);
-        setTransfers(
-          statusFilter === "active"
-            ? rows.filter((item) => ACTIVE_STATUSES.includes(item.status))
-            : rows,
-        );
+        setTransfers(rows);
+        setTransferPagination(payload.pagination ?? EMPTY_PAGINATION);
+        setTransferSummary(payload.summary ?? EMPTY_TRANSFER_SUMMARY);
       } catch (cause) {
         setError(
           cause instanceof Error ? cause.message : "Unable to load transfers",
@@ -1249,14 +1359,15 @@ export function TransferWorkspace() {
         setRefreshing(false);
       }
     },
-    [batchFilter, projectFilter, statusFilter, typeFilter],
+    [batchFilter, projectFilter, query, statusFilter, transferPage, typeFilter],
   );
 
   useEffect(() => {
+    if (workspaceTab !== "transfers") return;
     // Data fetching is intentionally triggered when the server-side filters change.
     const task = window.setTimeout(() => void loadTransfers(), 0);
     return () => window.clearTimeout(task);
-  }, [loadTransfers]);
+  }, [loadTransfers, workspaceTab]);
 
   const loadLeads = useCallback(
     async (quiet = false) => {
@@ -1269,8 +1380,15 @@ export function TransferWorkspace() {
       else setLeadLoading(true);
       setLeadError(null);
       try {
+        const params = new URLSearchParams({
+          project_id: projectFilter,
+          subject_type: "lead",
+          limit: "10",
+          page: String(leadPage),
+        });
+        if (query.trim()) params.set("q", query.trim());
         const payload = await api<TransferOptions>(
-          `/api/transfers/options?project_id=${projectFilter}&subject_type=lead`,
+          `/api/transfers/options?${params.toString()}`,
         );
         setLeadOptions(payload);
       } catch (cause) {
@@ -1282,14 +1400,15 @@ export function TransferWorkspace() {
         setRefreshing(false);
       }
     },
-    [projectFilter],
+    [leadPage, projectFilter, query],
   );
 
   useEffect(() => {
+    if (workspaceTab !== "leads") return;
     // The lead workspace follows the selected project.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadLeads();
-  }, [loadLeads]);
+  }, [loadLeads, workspaceTab]);
 
   const loadDetail = useCallback(async (transferId: string) => {
     setDetailLoading(true);
@@ -1341,72 +1460,23 @@ export function TransferWorkspace() {
     }
   }, [loadDetail, selectedId]);
 
-  const visibleTransfers = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return transfers;
-    return transfers.filter((transfer) =>
-      [
-        transfer.subject_name,
-        transfer.project_name,
-        recipientLabel(transfer),
-        transfer.reason,
-        transfer.status,
-      ]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(normalized)),
-    );
-  }, [query, transfers]);
-
-  const visibleLeads = useMemo(() => {
-    const rows = leadOptions?.subjects ?? [];
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return rows;
-    return rows.filter((lead) =>
-      [
-        lead.subject_name,
-        lead.email,
-        lead.phone_number,
-        lead.stage_name,
-        lead.status,
-        lead.owner_first_name,
-        lead.owner_last_name,
-        lead.owner_team_name,
-      ]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(normalized)),
-    );
-  }, [leadOptions, query]);
+  const visibleTransfers = transfers;
+  const visibleLeads = leadOptions?.subjects ?? [];
 
   const selectedLead = leadOptions?.subjects.find(
     (lead) => lead.subject_id === selectedLeadId,
   );
-  const selectedLeads = (leadOptions?.subjects ?? []).filter((lead) =>
-    selectedLeadIds.has(lead.subject_id),
-  );
+  const selectedLeads = Array.from(selectedLeadsById.values());
   const selectableVisibleLeads = visibleLeads.filter(
     (lead) => !lead.active_transfer_id,
   );
   const allVisibleLeadsSelected =
     selectableVisibleLeads.length > 0 &&
-    selectableVisibleLeads.every((lead) => selectedLeadIds.has(lead.subject_id));
+    selectableVisibleLeads.every((lead) =>
+      selectedLeadsById.has(lead.subject_id),
+    );
 
-  const metrics = useMemo(
-    () => ({
-      active: transfers.filter((item) => ACTIVE_STATUSES.includes(item.status))
-        .length,
-      awaiting: transfers.filter((item) => item.status === "submitted").length,
-      accepted: transfers.filter((item) =>
-        ["accepted", "force_assigned"].includes(item.status),
-      ).length,
-      overdue: transfers.filter(
-        (item) =>
-          ACTIVE_STATUSES.includes(item.status) &&
-          item.expires_at &&
-          new Date(item.expires_at).getTime() < RENDER_TIMESTAMP,
-      ).length,
-    }),
-    [transfers],
-  );
+  const metrics = transferSummary;
 
   const admin = Boolean(context?.can_view_all_projects);
   const requester = Boolean(
@@ -1455,14 +1525,11 @@ export function TransferWorkspace() {
     if (!detail?.batch_id || !batchAction) return;
     setActionBusy(true);
     try {
-      await api(
-        `/api/transfer-batches/${detail.batch_id}/${batchAction}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(reason ? { reason } : {}),
-        },
-      );
+      await api(`/api/transfer-batches/${detail.batch_id}/${batchAction}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reason ? { reason } : {}),
+      });
       toast.success(
         `${detail.batch_pending_count ?? 0} transfers ${batchAction === "accept" ? "accepted" : "rejected"}`,
       );
@@ -1580,7 +1647,9 @@ export function TransferWorkspace() {
               onClick={() => {
                 setWorkspaceTab(tab as "leads" | "transfers");
                 setQuery("");
-                setSelectedLeadIds(new Set());
+                setLeadPage(1);
+                setTransferPage(1);
+                setSelectedLeadsById(new Map());
                 setBulkOpen(false);
                 if (tab === "leads" && projectFilter === "all") {
                   setProjectFilter(
@@ -1604,6 +1673,7 @@ export function TransferWorkspace() {
                   className="font-semibold text-[#74d4b5] hover:text-white"
                   onClick={() => {
                     setBatchFilter(null);
+                    setTransferPage(1);
                     setSelectedId(null);
                   }}
                   type="button"
@@ -1650,7 +1720,10 @@ export function TransferWorkspace() {
                 <Search className="absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-[#777]" />
                 <input
                   className="h-11 w-full rounded-[10px] border border-[#2c2c2c] bg-[#111] pr-3 pl-10 text-sm text-white outline-none transition placeholder:text-[#666] focus:border-[#50c4a2]/70"
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => {
+                    setQuery(event.target.value);
+                    setTransferPage(1);
+                  }}
                   placeholder="Search record, project, recipient or reason"
                   value={query}
                 />
@@ -1660,6 +1733,7 @@ export function TransferWorkspace() {
                   className="h-11 min-w-44 appearance-none rounded-[10px] border border-[#2c2c2c] bg-[#191919] pr-9 pl-3 text-xs text-[#d7dcda] outline-none transition focus:border-[#50c4a2]/70 max-[650px]:w-full"
                   onChange={(event) => {
                     setProjectFilter(event.target.value);
+                    setTransferPage(1);
                     if (event.target.value !== "all")
                       window.localStorage.setItem(
                         "sthyra-project-id",
@@ -1682,7 +1756,10 @@ export function TransferWorkspace() {
               <label className="relative max-[650px]:w-full">
                 <select
                   className="h-11 min-w-32 appearance-none rounded-[10px] border border-[#2c2c2c] bg-[#191919] pr-9 pl-3 text-xs text-[#d7dcda] outline-none transition focus:border-[#50c4a2]/70 max-[650px]:w-full"
-                  onChange={(event) => setTypeFilter(event.target.value)}
+                  onChange={(event) => {
+                    setTypeFilter(event.target.value);
+                    setTransferPage(1);
+                  }}
                   value={typeFilter}
                 >
                   <option value="all">All records</option>
@@ -1694,7 +1771,10 @@ export function TransferWorkspace() {
               <label className="relative max-[650px]:w-full">
                 <select
                   className="h-11 min-w-36 appearance-none rounded-[10px] border border-[#2c2c2c] bg-[#191919] pr-9 pl-3 text-xs text-[#d7dcda] outline-none transition focus:border-[#50c4a2]/70 max-[650px]:w-full"
-                  onChange={(event) => setStatusFilter(event.target.value)}
+                  onChange={(event) => {
+                    setStatusFilter(event.target.value);
+                    setTransferPage(1);
+                  }}
                   value={statusFilter}
                 >
                   <option value="active">Active</option>
@@ -1718,7 +1798,7 @@ export function TransferWorkspace() {
                   Ownership transfers
                 </strong>
                 <span className="text-[11px] text-[#777]">
-                  {visibleTransfers.length} records
+                  {transferPagination.total} records
                 </span>
               </header>
               {loading ? (
@@ -1820,6 +1900,40 @@ export function TransferWorkspace() {
                   </table>
                 </div>
               )}
+              {!loading && !error && transferPagination.total > 0 && (
+                <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#2c2c2c] bg-[#111] px-4 py-3 text-xs text-[#858c88]">
+                  <span>
+                    {visibleTransfers.length} of {transferPagination.total}{" "}
+                    transfers
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <button
+                      className="rounded-lg border border-[#343434] px-3 py-2 text-[#b8bdbb] transition hover:bg-[#202020] disabled:cursor-not-allowed disabled:opacity-35"
+                      disabled={transferPagination.page <= 1}
+                      onClick={() =>
+                        setTransferPage((page) => Math.max(1, page - 1))
+                      }
+                      type="button"
+                    >
+                      Previous
+                    </button>
+                    <span>
+                      Page {transferPagination.page} of{" "}
+                      {Math.max(1, transferPagination.totalPages)}
+                    </span>
+                    <button
+                      className="rounded-lg border border-[#343434] px-3 py-2 text-[#b8bdbb] transition hover:bg-[#202020] disabled:cursor-not-allowed disabled:opacity-35"
+                      disabled={
+                        transferPagination.page >= transferPagination.totalPages
+                      }
+                      onClick={() => setTransferPage((page) => page + 1)}
+                      type="button"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </footer>
+              )}
             </section>
           </>
         ) : (
@@ -1829,7 +1943,10 @@ export function TransferWorkspace() {
                 <Search className="absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-[#777]" />
                 <input
                   className="h-11 w-full rounded-[10px] border border-[#2c2c2c] bg-[#111] pr-3 pl-10 text-sm text-white outline-none transition placeholder:text-[#666] focus:border-[#50c4a2]/70"
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => {
+                    setQuery(event.target.value);
+                    setLeadPage(1);
+                  }}
                   placeholder="Search leads by name, email, stage or owner"
                   value={query}
                 />
@@ -1839,8 +1956,9 @@ export function TransferWorkspace() {
                   className="h-11 min-w-52 appearance-none rounded-[10px] border border-[#2c2c2c] bg-[#191919] pr-9 pl-3 text-xs text-[#d7dcda] outline-none transition focus:border-[#50c4a2]/70 max-[650px]:w-full"
                   onChange={(event) => {
                     setProjectFilter(event.target.value);
+                    setLeadPage(1);
                     setSelectedLeadId(null);
-                    setSelectedLeadIds(new Set());
+                    setSelectedLeadsById(new Map());
                     window.localStorage.setItem(
                       "sthyra-project-id",
                       event.target.value,
@@ -1861,30 +1979,36 @@ export function TransferWorkspace() {
             <section className="overflow-hidden rounded-2xl border border-[#2c2c2c] bg-[#080808]">
               <header className="flex items-center justify-between gap-4 border-b border-[#2c2c2c] bg-[#191919] px-4 py-3 text-xs text-[#888]">
                 <span>
-                  {selectedLeadIds.size
-                    ? `${selectedLeadIds.size} leads selected`
+                  {selectedLeadsById.size
+                    ? `${selectedLeadsById.size} leads selected`
                     : "Select one lead, or choose several for a bulk handoff."}
                 </span>
                 <div className="flex items-center gap-3">
-                  {selectedLeadIds.size > 1 && (
+                  {selectedLeadsById.size > 1 && (
                     <button
                       className="flex h-8 items-center gap-2 rounded-lg bg-[#2b8d70] px-3 text-xs font-semibold text-white hover:bg-[#34a482]"
                       onClick={() => setBulkOpen(true)}
                       type="button"
                     >
-                      <ListChecks className="size-3.5" /> Transfer {selectedLeadIds.size}
+                      <ListChecks className="size-3.5" /> Transfer{" "}
+                      {selectedLeadsById.size}
                     </button>
                   )}
-                  {selectedLeadIds.size > 0 && (
+                  {selectedLeadsById.size > 0 && (
                     <button
                       className="text-xs text-[#8e9692] hover:text-white"
-                      onClick={() => setSelectedLeadIds(new Set())}
+                      onClick={() => setSelectedLeadsById(new Map())}
                       type="button"
                     >
                       Clear
                     </button>
                   )}
-                  <span>{visibleLeads.length} leads</span>
+                  <span>
+                    {leadOptions?.pagination.transferableTotal ?? 0}{" "}
+                    transferable
+                    {(leadOptions?.pagination.unavailableTotal ?? 0) > 0 &&
+                      ` · ${leadOptions?.pagination.unavailableTotal} already in transfer`}
+                  </span>
                 </div>
               </header>
 
@@ -1929,10 +2053,11 @@ export function TransferWorkspace() {
                             checked={allVisibleLeadsSelected}
                             className="size-4 accent-[#3eae8a]"
                             onChange={(event) => {
-                              setSelectedLeadIds((current) => {
-                                const next = new Set(current);
+                              setSelectedLeadsById((current) => {
+                                const next = new Map(current);
                                 selectableVisibleLeads.forEach((lead) => {
-                                  if (event.target.checked) next.add(lead.subject_id);
+                                  if (event.target.checked)
+                                    next.set(lead.subject_id, lead);
                                   else next.delete(lead.subject_id);
                                 });
                                 return next;
@@ -1951,7 +2076,7 @@ export function TransferWorkspace() {
                     <tbody className="divide-y divide-[#2c2c2c]">
                       {visibleLeads.map((lead) => (
                         <tr
-                          className={`h-[72px] cursor-pointer transition hover:bg-[#101010] ${selectedLeadIds.has(lead.subject_id) ? "bg-[#0f1d18]" : ""}`}
+                          className={`h-[72px] cursor-pointer transition hover:bg-[#101010] ${selectedLeadsById.has(lead.subject_id) ? "bg-[#0f1d18]" : ""}`}
                           key={lead.subject_id}
                           onClick={() => {
                             if (lead.active_transfer_id) {
@@ -1966,14 +2091,15 @@ export function TransferWorkspace() {
                           <td className="px-4 py-4">
                             <input
                               aria-label={`Select ${lead.subject_name || "lead"}`}
-                              checked={selectedLeadIds.has(lead.subject_id)}
+                              checked={selectedLeadsById.has(lead.subject_id)}
                               className="size-4 accent-[#3eae8a] disabled:opacity-30"
                               disabled={Boolean(lead.active_transfer_id)}
                               onClick={(event) => event.stopPropagation()}
                               onChange={(event) => {
-                                setSelectedLeadIds((current) => {
-                                  const next = new Set(current);
-                                  if (event.target.checked) next.add(lead.subject_id);
+                                setSelectedLeadsById((current) => {
+                                  const next = new Map(current);
+                                  if (event.target.checked)
+                                    next.set(lead.subject_id, lead);
                                   else next.delete(lead.subject_id);
                                   return next;
                                 });
@@ -2029,26 +2155,67 @@ export function TransferWorkspace() {
                   </table>
                 </div>
               )}
+              {!leadLoading &&
+                !leadError &&
+                (leadOptions?.pagination.total ?? 0) > 0 && (
+                  <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#2c2c2c] bg-[#111] px-4 py-3 text-xs text-[#858c88]">
+                    <span>
+                      {visibleLeads.length} of{" "}
+                      {leadOptions?.pagination.total ?? 0} leads
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <button
+                        className="rounded-lg border border-[#343434] px-3 py-2 text-[#b8bdbb] transition hover:bg-[#202020] disabled:cursor-not-allowed disabled:opacity-35"
+                        disabled={(leadOptions?.pagination.page ?? 1) <= 1}
+                        onClick={() =>
+                          setLeadPage((page) => Math.max(1, page - 1))
+                        }
+                        type="button"
+                      >
+                        Previous
+                      </button>
+                      <span>
+                        Page {leadOptions?.pagination.page ?? 1} of{" "}
+                        {Math.max(1, leadOptions?.pagination.totalPages ?? 0)}
+                      </span>
+                      <button
+                        className="rounded-lg border border-[#343434] px-3 py-2 text-[#b8bdbb] transition hover:bg-[#202020] disabled:cursor-not-allowed disabled:opacity-35"
+                        disabled={
+                          (leadOptions?.pagination.page ?? 1) >=
+                          (leadOptions?.pagination.totalPages ?? 0)
+                        }
+                        onClick={() => setLeadPage((page) => page + 1)}
+                        type="button"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </footer>
+                )}
             </section>
           </>
         )}
       </section>
 
-      {bulkOpen && leadOptions && selectedLeads.length > 1 && projectFilter !== "all" && (
-        <BulkTransferDrawer
-          onClose={() => setBulkOpen(false)}
-          onCreated={async (result) => {
-            setBulkOpen(false);
-            setSelectedLeadIds(new Set());
-            setSelectedLeadId(null);
-            setBatchFilter(result.batch.batch_id);
-            setWorkspaceTab("transfers");
-          }}
-          options={leadOptions}
-          projectId={Number(projectFilter)}
-          subjects={selectedLeads}
-        />
-      )}
+      {bulkOpen &&
+        leadOptions &&
+        selectedLeads.length > 1 &&
+        projectFilter !== "all" && (
+          <BulkTransferDrawer
+            onClose={() => setBulkOpen(false)}
+            onCreated={async (result) => {
+              setBulkOpen(false);
+              setSelectedLeadsById(new Map());
+              setSelectedLeadId(null);
+              setBatchFilter(result.batch.batch_id);
+              setTransferPage(1);
+              setWorkspaceTab("transfers");
+            }}
+            options={leadOptions}
+            projectId={Number(projectFilter)}
+            subjects={selectedLeads}
+          />
+        )}
 
       {selectedLead && leadOptions && (
         <CreateTransferDrawer
@@ -2152,7 +2319,8 @@ export function TransferWorkspace() {
                               onClick={() => setBatchAction("accept")}
                               type="button"
                             >
-                              <ListChecks className="size-3.5" /> Accept all {detail.batch_pending_count}
+                              <ListChecks className="size-3.5" /> Accept all{" "}
+                              {detail.batch_pending_count}
                             </button>
                           )}
                         {recipient && (

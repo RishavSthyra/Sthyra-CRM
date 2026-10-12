@@ -69,13 +69,17 @@ export async function GET(request: NextRequest) {
       "expired",
       "force_assigned",
     ];
-    if (!statuses.includes(status))
+    if (status !== "active" && !statuses.includes(status))
       return NextResponse.json(
         { error: "Invalid transfer status" },
         { status: 400 },
       );
-    values.push(status);
-    filters.push(`tr.status=$${values.length}`);
+    if (status === "active") {
+      filters.push("tr.status IN ('draft','validated','submitted')");
+    } else {
+      values.push(status);
+      filters.push(`tr.status=$${values.length}`);
+    }
   }
   const subjectType = request.nextUrl.searchParams.get("subject_type");
   if (subjectType) {
@@ -106,10 +110,52 @@ export async function GET(request: NextRequest) {
     values.push(id);
     filters.push(`tr.${field}=$${values.length}`);
   }
+  const search = request.nextUrl.searchParams.get("q")?.trim() ?? "";
+  if (search.length > 200)
+    return NextResponse.json(
+      { error: "q must be at most 200 characters" },
+      { status: 400 },
+    );
+  if (search) {
+    values.push(`%${search}%`);
+    const parameter = `$${values.length}`;
+    filters.push(`(
+      tr.subject_name_snapshot ILIKE ${parameter}
+      OR tr.reason ILIKE ${parameter}
+      OR tr.status ILIKE ${parameter}
+      OR EXISTS (
+        SELECT 1 FROM projects search_project
+        WHERE search_project.project_id=tr.project_id
+          AND search_project.project_name ILIKE ${parameter}
+      )
+      OR EXISTS (
+        SELECT 1 FROM users search_recipient
+        WHERE search_recipient.user_id=tr.to_owner_user_id
+          AND BTRIM(CONCAT_WS(' ', search_recipient.first_name, search_recipient.last_name)) ILIKE ${parameter}
+      )
+      OR EXISTS (
+        SELECT 1 FROM teams search_team
+        WHERE search_team.team_id=tr.to_team_id
+          AND search_team.name ILIKE ${parameter}
+      )
+    )`);
+  }
   const where = `WHERE ${filters.join(" AND ")}`;
   try {
     const count = await pool.query(
-      `SELECT COUNT(*)::integer AS total FROM transfers tr ${where}`,
+      `SELECT COUNT(*)::integer AS total,
+         COUNT(*) FILTER (
+           WHERE tr.status IN ('draft','validated','submitted')
+         )::integer AS active,
+         COUNT(*) FILTER (WHERE tr.status='submitted')::integer AS awaiting,
+         COUNT(*) FILTER (
+           WHERE tr.status IN ('accepted','force_assigned')
+         )::integer AS accepted,
+         COUNT(*) FILTER (
+           WHERE tr.status IN ('draft','validated','submitted')
+             AND tr.expires_at < NOW()
+         )::integer AS overdue
+       FROM transfers tr ${where}`,
       values,
     );
     const listValues = [...values, pagination.limit, pagination.offset];
@@ -151,6 +197,12 @@ export async function GET(request: NextRequest) {
         limit: pagination.limit,
         total,
         totalPages: Math.ceil(total / pagination.limit),
+      },
+      summary: {
+        active: Number(count.rows[0]?.active ?? 0),
+        awaiting: Number(count.rows[0]?.awaiting ?? 0),
+        accepted: Number(count.rows[0]?.accepted ?? 0),
+        overdue: Number(count.rows[0]?.overdue ?? 0),
       },
     });
   } catch (error) {

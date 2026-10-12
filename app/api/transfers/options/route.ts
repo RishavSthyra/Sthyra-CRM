@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { QueryResult } from "pg";
 import pool from "@/lib/db";
 import { requireLeadVisibility } from "@/lib/leadVisibility";
 import { canAccessProject } from "@/lib/projectAccess";
+import { parsePagination } from "@/utils/parsePagination";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 
 export async function GET(request: NextRequest) {
@@ -22,12 +24,65 @@ export async function GET(request: NextRequest) {
       { error: "subject_type must be lead or opportunity" },
       { status: 400 },
     );
+  const pagination = parsePagination(request.nextUrl.searchParams, 10, 100);
+  if (!pagination.ok)
+    return NextResponse.json({ error: pagination.error }, { status: 400 });
+  const search = request.nextUrl.searchParams.get("q")?.trim() ?? "";
+  if (search.length > 200)
+    return NextResponse.json(
+      { error: "q must be at most 200 characters" },
+      { status: 400 },
+    );
 
   try {
-    const subjects =
-      subjectType === "lead"
-        ? await pool.query(
-            `SELECT l.lead_id AS subject_id,
+    let subjects: QueryResult;
+    let total = 0;
+    let transferableTotal = 0;
+    if (subjectType === "lead") {
+      const values: unknown[] = [
+        projectId,
+        scope.context.leadVisibility.canViewProjectWide,
+        scope.context.leadVisibility.userId,
+        scope.context.leadVisibility.teamId,
+      ];
+      const filters = [
+        "l.project_id=$1",
+        "l.status IN ('active','nurture')",
+        "($2::boolean=TRUE OR l.current_owner_user_id=$3 OR l.current_team_id=$4)",
+      ];
+      if (search) {
+        values.push(`%${search}%`);
+        const parameter = `$${values.length}`;
+        filters.push(`(
+          BTRIM(CONCAT_WS(' ', c.first_name, c.last_name)) ILIKE ${parameter}
+          OR c.email ILIKE ${parameter}
+          OR c.phone_number ILIKE ${parameter}
+          OR stage.stage_name ILIKE ${parameter}
+          OR BTRIM(CONCAT_WS(' ', owner.first_name, owner.last_name)) ILIKE ${parameter}
+          OR owner_team.name ILIKE ${parameter}
+        )`);
+      }
+      const where = `WHERE ${filters.join(" AND ")}`;
+      const count = await pool.query(
+        `SELECT COUNT(*)::integer AS total,
+           COUNT(*) FILTER (WHERE NOT EXISTS (
+             SELECT 1 FROM transfers transfer
+             WHERE transfer.lead_id=l.lead_id
+               AND transfer.status IN ('draft','validated','submitted')
+           ))::integer AS transferable_total
+         FROM leads l
+         JOIN contacts c ON c.contact_id=l.contact_id
+         LEFT JOIN project_lead_stages stage ON stage.stage_id=l.stage_id
+         LEFT JOIN users owner ON owner.user_id=l.current_owner_user_id
+         LEFT JOIN teams owner_team ON owner_team.team_id=l.current_team_id
+         ${where}`,
+        values,
+      );
+      total = Number(count.rows[0]?.total ?? 0);
+      transferableTotal = Number(count.rows[0]?.transferable_total ?? 0);
+      const listValues = [...values, pagination.limit, pagination.offset];
+      subjects = await pool.query(
+        `SELECT l.lead_id AS subject_id,
                BTRIM(CONCAT_WS(' ', c.first_name, c.last_name)) AS subject_name,
                c.email, c.phone_number, l.status, l.temperature,
                stage.stage_name,
@@ -49,57 +104,71 @@ export async function GET(request: NextRequest) {
                  AND transfer.status IN ('draft','validated','submitted')
                LIMIT 1
              ) active_transfer ON TRUE
-             WHERE l.project_id=$1 AND l.status IN ('active','nurture')
-               AND (
-                 $2::boolean=TRUE
-                 OR l.current_owner_user_id=$3
-                 OR l.current_team_id=$4
-               )
+             ${where}
              ORDER BY l.updated_at DESC, l.lead_id DESC
-             LIMIT 200`,
-            [
-              projectId,
-              scope.context.leadVisibility.canViewProjectWide,
-              scope.context.leadVisibility.userId,
-              scope.context.leadVisibility.teamId,
-            ],
-          )
-        : await pool.query(
-            `SELECT o.opportunity_id AS subject_id,
+             LIMIT $${listValues.length - 1} OFFSET $${listValues.length}`,
+        listValues,
+      );
+    } else {
+      const values: unknown[] = [
+        projectId,
+        scope.context.leadVisibility.canViewProjectWide,
+        scope.context.leadVisibility.userId,
+        scope.context.leadVisibility.teamId,
+      ];
+      const filters = [
+        "o.project_id=$1",
+        "o.status='open'",
+        "($2::boolean=TRUE OR o.current_owner_user_id=$3 OR o.current_team_id=$4)",
+        `NOT EXISTS (
+          SELECT 1 FROM transfers transfer
+          WHERE transfer.opportunity_id=o.opportunity_id
+            AND transfer.status IN ('draft','validated','submitted')
+        )`,
+      ];
+      if (search) {
+        values.push(`%${search}%`);
+        const parameter = `$${values.length}`;
+        filters.push(`(
+          o.opportunity_name ILIKE ${parameter}
+          OR c.email ILIKE ${parameter}
+          OR stage.stage_name ILIKE ${parameter}
+          OR BTRIM(CONCAT_WS(' ', owner.first_name, owner.last_name)) ILIKE ${parameter}
+          OR owner_team.name ILIKE ${parameter}
+        )`);
+      }
+      const where = `WHERE ${filters.join(" AND ")}`;
+      const joins = `
+        FROM opportunities o
+        JOIN contacts c ON c.contact_id=o.contact_id
+        LEFT JOIN project_opportunity_stages stage
+          ON stage.project_id=o.project_id
+         AND stage.stage_key=o.stage_key
+         AND stage.is_active=TRUE
+        LEFT JOIN users owner ON owner.user_id=o.current_owner_user_id
+        LEFT JOIN teams owner_team ON owner_team.team_id=o.current_team_id`;
+      const count = await pool.query(
+        `SELECT COUNT(*)::integer AS total ${joins} ${where}`,
+        values,
+      );
+      total = Number(count.rows[0]?.total ?? 0);
+      transferableTotal = total;
+      const listValues = [...values, pagination.limit, pagination.offset];
+      subjects = await pool.query(
+        `SELECT o.opportunity_id AS subject_id,
                o.opportunity_name AS subject_name, c.email, o.status,
                stage.stage_name,
                o.current_owner_user_id, o.current_team_id,
                owner.first_name AS owner_first_name,
                owner.last_name AS owner_last_name,
                owner_team.name AS owner_team_name
-             FROM opportunities o
-             JOIN contacts c ON c.contact_id=o.contact_id
-             LEFT JOIN project_opportunity_stages stage
-               ON stage.project_id=o.project_id
-              AND stage.stage_key=o.stage_key
-              AND stage.is_active=TRUE
-             LEFT JOIN users owner ON owner.user_id=o.current_owner_user_id
-             LEFT JOIN teams owner_team ON owner_team.team_id=o.current_team_id
-             WHERE o.project_id=$1 AND o.status='open'
-               AND (
-                 $2::boolean=TRUE
-                 OR o.current_owner_user_id=$3
-                 OR o.current_team_id=$4
-               )
-               AND NOT EXISTS (
-                 SELECT 1 FROM transfers transfer
-                 WHERE transfer.opportunity_id=o.opportunity_id
-                   AND transfer.status IN ('draft','validated','submitted')
-               )
+             ${joins}
+             ${where}
              ORDER BY o.updated_at DESC, o.opportunity_id DESC
-             LIMIT 200`,
-            [
-              projectId,
-              scope.context.leadVisibility.canViewProjectWide,
-              scope.context.leadVisibility.userId,
-              scope.context.leadVisibility.teamId,
-            ],
-          );
+             LIMIT $${listValues.length - 1} OFFSET $${listValues.length}`,
+        listValues,
+      );
+    }
 
     const [users, teams, templates] = await Promise.all([
       pool.query(
@@ -161,6 +230,14 @@ export async function GET(request: NextRequest) {
       users: users.rows,
       teams: teams.rows,
       templates: templates.rows,
+      pagination: {
+        page: pagination.page,
+        limit: pagination.limit,
+        total,
+        totalPages: Math.ceil(total / pagination.limit),
+        transferableTotal,
+        unavailableTotal: total - transferableTotal,
+      },
     });
   } catch (error) {
     console.error("Failed to retrieve transfer options", error);
