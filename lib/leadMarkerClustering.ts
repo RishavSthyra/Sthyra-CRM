@@ -16,6 +16,11 @@ export type LeadClusterTotals = {
   leads: number;
 };
 
+export function clusterZoomForMapZoom(zoom: number): number {
+  if (!Number.isFinite(zoom)) return 0;
+  return Math.max(0, Math.round(zoom));
+}
+
 export function buildLeadClusterIndex(points: ClusterableLead[]) {
   const features: Array<Feature<Point, LeadClusterPointProperties>> = points.map(
     (point, pointIndex) => ({
@@ -32,9 +37,9 @@ export function buildLeadClusterIndex(points: ClusterableLead[]) {
   );
 
   return new Supercluster<LeadClusterPointProperties, LeadClusterTotals>({
-    maxZoom: 11,
+    maxZoom: 13,
     minPoints: 2,
-    radius: 64,
+    radius: 48,
     map: (properties) => ({ leads: properties.leads }),
     reduce: (total, properties) => {
       total.leads += properties.leads;

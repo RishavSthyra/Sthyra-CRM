@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   FeatureCollection,
   Geometry,
@@ -25,6 +25,7 @@ import MapView, {
   Source,
   type MapLayerMouseEvent,
   type MapRef,
+  type ViewStateChangeEvent,
 } from "@vis.gl/react-maplibre";
 import {
   addLeadCountsToBoundaries,
@@ -33,6 +34,7 @@ import {
 } from "@/lib/leadBoundaryData";
 import {
   buildLeadClusterIndex,
+  clusterZoomForMapZoom,
   type LeadClusterPointProperties,
 } from "@/lib/leadMarkerClustering";
 
@@ -225,6 +227,13 @@ export function LeadGeographyMap({
   const mapRef = useRef<MapRef>(null);
   const districtCache = useRef(new Map<string, DistrictFeature[]>());
   const districtRequest = useRef(0);
+  const viewportFrame = useRef<number | null>(null);
+  const viewportClusterZoom = useRef(clusterZoomForMapZoom(1.25));
+  const viewportLevel = useRef(levelForZoom(1.25));
+  const pendingViewport = useRef<{
+    bounds: VisibleBounds;
+    zoom: number;
+  } | null>(null);
   const [zoom, setZoom] = useState(1.25);
   const [visibleBounds, setVisibleBounds] = useState<VisibleBounds>([
     -180,
@@ -260,9 +269,10 @@ export function LeadGeographyMap({
     () => buildLeadClusterIndex(points),
     [points],
   );
+  const clusterZoom = clusterZoomForMapZoom(zoom);
   const visibleMarkers = useMemo(
-    () => clusterIndex.getClusters(visibleBounds, Math.floor(zoom)),
-    [clusterIndex, visibleBounds, zoom],
+    () => clusterIndex.getClusters(visibleBounds, clusterZoom),
+    [clusterIndex, clusterZoom, visibleBounds],
   );
   const countryAreas = useMemo(
     () =>
@@ -291,6 +301,44 @@ export function LeadGeographyMap({
       ),
     [activeState, districts, points],
   );
+
+  useEffect(
+    () => () => {
+      if (viewportFrame.current !== null) {
+        cancelAnimationFrame(viewportFrame.current);
+      }
+    },
+    [],
+  );
+
+  function syncViewport(event: ViewStateChangeEvent) {
+    const nextClusterZoom = clusterZoomForMapZoom(event.viewState.zoom);
+    const nextLevel = levelForZoom(event.viewState.zoom);
+    const final = event.type === "moveend";
+    if (
+      !final &&
+      nextClusterZoom === viewportClusterZoom.current &&
+      nextLevel === viewportLevel.current
+    ) {
+      return;
+    }
+
+    pendingViewport.current = {
+      bounds: visibleMapBounds(event.target),
+      zoom: event.viewState.zoom,
+    };
+    if (viewportFrame.current !== null) return;
+
+    viewportFrame.current = requestAnimationFrame(() => {
+      viewportFrame.current = null;
+      const next = pendingViewport.current;
+      if (!next) return;
+      viewportClusterZoom.current = clusterZoomForMapZoom(next.zoom);
+      viewportLevel.current = levelForZoom(next.zoom);
+      setZoom(next.zoom);
+      setVisibleBounds(next.bounds);
+    });
+  }
 
   async function loadStateDistricts(stateName: string) {
     const key = normalizeBoundaryName(stateName);
@@ -397,10 +445,8 @@ export function LeadGeographyMap({
           maxZoom={15}
           minZoom={1}
           onClick={handleMapClick}
-          onMoveEnd={(event) => {
-            setZoom(event.viewState.zoom);
-            setVisibleBounds(visibleMapBounds(event.target));
-          }}
+          onMove={syncViewport}
+          onMoveEnd={syncViewport}
           ref={mapRef}
           reuseMaps
           style={{ height: "100%", minHeight: 430, width: "100%" }}
@@ -423,7 +469,10 @@ export function LeadGeographyMap({
             if ("cluster" in marker.properties && marker.properties.cluster) {
               const clusterId = marker.properties.cluster_id;
               const leadTotal = marker.properties.leads;
-              const size = Math.min(52, 30 + Math.round(Math.log2(leadTotal + 1) * 3));
+              const size = Math.min(
+                42,
+                28 + Math.round(Math.log2(leadTotal + 1) * 2),
+              );
               return (
                 <Marker
                   anchor="center"
@@ -433,13 +482,13 @@ export function LeadGeographyMap({
                 >
                   <button
                     aria-label={`${leadTotal} grouped leads. Zoom in to expand.`}
-                    className="grid place-items-center rounded-full border border-black bg-white text-[10px] font-semibold text-black shadow-[0_0_0_4px_rgba(255,255,255,0.18),0_0_22px_rgba(255,255,255,0.5)] transition-transform hover:scale-110 focus-visible:scale-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                    className="relative isolate grid place-items-center rounded-full border border-white/25 bg-[#111315]/95 text-[10px] leading-none font-medium tracking-[-0.01em] text-white shadow-[0_5px_16px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-sm transition-[transform,border-color,background-color] duration-150 before:absolute before:inset-[3px] before:-z-10 before:rounded-full before:border before:border-white/[0.06] hover:scale-105 hover:border-white/45 hover:bg-[#1a1d1f] focus-visible:scale-105 focus-visible:border-white/55 focus-visible:outline-none"
                     onClick={(event) => {
                       event.stopPropagation();
                       const expansionZoom = clusterIndex.getClusterExpansionZoom(clusterId);
                       mapRef.current?.easeTo({
                         center: [longitude, latitude],
-                        duration: 700,
+                        duration: 480,
                         zoom: Math.min(12, expansionZoom),
                       });
                     }}
@@ -466,7 +515,7 @@ export function LeadGeographyMap({
               >
                 <button
                   aria-label={`${point.label}: ${point.leads} leads`}
-                  className="rounded-full border border-black/80 bg-white shadow-[0_0_0_3px_rgba(255,255,255,0.2),0_0_18px_rgba(255,255,255,0.65)] transition-transform hover:scale-125 focus-visible:scale-125 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                  className="rounded-full border border-white/55 bg-[#17191b] shadow-[0_3px_10px_rgba(0,0,0,0.5),inset_0_0_0_2px_rgba(255,255,255,0.12)] transition-[transform,border-color,background-color] duration-150 hover:scale-115 hover:border-white/80 hover:bg-[#24272a] focus-visible:scale-115 focus-visible:border-white focus-visible:outline-none"
                   onClick={(event) => {
                     event.stopPropagation();
                     focusPoint(point);

@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildLeadClusterIndex } from "../lib/leadMarkerClustering";
+import {
+  buildLeadClusterIndex,
+  clusterZoomForMapZoom,
+} from "../lib/leadMarkerClustering";
+
+test("cluster zoom follows fast camera movement without waiting for move end", () => {
+  assert.equal(clusterZoomForMapZoom(2.49), 2);
+  assert.equal(clusterZoomForMapZoom(2.5), 3);
+  assert.equal(clusterZoomForMapZoom(8.8), 9);
+});
 
 test("nearby map locations group using the total number of leads", () => {
   const index = buildLeadClusterIndex([
