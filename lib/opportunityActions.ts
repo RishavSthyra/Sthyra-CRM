@@ -14,6 +14,10 @@ import { isObject } from "@/utils/isObject";
 import { validateText } from "@/utils/validateText";
 import { queueMarketingConversion } from "@/lib/marketing";
 import { BOOKING_WORKFLOW_ERRORS } from "@/lib/bookingWorkflow";
+import {
+  closingProbability,
+  type OpportunityOutcome,
+} from "@/lib/opportunityWorkflow";
 
 async function jsonObject(
   request: NextRequest,
@@ -276,22 +280,23 @@ export async function closeOpportunity(
       scope.context.userId,
       { outcome, closing_reason: reason ?? null },
     );
+    const validOutcome = outcome as OpportunityOutcome;
     const updated = await client.query(
       `UPDATE opportunities SET status='closed', outcome=$1,
        closing_reason=$2, closing_notes=$3, amount=COALESCE($4,amount),
-       probability=CASE WHEN $1='won' THEN 100 ELSE 0 END,
-       closed_at=CURRENT_TIMESTAMP, closed_by=$5, updated_by=$5,
-       updated_at=CURRENT_TIMESTAMP WHERE opportunity_id=$6 RETURNING *`,
+       probability=$5, closed_at=CURRENT_TIMESTAMP, closed_by=$6, updated_by=$6,
+       updated_at=CURRENT_TIMESTAMP WHERE opportunity_id=$7 RETURNING *`,
       [
-        outcome,
+        validOutcome,
         reason ?? null,
         notes ?? null,
         amount ?? null,
+        closingProbability(validOutcome),
         scope.context.userId,
         opportunityId,
       ],
     );
-    if (outcome === "won") {
+    if (validOutcome === "won") {
       await queueMarketingConversion(client, {
         companyId: Number(opportunity.company_id),
         projectId: Number(opportunity.project_id),
