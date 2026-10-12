@@ -3,6 +3,65 @@ import { isObject } from "@/utils/isObject";
 
 type Queryable = Pick<Pool | PoolClient, "query">;
 
+export type InventoryAssetTerminology = {
+  singular: string;
+  plural: string;
+  title: string;
+};
+
+const ASSET_TERMINOLOGY: Record<string, InventoryAssetTerminology> = {
+  apartment: {
+    singular: "apartment",
+    plural: "apartments",
+    title: "Apartment",
+  },
+  villa: { singular: "villa", plural: "villas", title: "Villa" },
+  plot: { singular: "plot", plural: "plots", title: "Plot" },
+  office: { singular: "office", plural: "offices", title: "Office" },
+  retail: {
+    singular: "retail unit",
+    plural: "retail units",
+    title: "Retail unit",
+  },
+  parking: {
+    singular: "parking space",
+    plural: "parking spaces",
+    title: "Parking space",
+  },
+  warehouse: {
+    singular: "warehouse",
+    plural: "warehouses",
+    title: "Warehouse",
+  },
+  other: { singular: "asset", plural: "assets", title: "Asset" },
+};
+
+function pluralizeAssetName(name: string) {
+  if (/(s|x|z|ch|sh)$/i.test(name)) return `${name}es`;
+  if (/[^aeiou]y$/i.test(name)) return `${name.slice(0, -1)}ies`;
+  return `${name}s`;
+}
+
+export function getInventoryAssetTerminology(
+  asset?: {
+    asset_type_key?: string | null;
+    asset_type_name?: string | null;
+    type_key?: string | null;
+    display_name?: string | null;
+  } | null,
+): InventoryAssetTerminology {
+  const key = String(asset?.asset_type_key ?? asset?.type_key ?? "")
+    .trim()
+    .toLowerCase();
+  if (ASSET_TERMINOLOGY[key]) return ASSET_TERMINOLOGY[key];
+
+  const title =
+    String(asset?.asset_type_name ?? asset?.display_name ?? "Unit").trim() ||
+    "Unit";
+  const singular = title.toLocaleLowerCase();
+  return { singular, plural: pluralizeAssetName(singular), title };
+}
+
 const ROOM_TYPE_PATTERNS: Array<[RegExp, string]> = [
   [/\b(bed|bedroom)\b/i, "Bedroom"],
   [/\bliving\b/i, "Living"],
@@ -92,7 +151,9 @@ function text(
     return null;
   }
   if (normalized.length > (options.maximum ?? 500)) {
-    errors.push(`${field} must be at most ${options.maximum ?? 500} characters`);
+    errors.push(
+      `${field} must be at most ${options.maximum ?? 500} characters`,
+    );
     return null;
   }
   return normalized;
@@ -119,7 +180,8 @@ export function validateInventoryLayout(
   const rawRooms = value.rooms ?? [];
   const rawAssets = value.assets ?? [];
   if (!Array.isArray(rawRooms)) errors.push(`${field}.rooms must be an array`);
-  if (!Array.isArray(rawAssets)) errors.push(`${field}.assets must be an array`);
+  if (!Array.isArray(rawAssets))
+    errors.push(`${field}.assets must be an array`);
   if (Array.isArray(rawRooms) && rawRooms.length > 100)
     errors.push(`${field}.rooms cannot contain more than 100 rooms`);
   if (Array.isArray(rawAssets) && rawAssets.length > 20)
@@ -193,7 +255,7 @@ export function validateInventoryLayout(
       if (assetUrl) {
         try {
           const parsed = new URL(assetUrl);
-          if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error();
+          if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
         } catch {
           errors.push(`${prefix}.asset_url must be an http or https URL`);
         }
@@ -233,9 +295,10 @@ export async function replaceUnitTypeLayout(
     "UPDATE inventory_unit_types SET layout_notes=$2,updated_at=CURRENT_TIMESTAMP WHERE unit_type_id=$1",
     [unitTypeId, layout.notes],
   );
-  await db.query("DELETE FROM inventory_unit_type_rooms WHERE unit_type_id=$1", [
-    unitTypeId,
-  ]);
+  await db.query(
+    "DELETE FROM inventory_unit_type_rooms WHERE unit_type_id=$1",
+    [unitTypeId],
+  );
   await db.query(
     "DELETE FROM inventory_unit_type_layout_assets WHERE unit_type_id=$1",
     [unitTypeId],

@@ -1,10 +1,34 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  getInventoryAssetTerminology,
   getInventoryTemplateAreaSqft,
   inferInventoryRoomType,
   validateInventoryLayout,
 } from "../lib/inventoryLayouts";
+
+test("inventory asset labels follow the selected asset type", () => {
+  assert.deepEqual(getInventoryAssetTerminology({ asset_type_key: "villa" }), {
+    singular: "villa",
+    plural: "villas",
+    title: "Villa",
+  });
+  assert.deepEqual(
+    getInventoryAssetTerminology({ asset_type_key: "parking" }),
+    {
+      singular: "parking space",
+      plural: "parking spaces",
+      title: "Parking space",
+    },
+  );
+  assert.deepEqual(
+    getInventoryAssetTerminology({
+      asset_type_key: "farm_house",
+      asset_type_name: "Farm house",
+    }),
+    { singular: "farm house", plural: "farm houses", title: "Farm house" },
+  );
+});
 
 test("inventory units inherit the most useful area from their template", () => {
   assert.equal(
@@ -91,7 +115,9 @@ test("inventory layouts reject incomplete dimensions and unsafe asset URLs", () 
   });
   assert.equal(result.ok, false);
   if (!result.ok) {
-    assert.ok(result.errors.some((error) => error.includes("provided together")));
+    assert.ok(
+      result.errors.some((error) => error.includes("provided together")),
+    );
     assert.ok(result.errors.some((error) => error.includes("http or https")));
   }
 });

@@ -22,6 +22,7 @@ import {
 import toast from "react-hot-toast";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 import {
+  getInventoryAssetTerminology,
   getInventoryTemplateAreaSqft,
   inferInventoryRoomType,
 } from "@/lib/inventoryLayouts";
@@ -257,10 +258,12 @@ function layoutPayload(layout: InventoryLayout) {
 }
 
 function LayoutEditor({
+  description = "Attach the plan and define every room once.",
   layout,
   onChange,
   title = "Layout and rooms",
 }: {
+  description?: string;
   layout: InventoryLayout;
   onChange: (layout: InventoryLayout) => void;
   title?: string;
@@ -279,7 +282,7 @@ function LayoutEditor({
         <div>
           <h3 className="text-sm font-semibold text-[#e4e8e5]">{title}</h3>
           <p className="mt-1 text-xs leading-5 text-[#707975]">
-            Attach the plan and define every room once. Flats inherit it automatically.
+            {description}
           </p>
         </div>
         <button
@@ -679,6 +682,7 @@ function AddUnitForm({
   const selectedTemplate = unitTypes.find(
     (type) => type.unit_type_id === form.unit_type_id,
   );
+  const assetTerminology = getInventoryAssetTerminology(selectedTemplate);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -859,11 +863,13 @@ function AddUnitForm({
       <section className="mt-6 rounded-xl border border-white/[0.09] bg-black/15 p-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold text-[#e2e6e3]">Flat layout</p>
+            <p className="text-sm font-semibold text-[#e2e6e3]">
+              {assetTerminology.title} layout
+            </p>
             <p className="mt-1 text-xs text-[#747d78]">
               {layoutMode === "inherited"
                 ? `Inherited from ${selectedTemplate?.type_name ?? "the selected unit template"} · ${selectedTemplate?.layout_rooms?.length ?? 0} rooms`
-                : "This flat has its own room dimensions and plan files."}
+                : `This ${assetTerminology.singular} has its own room dimensions and plan files.`}
             </p>
           </div>
           <button
@@ -882,12 +888,19 @@ function AddUnitForm({
             }}
             type="button"
           >
-            {layoutMode === "custom" ? "Use template layout" : "Customize this flat"}
+            {layoutMode === "custom"
+              ? "Use template layout"
+              : `Customize this ${assetTerminology.singular}`}
           </button>
         </div>
       </section>
       {layoutMode === "custom" && (
-        <LayoutEditor layout={layout} onChange={setLayout} title="Custom flat layout" />
+        <LayoutEditor
+          description={`Attach the plan and define the rooms for this ${assetTerminology.singular}.`}
+          layout={layout}
+          onChange={setLayout}
+          title={`Custom ${assetTerminology.singular} layout`}
+        />
       )}
       <CustomAttributeFields
         definitions={customDefinitions}
@@ -961,6 +974,10 @@ function AddUnitTypeForm({
     currency: unitType?.currency ?? "INR",
     is_active: unitType?.is_active ?? true,
   });
+  const selectedAssetType = assetTypes.find(
+    (type) => type.asset_type_id === form.asset_type_id,
+  );
+  const assetTerminology = getInventoryAssetTerminology(selectedAssetType);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -1106,7 +1123,12 @@ function AddUnitTypeForm({
           />
         </Field>
       </FormGrid>
-      <LayoutEditor layout={layout} onChange={setLayout} />
+      <LayoutEditor
+        description={`Attach the plan and define every room once. New ${assetTerminology.plural} created from this template inherit it automatically.`}
+        layout={layout}
+        onChange={setLayout}
+        title={`${assetTerminology.title} layout and rooms`}
+      />
       <CustomAttributeFields
         definitions={customDefinitions}
         onChange={setCustomValues}
