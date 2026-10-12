@@ -38,6 +38,7 @@ import {
   MapPin,
   Megaphone,
   Pencil,
+  PhoneCall,
   Plus,
   Route,
   Search,
@@ -1461,6 +1462,33 @@ function ProfilePanel(props: PanelProps) {
           </div>
         )}
       </form>
+
+      <section className="mt-8 flex items-center justify-between gap-5 border-t border-white/[0.08] pt-7 max-[640px]:items-start max-[640px]:flex-col">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <span className="grid size-8 place-items-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-[#aeb5b1]">
+              <PhoneCall className="size-3.5" aria-hidden />
+            </span>
+            <h2 className="font-[var(--font-bricolage)] text-base font-semibold text-[#eef1ef]">
+              Daffytel calling
+            </h2>
+          </div>
+          <p className="mt-2 text-[12px] text-[#7b837f]">
+            Add your Daffytel user ID to make calls from the CRM.
+          </p>
+        </div>
+        <button
+          className="inline-flex h-10 shrink-0 cursor-not-allowed items-center gap-2 rounded-lg border border-white/[0.1] bg-[#171917] px-4 text-xs font-semibold text-[#8b928e] opacity-70"
+          disabled
+          title="Daffytel connection will be available soon"
+          type="button"
+        >
+          Add Daffytel user ID
+          <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 text-[9px] font-medium tracking-[0.06em] text-[#777e7a] uppercase">
+            Soon
+          </span>
+        </button>
+      </section>
     </div>
   );
 }
