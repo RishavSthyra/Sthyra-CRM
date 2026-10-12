@@ -7,6 +7,10 @@ import {
   resolveNotificationRecipients,
 } from "@/lib/notifications";
 import {
+  appointmentActionTimingError,
+  appointmentScheduleError,
+} from "@/lib/appointmentTiming";
+import {
   canAccessOperationsEntity,
   requireOperationsContext,
 } from "@/lib/operationsAccess";
@@ -18,7 +22,6 @@ import {
 import { isObject } from "@/utils/isObject";
 import { validateText } from "@/utils/validateText";
 import { queueMarketingConversion } from "@/lib/marketing";
-import { appointmentActionTimingError } from "@/lib/appointmentTiming";
 
 type SiteVisitAction =
   "confirm" | "check-in" | "complete" | "no-show" | "cancel";
@@ -366,8 +369,12 @@ export async function rescheduleSiteVisit(
       : null;
   if (!startsAt) errors.push("starts_at must be a valid date-time");
   if (!endsAt) errors.push("ends_at must be a valid date-time");
-  if (startsAt && endsAt && Date.parse(endsAt) <= Date.parse(startsAt))
+  if (startsAt && endsAt && Date.parse(endsAt) <= Date.parse(startsAt)) {
     errors.push("ends_at must be after starts_at");
+  } else if (startsAt && endsAt) {
+    const scheduleError = appointmentScheduleError(startsAt, endsAt);
+    if (scheduleError) errors.push(scheduleError);
+  }
   const reason = validateText(body.reason, "reason", 5000, false, errors);
   if (!reason) errors.push("reason is required");
   if (errors.length)

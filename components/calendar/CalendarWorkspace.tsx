@@ -42,7 +42,12 @@ import { SiteVisitDetails } from "@/components/calendar/SiteVisitDetails";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 import { getWorkspaceContext } from "@/lib/clientWorkspaceContext";
-import { getAppointmentTiming } from "@/lib/appointmentTiming";
+import {
+  appointmentScheduleError,
+  calendarEventDurationMinutes,
+  MAX_APPOINTMENT_DURATION_MS,
+  getAppointmentTiming,
+} from "@/lib/appointmentTiming";
 
 type CalendarView = "day" | "week" | "month" | "year";
 type AppointmentType = "call" | "meeting" | "site_visit" | "video" | "other";
@@ -244,6 +249,31 @@ function toLocalInput(value: Date | string) {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
+function maximumEndInput(startsAt: string) {
+  const start = new Date(startsAt);
+  if (Number.isNaN(start.getTime())) return undefined;
+  return toLocalInput(new Date(start.getTime() + MAX_APPOINTMENT_DURATION_MS));
+}
+
+function draftWithMovedStart(draft: AppointmentDraft, startsAt: string) {
+  const previousStart = new Date(draft.starts_at);
+  const previousEnd = new Date(draft.ends_at);
+  const nextStart = new Date(startsAt);
+  if (Number.isNaN(nextStart.getTime())) return { ...draft, starts_at: startsAt };
+  const previousDuration = previousEnd.getTime() - previousStart.getTime();
+  const duration =
+    Number.isFinite(previousDuration) &&
+    previousDuration > 0 &&
+    previousDuration <= MAX_APPOINTMENT_DURATION_MS
+      ? previousDuration
+      : 60 * 60 * 1000;
+  return {
+    ...draft,
+    starts_at: startsAt,
+    ends_at: toLocalInput(new Date(nextStart.getTime() + duration)),
+  };
+}
+
 function formatTime(value: Date | string) {
   return new Intl.DateTimeFormat("en-IN", {
     hour: "numeric",
@@ -336,7 +366,11 @@ function draftFromAppointment(appointment: Appointment): AppointmentDraft {
 }
 
 function eventRangeLabel(appointment: Appointment) {
-  return `${formatTime(appointment.starts_at)} – ${formatTime(appointment.ends_at)}`;
+  const start = new Date(appointment.starts_at);
+  const end = new Date(appointment.ends_at);
+  return sameDay(start, end)
+    ? `${formatTime(start)} – ${formatTime(end)}`
+    : `${formatTime(start)} – ${formatDate(end)} ${formatTime(end)}`;
 }
 
 function eventTop(appointment: Appointment) {
@@ -348,11 +382,9 @@ function eventTop(appointment: Appointment) {
 }
 
 function eventHeight(appointment: Appointment) {
-  const duration = Math.max(
-    30,
-    (new Date(appointment.ends_at).getTime() -
-      new Date(appointment.starts_at).getTime()) /
-      60_000,
+  const duration = calendarEventDurationMinutes(
+    appointment.starts_at,
+    appointment.ends_at,
   );
   return Math.max(28, (duration / 60) * HOUR_HEIGHT - 3);
 }
@@ -695,6 +727,10 @@ export function CalendarWorkspace() {
     Number(Boolean(opportunityFilter));
 
   function openCreate(startsAt?: Date) {
+    if (startsAt && startsAt.getTime() <= Date.now()) {
+      toast.error("Choose a future time for the appointment.");
+      return;
+    }
     const projectId =
       selectedProjectId === "all"
         ? String(projects[0]?.project_id ?? "")
@@ -748,12 +784,9 @@ export function CalendarWorkspace() {
     }
     const start = new Date(draft.starts_at);
     const end = new Date(draft.ends_at);
-    if (
-      Number.isNaN(start.getTime()) ||
-      Number.isNaN(end.getTime()) ||
-      end <= start
-    ) {
-      toast.error("End time must be after the start time.");
+    const scheduleError = appointmentScheduleError(start, end);
+    if (scheduleError) {
+      toast.error(scheduleError);
       return;
     }
     setSaving(true);
@@ -965,6 +998,12 @@ export function CalendarWorkspace() {
       new Date(appointment.starts_at).getTime();
     const nextStart = new Date(target);
     const nextEnd = new Date(nextStart.getTime() + duration);
+    const scheduleError = appointmentScheduleError(nextStart, nextEnd);
+    if (scheduleError) {
+      setDraggingId(null);
+      toast.error(scheduleError);
+      return;
+    }
     const optimistic = {
       ...appointment,
       starts_at: nextStart.toISOString(),
@@ -1535,24 +1574,31 @@ function MonthView({
             const records = byDay.get(toDateKey(day)) ?? [];
             const today = sameDay(day, new Date(now));
             const outside = day.getMonth() !== cursor.getMonth();
+            const past = endOfDay(day).getTime() <= now;
             return (
               <div
                 className={`group/day min-h-[124px] border-r border-b border-white/[0.07] p-2 transition ${
-                  draggingId
+                  past
+                    ? ""
+                    : draggingId
                     ? "hover:bg-[#163128]/60"
                     : "hover:bg-white/[0.018]"
-                } ${outside ? "bg-[#090b0a]" : "bg-[#0d0f0e]"}`}
+                } ${outside || past ? "bg-[#090b0a]" : "bg-[#0d0f0e]"}`}
                 key={day.toISOString()}
                 onClick={() => {
+                  if (past) return;
                   const startAt = new Date(day);
                   startAt.setHours(10, 0, 0, 0);
                   onCreate(startAt);
                 }}
                 onDragOver={(event) => {
+                  if (past) return;
                   event.preventDefault();
                   event.dataTransfer.dropEffect = "move";
                 }}
-                onDrop={(event) => onDrop(event, day)}
+                onDrop={(event) => {
+                  if (!past) onDrop(event, day);
+                }}
               >
                 <div className="mb-2 flex items-center justify-between">
                   <span
@@ -1660,6 +1706,7 @@ function YearView({
                   const records = byDay.get(toDateKey(day)) ?? [];
                   const inMonth = day.getMonth() === month.getMonth();
                   const today = inMonth && sameDay(day, new Date(now));
+                  const past = endOfDay(day).getTime() <= now;
                   return (
                     <button
                       aria-label={`${formatDate(day)}${records.length ? `, ${records.length} appointment${records.length === 1 ? "" : "s"}` : ""}`}
@@ -1667,16 +1714,19 @@ function YearView({
                         today
                           ? "bg-[#2b9a7c] font-bold text-white"
                           : inMonth
-                            ? "text-[#b6bbb8] hover:bg-white/[0.07] hover:text-white"
+                            ? past && !records.length
+                              ? "cursor-not-allowed text-[#4f5451]"
+                              : "text-[#b6bbb8] hover:bg-white/[0.07] hover:text-white"
                             : "pointer-events-none text-transparent"
                       }`}
-                      disabled={!inMonth}
+                      disabled={!inMonth || (past && !records.length)}
                       key={day.toISOString()}
                       onClick={() => {
                         if (records[0]) {
                           onOpen(records[0]);
                           return;
                         }
+                        if (past) return;
                         const startAt = new Date(day);
                         startAt.setHours(10, 0, 0, 0);
                         onCreate(startAt);
@@ -1792,25 +1842,32 @@ function TimeGrid({
                 className="relative border-r border-white/[0.07]"
                 key={date.toISOString()}
               >
-                {HOURS.map((hour) => (
-                  <button
+                {HOURS.map((hour) => {
+                  const slot = new Date(date);
+                  slot.setHours(hour, 0, 0, 0);
+                  const past = slot.getTime() <= now;
+                  return (
+                    <button
                     aria-label={`Create appointment on ${formatDate(date)} at ${formatHour(hour)}`}
-                    className={`block w-full border-b border-white/[0.06] text-left transition ${draggingId ? "hover:bg-[#17342b]/70" : "hover:bg-white/[0.018]"}`}
+                    className={`block w-full border-b border-white/[0.06] text-left transition ${past ? "cursor-not-allowed bg-black/10" : draggingId ? "hover:bg-[#17342b]/70" : "hover:bg-white/[0.018]"}`}
+                    disabled={past}
                     key={hour}
                     onClick={() => {
-                      const startAt = new Date(date);
-                      startAt.setHours(hour, 0, 0, 0);
-                      onCreate(startAt);
+                      onCreate(slot);
                     }}
                     onDragOver={(event) => {
+                      if (past) return;
                       event.preventDefault();
                       event.dataTransfer.dropEffect = "move";
                     }}
-                    onDrop={(event) => onDrop(event, date, hour)}
+                    onDrop={(event) => {
+                      if (!past) onDrop(event, date, hour);
+                    }}
                     style={{ height: HOUR_HEIGHT }}
                     type="button"
-                  />
-                ))}
+                    />
+                  );
+                })}
                 {records.map((appointment) => {
                   const top = eventTop(appointment);
                   if (top < -HOUR_HEIGHT || top > HOURS.length * HOUR_HEIGHT)
@@ -2516,6 +2573,8 @@ function AppointmentComposer({
       : mode === "reschedule"
         ? "Reschedule appointment"
         : "Edit appointment";
+  const minimumStart = toLocalInput(new Date());
+  const maximumEnd = maximumEndInput(draft.starts_at);
   return (
     <div
       className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4 backdrop-blur-[3px]"
@@ -2621,13 +2680,16 @@ function AppointmentComposer({
           <div className="grid grid-cols-2 gap-4 max-[620px]:grid-cols-1">
             <FormInput
               label="Starts"
-              onChange={(value) => set("starts_at", value)}
+              min={minimumStart}
+              onChange={(value) => onChange(draftWithMovedStart(draft, value))}
               required
               type="datetime-local"
               value={draft.starts_at}
             />
             <FormInput
               label="Ends"
+              max={maximumEnd}
+              min={draft.starts_at || minimumStart}
               onChange={(value) => set("ends_at", value)}
               required
               type="datetime-local"
@@ -2701,6 +2763,8 @@ function AppointmentComposer({
 
 function FormInput({
   label,
+  max,
+  min,
   onChange,
   required,
   type = "text",
@@ -2708,6 +2772,8 @@ function FormInput({
   placeholder,
 }: {
   label: string;
+  max?: string;
+  min?: string;
   onChange: (value: string) => void;
   required?: boolean;
   type?: string;
@@ -2721,6 +2787,8 @@ function FormInput({
       </span>
       <input
         className="h-10 w-full rounded-[9px] border border-white/[0.1] bg-[#0b0d0c] px-3 text-xs text-white outline-none placeholder:text-[#555a57] focus:border-[#2aa284] focus:ring-2 focus:ring-[#2aa284]/10"
+        max={max}
+        min={min}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         required={required}

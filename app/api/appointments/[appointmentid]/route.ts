@@ -9,6 +9,7 @@ import {
   validateActivityReferences,
   validateAppointmentPayload,
 } from "@/lib/activities";
+import { appointmentScheduleError } from "@/lib/appointmentTiming";
 import {
   canAccessOperationsEntity,
   requireOperationsContext,
@@ -191,6 +192,16 @@ export async function PATCH(request: NextRequest, context: Context) {
         { error: "Validation failed", details: complete.errors },
         { status: 422 },
       );
+    }
+    if (partial.data.starts_at !== undefined || partial.data.ends_at !== undefined) {
+      const scheduleError = appointmentScheduleError(
+        complete.data.starts_at!,
+        complete.data.ends_at!,
+      );
+      if (scheduleError) {
+        await client.query("ROLLBACK");
+        return NextResponse.json({ error: scheduleError }, { status: 422 });
+      }
     }
     if (
       !canAccessProject(

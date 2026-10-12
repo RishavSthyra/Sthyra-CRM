@@ -12,6 +12,7 @@ import {
   createNotificationsForUsers,
   resolveNotificationRecipients,
 } from "@/lib/notifications";
+import { appointmentScheduleError } from "@/lib/appointmentTiming";
 import {
   SITE_VISIT_COLUMNS,
   SITE_VISIT_STATUSES,
@@ -149,6 +150,12 @@ export async function POST(request: NextRequest) {
       { status: 422 },
     );
   const data = validation.data;
+  const scheduleError = appointmentScheduleError(
+    data.starts_at!,
+    data.ends_at!,
+  );
+  if (scheduleError)
+    return NextResponse.json({ error: scheduleError }, { status: 422 });
   if (!canAccessProject(scope.context.access, data.project_id!))
     return NextResponse.json(
       { error: "You do not have access to this project" },

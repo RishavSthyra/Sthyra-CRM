@@ -44,6 +44,10 @@ import {
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 import { getWorkspaceContext } from "@/lib/clientWorkspaceContext";
 import { canAccessWorkspaceModule } from "@/lib/moduleAccess";
+import {
+  appointmentScheduleError,
+  MAX_APPOINTMENT_DURATION_MS,
+} from "@/lib/appointmentTiming";
 
 type Project = {
   project_id: number;
@@ -709,6 +713,14 @@ function SiteVisitDialog({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    const scheduleError = appointmentScheduleError(
+      form.starts_at,
+      form.ends_at,
+    );
+    if (scheduleError) {
+      toast.error(scheduleError);
+      return;
+    }
     setBusy(true);
     try {
       await api("/api/site-visits", {
@@ -767,12 +779,32 @@ function SiteVisitDialog({
               <span className="mb-2 block text-xs text-[#aab1ad]">Starts</span>
               <input
                 className={inputClass}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    starts_at: event.target.value,
-                  }))
-                }
+                min={toLocalInput(new Date())}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setForm((current) => {
+                    const currentStart = new Date(current.starts_at);
+                    const currentEnd = new Date(current.ends_at);
+                    const nextStart = new Date(value);
+                    const existingDuration =
+                      currentEnd.getTime() - currentStart.getTime();
+                    const duration =
+                      Number.isFinite(existingDuration) &&
+                      existingDuration > 0 &&
+                      existingDuration <= MAX_APPOINTMENT_DURATION_MS
+                        ? existingDuration
+                        : 60 * 60 * 1000;
+                    return {
+                      ...current,
+                      starts_at: value,
+                      ends_at: Number.isNaN(nextStart.getTime())
+                        ? current.ends_at
+                        : toLocalInput(
+                            new Date(nextStart.getTime() + duration),
+                          ),
+                    };
+                  });
+                }}
                 required
                 type="datetime-local"
                 value={form.starts_at}
@@ -782,6 +814,16 @@ function SiteVisitDialog({
               <span className="mb-2 block text-xs text-[#aab1ad]">Ends</span>
               <input
                 className={inputClass}
+                max={
+                  Number.isNaN(new Date(form.starts_at).getTime())
+                    ? undefined
+                    : toLocalInput(
+                        new Date(
+                          new Date(form.starts_at).getTime() +
+                            MAX_APPOINTMENT_DURATION_MS,
+                        ),
+                      )
+                }
                 min={form.starts_at}
                 onChange={(event) =>
                   setForm((current) => ({

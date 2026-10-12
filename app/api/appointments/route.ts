@@ -12,6 +12,7 @@ import {
   createNotificationsForUsers,
   resolveNotificationRecipients,
 } from "@/lib/notifications";
+import { appointmentScheduleError } from "@/lib/appointmentTiming";
 import { requireOperationsContext } from "@/lib/operationsAccess";
 import { canAccessProject, getAccessibleProjectIds } from "@/lib/projectAccess";
 import { parsePagination } from "@/utils/parsePagination";
@@ -165,6 +166,12 @@ export async function POST(request: NextRequest) {
       { error: "Validation failed", details: validation.errors },
       { status: 422 },
     );
+  const scheduleError = appointmentScheduleError(
+    validation.data.starts_at!,
+    validation.data.ends_at!,
+  );
+  if (scheduleError)
+    return NextResponse.json({ error: scheduleError }, { status: 422 });
   if (validation.data.appointment_type === "site_visit")
     return NextResponse.json(
       { error: "Create site visits through POST /api/site-visits" },
