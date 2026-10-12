@@ -1191,7 +1191,6 @@ function SendDialog({
 
 function DetailDialog({
   opportunityId,
-  opportunityStage,
   quotation,
   onClose,
   onChanged,
@@ -1199,7 +1198,6 @@ function DetailDialog({
   onSend,
 }: {
   opportunityId: string;
-  opportunityStage: string;
   quotation: ManagedQuotation;
   onClose: () => void;
   onChanged: () => Promise<void>;
@@ -1501,24 +1499,21 @@ function DetailDialog({
             <div className="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-white/[0.08] bg-black/15 p-3">
               <div className="mr-auto min-w-56">
                 <p className="text-xs font-semibold text-[#dce7e2]">
-                  Customer booking form
+                  Booking confirmation
                 </p>
                 <p className="mt-1 text-[11px] leading-5 text-[#82908a]">
-                  {opportunityStage !== "booking"
-                    ? "Move the opportunity to Booking stage to generate the form."
-                    : bookingForm?.status === "confirmed"
-                      ? `${bookingForm.booking_reference} · Booking confirmed`
-                      : bookingForm?.status === "submitted"
-                        ? `${bookingForm.booking_reference} · Submitted by ${bookingForm.customer_name}`
-                        : bookingForm?.status === "active"
-                          ? `${bookingForm.booking_reference} · ${bookingForm.view_count ? `Viewed ${bookingForm.view_count} time${bookingForm.view_count === 1 ? "" : "s"}` : "Not viewed yet"}`
-                          : "Generate a secure form after the accepted quotation."}
+                  {bookingForm?.status === "confirmed"
+                    ? `${bookingForm.booking_reference} · Booking confirmed`
+                    : bookingForm?.status === "submitted"
+                      ? `${bookingForm.booking_reference} · Form submitted by ${bookingForm.customer_name}. Review and approve it to book the unit.`
+                      : bookingForm?.status === "active"
+                        ? `${bookingForm.booking_reference} · ${bookingForm.view_count ? `Viewed ${bookingForm.view_count} time${bookingForm.view_count === 1 ? "" : "s"}` : "Not viewed yet"}`
+                        : "Accepted quotation → customer booking form → internal approval."}
                 </p>
               </div>
-              {opportunityStage === "booking" &&
-                !["submitted", "confirmed"].includes(
-                  bookingForm?.status || "",
-                ) &&
+              {!["submitted", "confirmed"].includes(
+                bookingForm?.status || "",
+              ) &&
                 quotedUnits.length > 1 && (
                   <label className="min-w-52 text-[10px] font-medium text-[#8e9792]">
                     Booking unit
@@ -1556,24 +1551,22 @@ function DetailDialog({
                   Revoke
                 </button>
               )}
-              {opportunityStage === "booking" &&
-                bookingForm?.status === "submitted" && (
-                  <button
-                    className="inline-flex h-9 items-center gap-2 rounded-md bg-[#2b8d70] px-3 text-xs font-semibold text-white disabled:opacity-50"
-                    disabled={!!busy}
-                    onClick={() => void confirmBooking()}
-                    type="button"
-                  >
-                    {busy === "booking-confirm" ? (
-                      <LoaderCircle className="size-3.5 animate-spin" />
-                    ) : (
-                      <Check className="size-3.5" />
-                    )}
-                    Confirm booking
-                  </button>
-                )}
-              {opportunityStage === "booking" &&
-                bookingForm?.status !== "submitted" &&
+              {bookingForm?.status === "submitted" && (
+                <button
+                  className="inline-flex h-9 items-center gap-2 rounded-md bg-[#2b8d70] px-3 text-xs font-semibold text-white disabled:opacity-50"
+                  disabled={!!busy}
+                  onClick={() => void confirmBooking()}
+                  type="button"
+                >
+                  {busy === "booking-confirm" ? (
+                    <LoaderCircle className="size-3.5 animate-spin" />
+                  ) : (
+                    <Check className="size-3.5" />
+                  )}
+                  Approve &amp; book unit
+                </button>
+              )}
+              {bookingForm?.status !== "submitted" &&
                 bookingForm?.status !== "confirmed" && (
                   <button
                     className="inline-flex h-9 items-center gap-2 rounded-md bg-[#2b8d70] px-3 text-xs font-semibold text-white disabled:opacity-50"
@@ -1950,7 +1943,6 @@ export function QuotationManager({
           }}
           onSend={() => setSending(detail)}
           opportunityId={opportunity.opportunity_id}
-          opportunityStage={opportunity.stage_key}
           quotation={detail}
         />
       )}

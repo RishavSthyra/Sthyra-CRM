@@ -7,8 +7,13 @@ import {
   createBookingReference,
   getBookingFormDetail,
 } from "@/lib/bookingForms";
+import {
+  BOOKING_WORKFLOW_ERRORS,
+  canStartBookingWorkflow,
+} from "@/lib/bookingWorkflow";
 import { parseInventoryUuid } from "@/lib/inventory";
 import { requireOpportunity } from "@/lib/opportunityAccess";
+import { advanceOpportunityToStage } from "@/lib/opportunities";
 import { parseUuid } from "@/lib/operations";
 import { recordQuotationEvent } from "@/lib/quotations";
 import { isObject } from "@/utils/isObject";
@@ -122,25 +127,25 @@ export async function POST(request: NextRequest, context: Context) {
       return NextResponse.json({ error: "Quotation not found" }, { status: 404 });
     }
     const quotation = quoteResult.rows[0] as Record<string, unknown>;
-    if (quotation.status !== "accepted") {
+    if (!canStartBookingWorkflow(quotation.status, quotation.opportunity_status)) {
       await client.query("ROLLBACK");
       return NextResponse.json(
-        { error: "Accept the quotation before creating a booking form" },
-        { status: 409 },
-      );
-    }
-    if (quotation.opportunity_status !== "open") {
-      await client.query("ROLLBACK");
-      return NextResponse.json(
-        { error: "A booking form cannot be created for a closed opportunity" },
+        {
+          error:
+            quotation.status !== "accepted"
+              ? BOOKING_WORKFLOW_ERRORS.quotationRequired
+              : "A booking form cannot be created for a closed opportunity",
+        },
         { status: 409 },
       );
     }
     if (quotation.stage_key !== "booking") {
-      await client.query("ROLLBACK");
-      return NextResponse.json(
-        { error: "Move this opportunity to the Booking stage first" },
-        { status: 409 },
+      await advanceOpportunityToStage(
+        client,
+        { opportunityId: resolved.access.opportunityId },
+        "booking",
+        "accepted_quotation_booking_started",
+        resolved.access.context.userId,
       );
     }
     const existingResult = await client.query(

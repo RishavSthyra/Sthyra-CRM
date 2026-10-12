@@ -13,6 +13,7 @@ import { requirePermission } from "@/lib/authorization";
 import { isObject } from "@/utils/isObject";
 import { validateText } from "@/utils/validateText";
 import { queueMarketingConversion } from "@/lib/marketing";
+import { BOOKING_WORKFLOW_ERRORS } from "@/lib/bookingWorkflow";
 
 async function jsonObject(
   request: NextRequest,
@@ -123,6 +124,22 @@ export async function changeOpportunityStage(
         { error: "Active project opportunity stage not found" },
         { status: 422 },
       );
+    }
+    if (stageKey === "booking") {
+      const acceptedQuotation = await client.query(
+        `SELECT quotation_id
+         FROM opportunity_quotations
+         WHERE opportunity_id=$1 AND status='accepted'
+         LIMIT 1`,
+        [opportunityId],
+      );
+      if (!acceptedQuotation.rowCount) {
+        await client.query("ROLLBACK");
+        return NextResponse.json(
+          { error: BOOKING_WORKFLOW_ERRORS.quotationRequired },
+          { status: 409 },
+        );
+      }
     }
     await addOpportunityStateHistory(
       client,

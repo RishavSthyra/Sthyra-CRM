@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  BOOKING_WORKFLOW_ERRORS,
+  canConfirmBooking,
+} from "@/lib/bookingWorkflow";
 import pool from "@/lib/db";
 import { getInventoryUnit, parseInventoryUuid } from "@/lib/inventory";
 import {
@@ -79,7 +83,7 @@ export async function POST(request: NextRequest, context: Context) {
     if (quotation.status !== "accepted") {
       await client.query("ROLLBACK");
       return NextResponse.json(
-        { error: "Only an accepted quotation can be converted" },
+        { error: BOOKING_WORKFLOW_ERRORS.quotationRequired },
         { status: 409 },
       );
     }
@@ -136,14 +140,6 @@ export async function POST(request: NextRequest, context: Context) {
       );
     }
 
-    if (access.opportunity.stage_key !== "booking") {
-      await client.query("ROLLBACK");
-      return NextResponse.json(
-        { error: "Move this opportunity to the Booking stage first" },
-        { status: 409 },
-      );
-    }
-
     const bookingFormResult = await client.query(
       `SELECT * FROM booking_forms
        WHERE quotation_id=$1 AND opportunity_id=$2
@@ -151,16 +147,10 @@ export async function POST(request: NextRequest, context: Context) {
       [quotationId, access.opportunityId],
     );
     const bookingForm = bookingFormResult.rows[0];
-    if (
-      !bookingForm ||
-      !["submitted", "confirmed"].includes(String(bookingForm.status))
-    ) {
+    if (!bookingForm || !canConfirmBooking(quotation.status, bookingForm.status)) {
       await client.query("ROLLBACK");
       return NextResponse.json(
-        {
-          error:
-            "The customer must submit the booking form before the booking can be confirmed",
-        },
+        { error: BOOKING_WORKFLOW_ERRORS.formRequired },
         { status: 409 },
       );
     }

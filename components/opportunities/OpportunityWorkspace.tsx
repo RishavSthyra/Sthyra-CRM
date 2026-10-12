@@ -37,7 +37,6 @@ import {
 } from "react";
 import toast from "react-hot-toast";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
-import { OpportunityBookingPanel } from "@/components/opportunities/OpportunityBookingPanel";
 import {
   QuotationManager,
   type ManagedQuotation,
@@ -1969,18 +1968,6 @@ export function OpportunityWorkspace() {
                           </div>
                         </div>
                       )}
-                      <OpportunityBookingPanel
-                        opportunityId={detail.opportunity_id}
-                        projectId={detail.project_id}
-                        shortlists={shortlists}
-                        units={units}
-                        onChanged={async () => {
-                          await Promise.all([
-                            loadRelated(detail),
-                            loadOpportunities(true),
-                          ]);
-                        }}
-                      />
                       <div className="flex flex-wrap gap-3 py-4">
                         <label className="relative min-w-[220px] flex-1">
                           <Search className="absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-[#68706c]" />

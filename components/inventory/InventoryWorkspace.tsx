@@ -6,7 +6,6 @@ import {
   ArrowRight,
   Boxes,
   Building2,
-  Check,
   ChevronDown,
   ChevronRight,
   Clock3,
@@ -65,7 +64,6 @@ type ActionKind =
   | "reserve"
   | "release"
   | "cancelReservation"
-  | "convertReservation"
   | "status";
 type EditableInventoryItem =
   InventoryUnit | UnitType | InventoryNode | PriceBook;
@@ -591,21 +589,18 @@ function UnitDrawer({
                 </div>
               )}
               {unit.status === "reserved" && (
-                <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-3">
                   <button
-                    className="h-11 rounded-lg border border-white/[0.12] text-sm font-semibold text-[#d4d8d6] hover:bg-white/[0.05]"
+                    className="h-11 w-full rounded-lg border border-white/[0.12] text-sm font-semibold text-[#d4d8d6] hover:bg-white/[0.05]"
                     onClick={() => onAction("cancelReservation")}
                     type="button"
                   >
                     Cancel reservation
                   </button>
-                  <button
-                    className="flex h-11 items-center justify-center gap-2 rounded-lg bg-[#277f66] text-sm font-semibold text-white hover:bg-[#2d9274]"
-                    onClick={() => onAction("convertReservation")}
-                    type="button"
-                  >
-                    <Check className="size-4" /> Mark booked
-                  </button>
+                  <p className="text-center text-xs leading-5 text-[#747c78]">
+                    Confirm the booking from the accepted quotation after the
+                    customer submits the booking form.
+                  </p>
                 </div>
               )}
               {["blocked", "unavailable"].includes(unit.status) && (
@@ -696,12 +691,6 @@ function UnitActionDialog({
       description: "The unit will return to available inventory.",
       button: "Cancel reservation",
     },
-    convertReservation: {
-      title: "Convert to booking",
-      description:
-        "This confirms the reservation and marks the unit as booked.",
-      button: "Confirm booking",
-    },
     status: {
       title: `Mark as ${humanize(targetStatus ?? "available")}`,
       description: "This status change is recorded in the unit history.",
@@ -738,8 +727,6 @@ function UnitActionDialog({
       } else if (action === "cancelReservation") {
         url = `/api/inventory/reservations/${unit.active_reservation?.reservation_id}/cancel`;
         body = { reason };
-      } else if (action === "convertReservation") {
-        url = `/api/inventory/reservations/${unit.active_reservation?.reservation_id}/convert`;
       } else {
         url += "/change-status";
         body = { status: targetStatus, reason };
@@ -930,20 +917,18 @@ function UnitActionDialog({
           </label>
         )}
 
-        {!(["convertReservation"] as ActionKind[]).includes(action) && (
-          <label className="mt-4 block">
-            <span className="mb-2 block text-xs font-medium text-[#aeb4b1]">
-              {action === "reserve" ? "Notes" : "Reason"}
-            </span>
-            <textarea
-              className={`${inputClass} min-h-20 resize-y py-3`}
-              onChange={(event) => setReason(event.target.value)}
-              placeholder={needsReason ? "Required" : "Optional"}
-              required={needsReason}
-              value={reason}
-            />
-          </label>
-        )}
+        <label className="mt-4 block">
+          <span className="mb-2 block text-xs font-medium text-[#aeb4b1]">
+            {action === "reserve" ? "Notes" : "Reason"}
+          </span>
+          <textarea
+            className={`${inputClass} min-h-20 resize-y py-3`}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder={needsReason ? "Required" : "Optional"}
+            required={needsReason}
+            value={reason}
+          />
+        </label>
 
         {(action === "hold" || action === "reserve") &&
           ((action === "reserve" && !opportunities.length) ||

@@ -6,6 +6,7 @@ import {
   createNotificationsForUsers,
   resolveNotificationRecipients,
 } from "@/lib/notifications";
+import { advanceOpportunityToStage } from "@/lib/opportunities";
 import {
   getQuotationDetail,
   recordQuotationEvent,
@@ -286,6 +287,13 @@ export async function PATCH(request: NextRequest, context: Context) {
         actorEmail: email,
         comment: comment || null,
       });
+      await advanceOpportunityToStage(
+        client,
+        { opportunityId: String(link.opportunity_id) },
+        "booking",
+        "quotation_accepted",
+        null,
+      );
     } else {
       quotation = (
         await client.query(
