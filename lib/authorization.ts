@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createAsyncTtlCache } from "@/lib/asyncTtlCache";
 import pool from "@/lib/db";
 import {
   OperationsContext,
@@ -7,7 +8,9 @@ import {
 import { hasAuditLogAccess } from "@/lib/projectAccessPolicy";
 import { isSuperAdminRole } from "@/lib/systemRoles";
 
-export async function getUserPermissionKeys(userId: string): Promise<string[]> {
+const permissionCache = createAsyncTtlCache<string, string[]>({ ttlMs: 15_000 });
+
+async function loadUserPermissionKeys(userId: string): Promise<string[]> {
   const result = await pool.query<{ permission_key: string }>(
     `SELECT DISTINCT permission.permission_key
      FROM users app_user
@@ -21,6 +24,14 @@ export async function getUserPermissionKeys(userId: string): Promise<string[]> {
     [userId],
   );
   return result.rows.map((row) => row.permission_key);
+}
+
+export function getUserPermissionKeys(userId: string): Promise<string[]> {
+  return permissionCache.get(userId, () => loadUserPermissionKeys(userId));
+}
+
+export function invalidateUserPermissionKeys(userId: string) {
+  permissionCache.delete(userId);
 }
 
 export function roleHasPermission(

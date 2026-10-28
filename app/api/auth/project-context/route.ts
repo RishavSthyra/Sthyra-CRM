@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
       authentication.auth.user.user_id,
     );
     const response = NextResponse.json({
+      user_id: authentication.auth.user.user_id,
       company: access.company,
       team: access.team,
       role_key: access.roleKey,

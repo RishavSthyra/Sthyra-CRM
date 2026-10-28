@@ -74,6 +74,7 @@ type ProjectSummary = {
 };
 
 type ProjectContextResponse = {
+  user_id?: string;
   company?: {
     company_id: number;
     company_code: string;
@@ -195,8 +196,40 @@ type LeadResponse = {
     needsFollowUp: number;
     unassigned: number;
   };
-  pagination?: { page: number; total?: number; totalPages?: number };
+  pagination?: {
+    page: number;
+    limit?: number;
+    total?: number;
+    totalPages?: number;
+  };
 };
+
+type LeadSummary = NonNullable<LeadResponse["summary"]>;
+type CachedLeadSummary = {
+  summary: LeadSummary;
+  pagination: Pick<
+    NonNullable<LeadResponse["pagination"]>,
+    "total" | "totalPages"
+  >;
+};
+
+const leadPageCache = new Map<string, LeadResponse>();
+const leadSummaryCache = new Map<string, CachedLeadSummary>();
+const MAX_CACHED_LEAD_QUERIES = 60;
+
+function setBoundedCache<Key, Value>(
+  cache: Map<Key, Value>,
+  key: Key,
+  value: Value,
+) {
+  cache.delete(key);
+  cache.set(key, value);
+  while (cache.size > MAX_CACHED_LEAD_QUERIES) {
+    const oldestKey = cache.keys().next().value as Key | undefined;
+    if (oldestKey === undefined) break;
+    cache.delete(oldestKey);
+  }
+}
 
 const leadStatuses = [
   "all",
@@ -417,6 +450,7 @@ export default function LeadsPage() {
     null,
   );
   const [projectContextLoading, setProjectContextLoading] = useState(true);
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [stage, setStage] = useState("all");
   const [status, setStatus] = useState("all");
@@ -427,10 +461,11 @@ export default function LeadsPage() {
   const [openTool, setOpenTool] = useState<"filter" | "sort" | null>(null);
   const leadToolsRef = useRef<HTMLDivElement>(null);
   const requestedLeadOpenedRef = useRef(false);
-  const lastLoadedLeadsQueryRef = useRef<string | null>(null);
+  const leadRequestRef = useRef<AbortController | null>(null);
   const [page, setPage] = useState(1);
   const [data, setData] = useState<LeadResponse>({ leads: [] });
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionLead, setActionLead] = useState<string | null>(null);
   const [actionMenuLead, setActionMenuLead] = useState<string | null>(null);
@@ -544,6 +579,15 @@ export default function LeadsPage() {
   }, [selectedProjectId]);
 
   useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      const nextSearch = searchInput.trim();
+      setPage(1);
+      setSearch(nextSearch);
+    }, 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [searchInput]);
+
+  useEffect(() => {
     if (!selectedProjectId) return;
     if (selectedProjectId === "all") return;
 
@@ -583,26 +627,61 @@ export default function LeadsPage() {
     };
   }, [router, selectedProjectId]);
 
-  const loadLeads = useCallback(async () => {
+  const loadLeads = useCallback(async (
+    options: { forceNetwork?: boolean; forceSummary?: boolean } = {},
+  ) => {
     if (!selectedProjectId) return;
-    await Promise.resolve();
-    const params = new URLSearchParams({ page: String(page), limit: "10" });
-    params.set("project_id", selectedProjectId);
-    if (search.trim()) params.set("search", search.trim());
+    const filterParams = new URLSearchParams();
+    filterParams.set("project_id", selectedProjectId);
+    if (search) filterParams.set("search", search);
     const leadListView = getLeadListView(stage);
-    if (leadListView.stageKey) params.set("stage_key", leadListView.stageKey);
-    if (leadListView.view) params.set("view", leadListView.view);
-    if (status !== "all") params.set("status", status);
-    if (temperature !== "all") params.set("temperature", temperature);
-    if (assignment !== "all") params.set("assignment", assignment);
+    if (leadListView.stageKey)
+      filterParams.set("stage_key", leadListView.stageKey);
+    if (leadListView.view) filterParams.set("view", leadListView.view);
+    if (status !== "all") filterParams.set("status", status);
+    if (temperature !== "all")
+      filterParams.set("temperature", temperature);
+    if (assignment !== "all") filterParams.set("assignment", assignment);
+
+    const cacheScope = projectContext?.user_id || "unknown-user";
+    const summaryKey = `${cacheScope}|${filterParams.toString()}`;
+    const params = new URLSearchParams(filterParams);
+    params.set("page", String(page));
+    params.set("limit", "10");
     params.set("sort", sort);
-    const queryKey = params.toString();
-    setLoading(lastLoadedLeadsQueryRef.current !== queryKey);
+    const queryKey = `${cacheScope}|${params.toString()}`;
+    const cachedPage = leadPageCache.get(queryKey);
+    const cachedSummary = leadSummaryCache.get(summaryKey);
+    const includeSummary = options.forceSummary || !cachedSummary;
+    params.set("include_summary", includeSummary ? "true" : "false");
+
+    leadRequestRef.current?.abort();
+    const controller = new AbortController();
+    leadRequestRef.current = controller;
+
+    if (cachedPage && !options.forceNetwork) {
+      setData({
+        ...cachedPage,
+        summary: cachedSummary?.summary ?? cachedPage.summary,
+        pagination: {
+          ...cachedPage.pagination,
+          ...cachedSummary?.pagination,
+          page: cachedPage.pagination?.page ?? page,
+        },
+      });
+      setLoading(false);
+      setRefreshing(true);
+      setError(null);
+    } else {
+      setLoading(true);
+      setRefreshing(false);
+    }
     try {
       const response = await fetchWithSession(
         `/api/leads?${params.toString()}`,
         {
           cache: "no-store",
+          signal: controller.signal,
         },
       );
       if (response.status === 401) {
@@ -612,19 +691,51 @@ export default function LeadsPage() {
       const body = (await response.json()) as LeadResponse & { error?: string };
       if (!response.ok)
         throw new Error(body.error || "Unable to retrieve leads");
-      setData(body);
-      lastLoadedLeadsQueryRef.current = queryKey;
+
+      if (controller.signal.aborted) return;
+      if (body.summary) {
+        setBoundedCache(leadSummaryCache, summaryKey, {
+          summary: body.summary,
+          pagination: {
+            total: body.pagination?.total,
+            totalPages: body.pagination?.totalPages,
+          },
+        });
+      }
+      const latestSummary = leadSummaryCache.get(summaryKey);
+      const merged: LeadResponse = {
+        leads: body.leads,
+        summary: body.summary ?? latestSummary?.summary,
+        pagination: {
+          ...latestSummary?.pagination,
+          ...body.pagination,
+          page: body.pagination?.page ?? page,
+        },
+      };
+      setBoundedCache(leadPageCache, queryKey, merged);
+      setData(merged);
       setError(null);
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Unable to retrieve leads",
-      );
+      if (cause instanceof DOMException && cause.name === "AbortError") return;
+      if (controller.signal.aborted) return;
+      const message =
+        cause instanceof Error ? cause.message : "Unable to retrieve leads";
+      if (cachedPage) {
+        setError(null);
+        toast.error(`Cached leads shown. ${message}`);
+      } else {
+        setError(message);
+      }
     } finally {
-      setLoading(false);
+      if (leadRequestRef.current === controller) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [
     assignment,
     page,
+    projectContext?.user_id,
     router,
     search,
     selectedProjectId,
@@ -638,6 +749,13 @@ export default function LeadsPage() {
     const timeoutId = window.setTimeout(() => void loadLeads(), 0);
     return () => window.clearTimeout(timeoutId);
   }, [loadLeads]);
+
+  useEffect(
+    () => () => {
+      leadRequestRef.current?.abort();
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!openTool) return;
@@ -1014,7 +1132,7 @@ export default function LeadsPage() {
           ? "Call logged and next call scheduled"
           : "Call outcome logged",
       );
-      await loadLeads();
+      await loadLeads({ forceNetwork: true, forceSummary: true });
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "Unable to log call.");
     } finally {
@@ -1064,7 +1182,7 @@ export default function LeadsPage() {
           responseBody.error || responseBody.message || "Lead action failed",
         );
       toast.success(responseBody.message || "Lead updated");
-      await loadLeads();
+      await loadLeads({ forceNetwork: true, forceSummary: true });
     } catch (cause) {
       toast.error(
         cause instanceof Error ? cause.message : "Lead action failed",
@@ -1201,11 +1319,11 @@ export default function LeadsPage() {
             <input
               className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#f5f5f5] outline-none"
               onChange={(event) => {
-                setSearch(event.target.value);
-                setPage(1);
+                leadRequestRef.current?.abort();
+                setSearchInput(event.target.value);
               }}
               placeholder="Search leads by name, email or phone"
-              value={search}
+              value={searchInput}
             />
           </label>
           <div
@@ -1408,15 +1526,21 @@ export default function LeadsPage() {
               <button
                 aria-label="Refresh leads"
                 className="flex size-7 items-center justify-center rounded-md border border-[#3b3b3b] bg-[#2c2c2c] text-[#d9dcda] transition hover:border-[#555] hover:bg-[#353535] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#65c9a7]/45"
-                onClick={() => void loadLeads()}
+                onClick={() =>
+                  void loadLeads({ forceNetwork: true, forceSummary: true })
+                }
                 type="button"
               >
-                <RefreshCw aria-hidden className="size-3.5" strokeWidth={1.8} />
+                <RefreshCw
+                  aria-hidden
+                  className={`size-3.5 ${loading || refreshing ? "animate-spin" : ""}`}
+                  strokeWidth={1.8}
+                />
               </button>
             </div>
           </header>
           <div
-            aria-busy={loading}
+            aria-busy={loading || refreshing}
             className={`relative overflow-x-auto [&_table]:w-full [&_table]:min-w-[920px] [&_table]:border-collapse [&_table]:transition-opacity [&_th]:h-10 [&_th]:bg-[#080808] [&_th]:px-3 [&_th]:text-left [&_th]:text-[11px] [&_th]:font-medium [&_th]:text-[#8a8d93] [&_th:first-child]:pl-[17px] [&_td]:h-[72px] [&_td]:whitespace-nowrap [&_td]:border-t [&_td]:border-[#2c2c2c] [&_td]:px-3 [&_td]:text-xs [&_td]:text-[#b4b4b4] [&_td:first-child]:flex [&_td:first-child]:items-center [&_td:first-child]:gap-3 [&_td:first-child]:pl-[17px] ${loading && data.leads.length ? "overflow-y-hidden [&_table]:opacity-45" : "overflow-y-visible"}`}
           >
             <table>
@@ -1637,7 +1761,7 @@ export default function LeadsPage() {
                   ))}
               </tbody>
             </table>
-            {loading && data.leads.length > 0 && (
+            {(loading || refreshing) && data.leads.length > 0 && (
               <div
                 className="pointer-events-none absolute top-[54px] left-1/2 z-[4] flex -translate-x-1/2 items-center gap-2 bg-[#080808]/40 px-3 py-2 text-[11px] text-[#d1d1d1]"
                 role="status"

@@ -10,6 +10,7 @@ export type WorkspaceProjectContext = {
 };
 
 export type WorkspaceAccessContext = {
+  user_id?: string;
   company: {
     company_id: number;
     company_name: string;
@@ -75,6 +76,7 @@ export async function getWorkspaceContext<T = WorkspaceAccessContext>({
     const context = (await response.json()) as WorkspaceAccessContext;
     cachedContext = {
       ...context,
+      user_id: String(context.user_id ?? ""),
       role_key: String(context.role_key ?? ""),
       can_view_all_projects: Boolean(context.can_view_all_projects),
       permissions: Array.isArray(context.permissions)

@@ -181,11 +181,24 @@ export async function GET(request: NextRequest) {
   if (!orderBy) {
     return NextResponse.json({ error: "Invalid lead sort" }, { status: 400 });
   }
+  const includeSummaryValue = request.nextUrl.searchParams.get("include_summary");
+  if (
+    includeSummaryValue !== null &&
+    includeSummaryValue !== "true" &&
+    includeSummaryValue !== "false"
+  ) {
+    return NextResponse.json(
+      { error: "include_summary must be true or false" },
+      { status: 400 },
+    );
+  }
+  const includeSummary = includeSummaryValue !== "false";
   const listOrderBy = buildLeadListOrderBy(stageKey, orderBy);
   const where = `WHERE ${filters.join(" AND ")}`;
   try {
-    const summary = await pool.query(
-      `SELECT
+    const summaryPromise = includeSummary
+      ? pool.query(
+          `SELECT
          COUNT(*)::integer AS total,
          COUNT(*) FILTER (WHERE l.status = 'qualified')::integer AS qualified,
          COUNT(*) FILTER (WHERE l.temperature = 'hot')::integer AS hot,
@@ -204,11 +217,12 @@ export async function GET(request: NextRequest) {
        FROM leads l
        JOIN contacts c ON c.contact_id=l.contact_id
        ${where}`,
-      values,
-    );
+          values,
+        )
+      : Promise.resolve(null);
     const listValues = [...values, pagination.limit, pagination.offset];
-    const result = await pool.query(
-       `SELECT l.*, c.first_name, c.last_name, c.email, c.phone_number,
+    const listPromise = pool.query(
+      `SELECT l.*, c.first_name, c.last_name, c.email, c.phone_number,
               p.project_code, p.project_name,
               s.stage_key, s.stage_name,
               owner.first_name AS owner_first_name,
@@ -234,24 +248,32 @@ export async function GET(request: NextRequest) {
        LIMIT $${listValues.length - 1} OFFSET $${listValues.length}`,
       listValues,
     );
-    const summaryRow = summary.rows[0] ?? {};
-    const total = Number(summaryRow.total ?? 0);
-    return NextResponse.json({
+    const [summary, result] = await Promise.all([summaryPromise, listPromise]);
+    const summaryRow = summary?.rows[0];
+    const total = summaryRow ? Number(summaryRow.total ?? 0) : undefined;
+    const response: Record<string, unknown> = {
       leads: result.rows,
-      summary: {
+      pagination: {
+        page: pagination.page,
+        limit: pagination.limit,
+        ...(total === undefined
+          ? {}
+          : {
+              total,
+              totalPages: Math.ceil(total / pagination.limit),
+            }),
+      },
+    };
+    if (summaryRow) {
+      response.summary = {
         total: Number(summaryRow.total ?? 0),
         qualified: Number(summaryRow.qualified ?? 0),
         hot: Number(summaryRow.hot ?? 0),
         needsFollowUp: Number(summaryRow.needs_follow_up ?? 0),
         unassigned: Number(summaryRow.unassigned ?? 0),
-      },
-      pagination: {
-        page: pagination.page,
-        limit: pagination.limit,
-        total,
-        totalPages: Math.ceil(total / pagination.limit),
-      },
-    });
+      };
+    }
+    return NextResponse.json(response);
   } catch (error) {
     console.error("Failed to list leads", error);
     return NextResponse.json(

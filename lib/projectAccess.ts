@@ -1,4 +1,5 @@
 import pool from "@/lib/db";
+import { createAsyncTtlCache } from "@/lib/asyncTtlCache";
 import { isSuperAdminRole } from "@/lib/systemRoles";
 
 export type AccessibleProject = {
@@ -24,7 +25,11 @@ export type UserProjectAccess = {
   projects: AccessibleProject[];
 };
 
-export async function getUserProjectAccess(
+const projectAccessCache = createAsyncTtlCache<string, UserProjectAccess | null>(
+  { ttlMs: 15_000 },
+);
+
+async function loadUserProjectAccess(
   userId: string,
 ): Promise<UserProjectAccess | null> {
   const userContext = await pool.query(
@@ -106,6 +111,16 @@ export async function getUserProjectAccess(
       project_type: String(project.project_type),
     })),
   };
+}
+
+export function getUserProjectAccess(
+  userId: string,
+): Promise<UserProjectAccess | null> {
+  return projectAccessCache.get(userId, () => loadUserProjectAccess(userId));
+}
+
+export function invalidateUserProjectAccess(userId: string) {
+  projectAccessCache.delete(userId);
 }
 
 export function canAccessProject(

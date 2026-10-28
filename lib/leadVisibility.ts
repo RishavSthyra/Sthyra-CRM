@@ -28,28 +28,9 @@ export async function requireLeadVisibility(
   const scope = await requirePermission(request, permission);
   if (!scope.ok) return scope;
 
-  const membership = await pool.query<{ team_id: string; team_name: string }>(
-    `SELECT u.team_id, t.name AS team_name
-     FROM users u
-     JOIN teams t ON t.team_id=u.team_id
-     WHERE u.user_id=$1
-       AND u.is_active=TRUE
-       AND u.deleted_at IS NULL
-       AND t.is_active=TRUE
-       AND t.company_id=$2`,
-    [scope.context.userId, scope.context.access.company.company_id],
-  );
-  if (!membership.rowCount) {
-    return {
-      ok: false,
-      response: NextResponse.json(
-        { error: "Your account is not connected to an active team" },
-        { status: 403 },
-      ),
-    };
-  }
-
-  const team = membership.rows[0];
+  // Project access already verifies the active user/team/company membership.
+  // Reuse that derived context instead of repeating the membership query.
+  const team = scope.context.access.team;
   return {
     ok: true,
     context: {
