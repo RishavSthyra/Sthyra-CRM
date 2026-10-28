@@ -105,6 +105,7 @@ type TaskRecord = {
   description?: string | null;
   priority: "low" | "normal" | "high" | "urgent";
   status: "open" | "in_progress" | "completed" | "cancelled";
+  starts_at?: string | null;
   due_at?: string | null;
   created_at: string;
   assignee_first_name?: string | null;
@@ -153,6 +154,11 @@ function formatDate(value?: string | null, withTime = false) {
       ? { hour: "numeric", minute: "2-digit" }
       : { year: "numeric" }),
   }).format(date);
+}
+
+function localDateInputValue(value = new Date()) {
+  const localTime = value.getTime() - value.getTimezoneOffset() * 60_000;
+  return new Date(localTime).toISOString().slice(0, 10);
 }
 
 function formatDuration(value?: number | null) {
@@ -864,6 +870,7 @@ export function TasksView({ projectId, creationProjectId, sort }: ViewProps) {
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState<"open" | "in_progress">("open");
   const [priority, setPriority] = useState<"low" | "normal" | "high" | "urgent">("normal");
+  const [startsAt, setStartsAt] = useState("");
   const [dueAt, setDueAt] = useState("");
   const [description, setDescription] = useState("");
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
@@ -895,17 +902,24 @@ export function TasksView({ projectId, creationProjectId, sort }: ViewProps) {
   async function createTask(event: FormEvent) {
     event.preventDefault();
     if (!creationProjectId) return toast.error("Choose a project before creating a task.");
+    if (!startsAt || !dueAt)
+      return toast.error("Choose both a start date and an end date.");
+    const today = localDateInputValue();
+    if (startsAt < today) return toast.error("Start date cannot be in the past.");
+    if (dueAt < today) return toast.error("Due date cannot be in the past.");
+    if (dueAt < startsAt)
+      return toast.error("Due date cannot be earlier than the start date.");
     setSaving(true);
     try {
       const response = await fetchWithSession("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project_id: creationProjectId, title, description: description || null, status, priority, due_at: dueAt ? new Date(dueAt).toISOString() : null }),
+        body: JSON.stringify({ project_id: creationProjectId, title, description: description || null, status, priority, starts_at: startsAt, due_at: dueAt }),
       });
       if (response.status === 401) return router.replace("/login");
       if (!response.ok) throw new Error(await getApiError(response));
       toast.success("Task created");
-      setDialogOpen(false); setTitle(""); setDescription(""); setDueAt("");
+      setDialogOpen(false); setTitle(""); setDescription(""); setStartsAt(""); setDueAt("");
       await load();
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : "Unable to create task.");
@@ -1064,7 +1078,7 @@ export function TasksView({ projectId, creationProjectId, sort }: ViewProps) {
                       {task.description && (
                         <RichTextContent className="mt-2 line-clamp-2 text-[9px] leading-[1.45] text-[#969a97]" value={task.description} />
                       )}
-                      <p className="mt-2 flex items-center gap-1.5 text-[9px] text-[#949795]"><CalendarDays className="size-3" aria-hidden />{formatDate(task.due_at)}</p>
+                      <p className="mt-2 flex items-center gap-1.5 text-[9px] text-[#949795]"><CalendarDays className="size-3" aria-hidden />{task.starts_at ? `${formatDate(task.starts_at)} – ${formatDate(task.due_at)}` : formatDate(task.due_at)}</p>
                       <div className="mt-3 flex items-center justify-between">
                         <span className="flex -space-x-1.5" title={assignee}><span className="flex size-5 items-center justify-center rounded-full border border-[#191919] bg-[#50c7a0] text-[7px] text-[#10221c]">{initials(assignee)}</span><span className="size-5 rounded-full border border-[#191919] bg-[#7659e8]" /></span>
                         <span className="text-[8px] capitalize text-[#707472]">{task.priority} priority</span>
@@ -1099,7 +1113,7 @@ export function TasksView({ projectId, creationProjectId, sort }: ViewProps) {
             <div className="mt-4 space-y-4">
               <Field label="Task Name"><input className={inputClass} onChange={(event) => setTitle(event.target.value)} placeholder="Task name" required value={title} /></Field>
               <Field label="Priority"><span className="relative"><select className={`${inputClass} appearance-none pr-9`} onChange={(event) => setPriority(event.target.value as typeof priority)} value={priority}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select><ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-3.5 -translate-y-1/2" /></span></Field>
-              <div className="grid grid-cols-2 gap-4 max-[560px]:grid-cols-1"><Field label="Start Date"><input className={inputClass} type="date" /></Field><Field label="End Date"><input className={inputClass} onChange={(event) => setDueAt(event.target.value)} required type="date" value={dueAt} /></Field></div>
+              <div className="grid grid-cols-2 gap-4 max-[560px]:grid-cols-1"><Field label="Start Date"><input className={inputClass} min={localDateInputValue()} onChange={(event) => { const value = event.target.value; setStartsAt(value); if (dueAt && dueAt < value) setDueAt(value); }} required type="date" value={startsAt} /></Field><Field label="End Date"><input className={inputClass} min={startsAt || localDateInputValue()} onChange={(event) => setDueAt(event.target.value)} required type="date" value={dueAt} /></Field></div>
               <Field label="Description"><RichTextEditor ariaLabel="Task description" minHeight="min-h-28" onChange={setDescription} placeholder="Task description" value={description} /></Field>
             </div>
             <div className="mt-5 flex justify-end gap-3"><button className="h-9 rounded-full bg-[#171918] px-8 text-[11px] hover:bg-[#232523]" onClick={() => setDialogOpen(false)} type="button">Cancel</button><button className="h-9 rounded-full bg-[#1f704d] px-8 text-[11px] font-medium hover:bg-[#27845c] disabled:opacity-50" disabled={saving} type="submit">{saving ? "Creating..." : "Confirm"}</button></div>

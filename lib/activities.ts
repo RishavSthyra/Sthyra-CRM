@@ -11,7 +11,7 @@ export const ACTIVITY_COLUMNS = `
 
 export const TASK_COLUMNS = `
   t.task_id, t.company_id, t.project_id, t.lead_id, t.contact_id,
-  t.title, t.description, t.priority, t.status, t.due_at,
+  t.title, t.description, t.priority, t.status, t.starts_at, t.due_at,
   t.assigned_to_user_id, t.assigned_to_team_id, t.created_by, t.updated_by,
   t.completed_at, t.completed_by, t.cancelled_at, t.cancelled_by,
   t.cancellation_reason, t.created_at, t.updated_at
@@ -104,6 +104,7 @@ export type TaskInput = {
   description?: string | null;
   priority?: "low" | "normal" | "high" | "urgent";
   status?: "open" | "in_progress";
+  starts_at?: string | null;
   due_at?: string | null;
   assigned_to_user_id?: string | null;
   assigned_to_team_id?: string | null;
@@ -124,6 +125,7 @@ export function validateTaskPayload(
     "description",
     "priority",
     "status",
+    "starts_at",
     "due_at",
     "assigned_to_user_id",
     "assigned_to_team_id",
@@ -157,6 +159,7 @@ export function validateTaskPayload(
       );
     } else status = body.status as TaskInput["status"];
   }
+  const startsAt = timestamp(body.starts_at, "starts_at", true, errors);
   const dueAt = timestamp(body.due_at, "due_at", true, errors);
   const user = uuid(body.assigned_to_user_id, "assigned_to_user_id", errors);
   const team = uuid(body.assigned_to_team_id, "assigned_to_team_id", errors);
@@ -177,6 +180,7 @@ export function validateTaskPayload(
           description,
           priority,
           status,
+          starts_at: startsAt,
           due_at: dueAt,
           assigned_to_user_id: user,
           assigned_to_team_id: team,

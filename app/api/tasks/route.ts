@@ -10,6 +10,7 @@ import {
 } from "@/lib/activities";
 import { requireOperationsContext } from "@/lib/operationsAccess";
 import { canAccessProject, getAccessibleProjectIds } from "@/lib/projectAccess";
+import { taskScheduleError } from "@/lib/taskTiming";
 import { parsePagination } from "@/utils/parsePagination";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 
@@ -148,6 +149,15 @@ export async function POST(request: NextRequest) {
       { error: "You do not have access to this project" },
       { status: 403 },
     );
+  const scheduleError = taskScheduleError(
+    validation.data.starts_at,
+    validation.data.due_at,
+  );
+  if (scheduleError)
+    return NextResponse.json(
+      { error: "Validation failed", details: [scheduleError] },
+      { status: 422 },
+    );
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -158,10 +168,10 @@ export async function POST(request: NextRequest) {
     );
     const result = await client.query(
       `INSERT INTO tasks (company_id, project_id, lead_id, contact_id, title,
-        description, priority, status, due_at, assigned_to_user_id,
+        description, priority, status, starts_at, due_at, assigned_to_user_id,
         assigned_to_team_id, created_by, updated_by)
        VALUES ($1,$2,$3,COALESCE($4,(SELECT contact_id FROM leads WHERE lead_id=$3)),
-        $5,$6,$7,$8,$9,$10,$11,$12,$12) RETURNING *`,
+        $5,$6,$7,$8,$9,$10,$11,$12,$13,$13) RETURNING *`,
       [
         scope.context.access.company.company_id,
         validation.data.project_id,
@@ -171,6 +181,7 @@ export async function POST(request: NextRequest) {
         validation.data.description ?? null,
         validation.data.priority ?? "normal",
         validation.data.status ?? "open",
+        validation.data.starts_at ?? null,
         validation.data.due_at ?? null,
         validation.data.assigned_to_user_id ?? null,
         validation.data.assigned_to_team_id ?? null,

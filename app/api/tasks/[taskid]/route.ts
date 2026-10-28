@@ -14,6 +14,7 @@ import {
   requireOperationsContext,
 } from "@/lib/operationsAccess";
 import { canAccessProject } from "@/lib/projectAccess";
+import { taskScheduleError } from "@/lib/taskTiming";
 
 type Context = { params: Promise<{ taskid: string }> };
 
@@ -135,6 +136,10 @@ export async function PATCH(request: NextRequest, context: Context) {
           : current.description,
       priority: partial.data.priority ?? current.priority,
       status: partial.data.status ?? current.status,
+      starts_at:
+        partial.data.starts_at !== undefined
+          ? partial.data.starts_at
+          : current.starts_at,
       due_at:
         partial.data.due_at !== undefined
           ? partial.data.due_at
@@ -155,6 +160,22 @@ export async function PATCH(request: NextRequest, context: Context) {
         { error: "Validation failed", details: complete.errors },
         { status: 422 },
       );
+    }
+    if (
+      partial.data.starts_at !== undefined ||
+      partial.data.due_at !== undefined
+    ) {
+      const scheduleError = taskScheduleError(
+        complete.data.starts_at,
+        complete.data.due_at,
+      );
+      if (scheduleError) {
+        await client.query("ROLLBACK");
+        return NextResponse.json(
+          { error: "Validation failed", details: [scheduleError] },
+          { status: 422 },
+        );
+      }
     }
     if (
       !canAccessProject(
@@ -181,6 +202,7 @@ export async function PATCH(request: NextRequest, context: Context) {
       "description",
       "priority",
       "status",
+      "starts_at",
       "due_at",
       "assigned_to_user_id",
       "assigned_to_team_id",
