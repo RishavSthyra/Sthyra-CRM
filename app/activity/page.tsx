@@ -49,6 +49,8 @@ type Project = {
 type ProjectContext = {
   company?: { company_name?: string };
   can_view_all_projects?: boolean;
+  role_key?: string;
+  permissions?: string[];
   projects?: Project[];
   error?: string;
 };
@@ -949,6 +951,20 @@ export default function ActivityPage() {
                 />
               ) : tab === "tasks" ? (
                 <TasksView
+                  canDelete={
+                    projectContext?.role_key === "SUPER_ADMIN" ||
+                    Boolean(
+                      projectContext?.permissions?.includes(
+                        "ACTIVITIES_DELETE",
+                      ),
+                    )
+                  }
+                  canEdit={
+                    projectContext?.role_key === "SUPER_ADMIN" ||
+                    Boolean(
+                      projectContext?.permissions?.includes("ACTIVITIES_EDIT"),
+                    )
+                  }
                   creationProjectId={creationProjectId}
                   projectId={selectedProjectId}
                   sort={sort}

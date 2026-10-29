@@ -114,6 +114,11 @@ type TaskRecord = {
 
 type TaskStatus = TaskRecord["status"];
 
+type TaskViewProps = ViewProps & {
+  canEdit: boolean;
+  canDelete: boolean;
+};
+
 type NoteRecord = {
   note_id: string;
   lead_id?: string | null;
@@ -159,6 +164,12 @@ function formatDate(value?: string | null, withTime = false) {
 function localDateInputValue(value = new Date()) {
   const localTime = value.getTime() - value.getTimezoneOffset() * 60_000;
   return new Date(localTime).toISOString().slice(0, 10);
+}
+
+function taskDateInputValue(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "" : localDateInputValue(date);
 }
 
 function formatDuration(value?: number | null) {
@@ -860,13 +871,23 @@ const taskColumns = [
   { status: "cancelled", label: "Canceled", tone: "bg-[#582121] text-[#ef9b9b]" },
 ] as const;
 
-export function TasksView({ projectId, creationProjectId, sort }: ViewProps) {
+export function TasksView({
+  projectId,
+  creationProjectId,
+  sort,
+  canEdit,
+  canDelete,
+}: TaskViewProps) {
   const router = useRouter();
   const lastLoadedProjectRef = useRef<string | null>(null);
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<TaskRecord | null>(null);
+  const [deletingTask, setDeletingTask] = useState<TaskRecord | null>(null);
+  const [menuTaskId, setMenuTaskId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [title, setTitle] = useState("");
   const [status, setStatus] = useState<"open" | "in_progress">("open");
   const [priority, setPriority] = useState<"low" | "normal" | "high" | "urgent">("normal");
@@ -899,31 +920,149 @@ export function TasksView({ projectId, creationProjectId, sort }: ViewProps) {
     return () => window.clearTimeout(timeout);
   }, [load]);
 
-  async function createTask(event: FormEvent) {
+  useEffect(() => {
+    if (!menuTaskId) return;
+    function closeMenu(event: PointerEvent) {
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(`[data-task-menu="${menuTaskId}"]`)
+      ) return;
+      setMenuTaskId(null);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuTaskId(null);
+    }
+    document.addEventListener("pointerdown", closeMenu);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeMenu);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [menuTaskId]);
+
+  function resetTaskForm() {
+    setDialogOpen(false);
+    setEditingTask(null);
+    setTitle("");
+    setStatus("open");
+    setPriority("normal");
+    setStartsAt("");
+    setDueAt("");
+    setDescription("");
+  }
+
+  function openCreateTask(nextStatus: "open" | "in_progress" = "open") {
+    resetTaskForm();
+    setStatus(nextStatus);
+    setDialogOpen(true);
+  }
+
+  function openEditTask(task: TaskRecord) {
+    if (!canEdit) return;
+    if (task.status === "completed" || task.status === "cancelled") {
+      toast.error("Reopen the task before editing it.");
+      return;
+    }
+    setEditingTask(task);
+    setTitle(task.title);
+    setStatus(task.status);
+    setPriority(task.priority);
+    setStartsAt(taskDateInputValue(task.starts_at));
+    setDueAt(taskDateInputValue(task.due_at));
+    setDescription(task.description ?? "");
+    setMenuTaskId(null);
+    setDialogOpen(true);
+  }
+
+  async function saveTask(event: FormEvent) {
     event.preventDefault();
-    if (!creationProjectId) return toast.error("Choose a project before creating a task.");
-    if (!startsAt || !dueAt)
+    if (!editingTask && !creationProjectId)
+      return toast.error("Choose a project before creating a task.");
+    if (!editingTask && (!startsAt || !dueAt))
       return toast.error("Choose both a start date and an end date.");
     const today = localDateInputValue();
-    if (startsAt < today) return toast.error("Start date cannot be in the past.");
-    if (dueAt < today) return toast.error("Due date cannot be in the past.");
-    if (dueAt < startsAt)
+    const originalStartsAt = taskDateInputValue(editingTask?.starts_at);
+    const originalDueAt = taskDateInputValue(editingTask?.due_at);
+    if (
+      startsAt &&
+      (!editingTask || startsAt !== originalStartsAt) &&
+      startsAt < today
+    )
+      return toast.error("Start date cannot be in the past.");
+    if (
+      dueAt &&
+      (!editingTask || dueAt !== originalDueAt) &&
+      dueAt < today
+    )
+      return toast.error("Due date cannot be in the past.");
+    if (startsAt && dueAt && dueAt < startsAt)
       return toast.error("Due date cannot be earlier than the start date.");
     setSaving(true);
     try {
-      const response = await fetchWithSession("/api/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project_id: creationProjectId, title, description: description || null, status, priority, starts_at: startsAt, due_at: dueAt }),
-      });
+      const payload: Record<string, unknown> = editingTask
+        ? {
+            ...(title !== editingTask.title ? { title } : {}),
+            ...((description || null) !== (editingTask.description || null)
+              ? { description: description || null }
+              : {}),
+            ...(status !== editingTask.status ? { status } : {}),
+            ...(priority !== editingTask.priority ? { priority } : {}),
+            ...(startsAt !== originalStartsAt
+              ? { starts_at: startsAt || null }
+              : {}),
+            ...(dueAt !== originalDueAt ? { due_at: dueAt || null } : {}),
+          }
+        : {
+            project_id: creationProjectId,
+            title,
+            description: description || null,
+            status,
+            priority,
+            starts_at: startsAt,
+            due_at: dueAt,
+          };
+      if (editingTask && Object.keys(payload).length === 0) {
+        resetTaskForm();
+        return toast.success("No task changes to save");
+      }
+      const response = await fetchWithSession(
+        editingTask ? `/api/tasks/${editingTask.task_id}` : "/api/tasks",
+        {
+          method: editingTask ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
       if (response.status === 401) return router.replace("/login");
       if (!response.ok) throw new Error(await getApiError(response));
-      toast.success("Task created");
-      setDialogOpen(false); setTitle(""); setDescription(""); setStartsAt(""); setDueAt("");
+      toast.success(editingTask ? "Task updated" : "Task created");
+      resetTaskForm();
       await load();
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "Unable to create task.");
+      toast.error(cause instanceof Error ? cause.message : "Unable to save task.");
     } finally { setSaving(false); }
+  }
+
+  async function deleteTask() {
+    if (!deletingTask || !canDelete) return;
+    setDeleting(true);
+    try {
+      await taskRequest(`/api/tasks/${deletingTask.task_id}`, {
+        method: "DELETE",
+      });
+      setTasks((current) =>
+        current.filter((task) => task.task_id !== deletingTask.task_id),
+      );
+      setDeletingTask(null);
+      toast.success("Task deleted");
+    } catch (cause) {
+      toast.error(
+        cause instanceof Error ? cause.message : "Unable to delete task.",
+      );
+    } finally {
+      setDeleting(false);
+    }
   }
 
   async function taskRequest(path: string, init?: RequestInit) {
@@ -937,7 +1076,11 @@ export function TasksView({ projectId, creationProjectId, sort }: ViewProps) {
   }
 
   async function moveTask(task: TaskRecord, targetStatus: TaskStatus) {
-    if (task.status === targetStatus || movingTaskIds.has(task.task_id)) return;
+    if (
+      !canEdit ||
+      task.status === targetStatus ||
+      movingTaskIds.has(task.task_id)
+    ) return;
 
     setTasks((current) =>
       current.map((item) =>
@@ -1000,18 +1143,21 @@ export function TasksView({ projectId, creationProjectId, sort }: ViewProps) {
   }
 
   function beginTaskDrag(event: DragEvent<HTMLElement>, task: TaskRecord) {
+    if (!canEdit) return;
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", task.task_id);
     setDraggedTaskId(task.task_id);
   }
 
   function allowTaskDrop(event: DragEvent<HTMLElement>, status: TaskStatus) {
+    if (!canEdit) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
     if (dragOverStatus !== status) setDragOverStatus(status);
   }
 
   function dropTask(event: DragEvent<HTMLElement>, status: TaskStatus) {
+    if (!canEdit) return;
     event.preventDefault();
     const taskId =
       draggedTaskId || event.dataTransfer.getData("text/plain");
@@ -1025,6 +1171,11 @@ export function TasksView({ projectId, creationProjectId, sort }: ViewProps) {
     const difference = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     return sort === "newest" ? difference : -difference;
   });
+  const today = localDateInputValue();
+  const minimumStartDate =
+    editingTask && startsAt && startsAt < today ? startsAt : today;
+  const minimumDueDate =
+    startsAt || (editingTask && dueAt && dueAt < today ? dueAt : today);
 
   return (
     <div className="relative min-h-[620px]">
@@ -1045,7 +1196,7 @@ export function TasksView({ projectId, creationProjectId, sort }: ViewProps) {
             >
               <header className="mb-3 flex items-center justify-between text-[11px] font-medium text-[#eef0ef]">
                 <span>{column.label}</span>
-                <button aria-label={`Add ${column.label} task`} className="text-[#a9adaa] hover:text-white" onClick={() => { if (column.status === "open" || column.status === "in_progress") setStatus(column.status); setDialogOpen(true); }} type="button"><Plus className="size-3.5" /></button>
+                <button aria-label={`Add ${column.label} task`} className="text-[#a9adaa] hover:text-white" onClick={() => openCreateTask(column.status === "in_progress" ? "in_progress" : "open")} type="button"><Plus className="size-3.5" /></button>
               </header>
               <div className="space-y-2">
                 {columnTasks.map((task) => {
@@ -1053,16 +1204,18 @@ export function TasksView({ projectId, creationProjectId, sort }: ViewProps) {
                   return (
                     <article
                       aria-busy={movingTaskIds.has(task.task_id)}
-                      className={`rounded-lg border border-[#2c2c2c] bg-[#191919] p-3 shadow-sm transition-[transform,opacity,border-color,box-shadow] duration-150 will-change-transform hover:-translate-y-0.5 hover:border-[#3b4944] hover:shadow-[0_8px_24px_rgba(0,0,0,.24)] active:cursor-grabbing ${
+                      className={`rounded-lg border border-[#2c2c2c] bg-[#191919] p-3 shadow-sm transition-[transform,opacity,border-color,box-shadow] duration-150 will-change-transform hover:-translate-y-0.5 hover:border-[#3b4944] hover:shadow-[0_8px_24px_rgba(0,0,0,.24)] ${
                         draggedTaskId === task.task_id
                           ? "cursor-grabbing opacity-35"
-                          : "cursor-grab"
+                          : canEdit
+                            ? "cursor-grab active:cursor-grabbing"
+                            : "cursor-default"
                       } ${
                         movingTaskIds.has(task.task_id)
                           ? "pointer-events-none opacity-55"
                           : ""
                       }`}
-                      draggable={!movingTaskIds.has(task.task_id)}
+                      draggable={canEdit && !movingTaskIds.has(task.task_id)}
                       key={task.task_id}
                       onDragEnd={() => {
                         setDraggedTaskId(null);
@@ -1072,7 +1225,52 @@ export function TasksView({ projectId, creationProjectId, sort }: ViewProps) {
                     >
                       <div className="flex items-center justify-between">
                         <span className={`rounded-full px-2 py-1 text-[8px] font-medium ${column.tone}`}>{column.label}</span>
-                        <MoreHorizontal className="size-4 text-[#b6b9b7]" aria-hidden />
+                        {(canEdit || canDelete) && (
+                          <div className="relative" data-task-menu={task.task_id}>
+                            <button
+                              aria-expanded={menuTaskId === task.task_id}
+                              aria-label={`Actions for ${task.title}`}
+                              className="flex size-7 items-center justify-center rounded-md text-[#b6b9b7] transition hover:bg-white/[0.07] hover:text-white"
+                              onClick={() =>
+                                setMenuTaskId((current) =>
+                                  current === task.task_id ? null : task.task_id,
+                                )
+                              }
+                              type="button"
+                            >
+                              <MoreHorizontal className="size-4" aria-hidden />
+                            </button>
+                            {menuTaskId === task.task_id && (
+                              <div className="absolute top-8 right-0 z-30 w-36 rounded-lg border border-[#343735] bg-[#191b1a] p-1 shadow-[0_16px_40px_rgba(0,0,0,.65)]">
+                                {canEdit &&
+                                  task.status !== "completed" &&
+                                  task.status !== "cancelled" && (
+                                    <button
+                                      className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-[10px] text-[#d9dcda] transition hover:bg-white/[0.07] hover:text-white"
+                                      onClick={() => openEditTask(task)}
+                                      type="button"
+                                    >
+                                      <Pencil className="size-3.5" aria-hidden />
+                                      Edit task
+                                    </button>
+                                  )}
+                                {canDelete && (
+                                  <button
+                                    className="flex h-8 w-full items-center gap-2 rounded-md px-2.5 text-[10px] text-[#ed9898] transition hover:bg-[#4b2323]/60 hover:text-[#ffb1b1]"
+                                    onClick={() => {
+                                      setDeletingTask(task);
+                                      setMenuTaskId(null);
+                                    }}
+                                    type="button"
+                                  >
+                                    <Trash2 className="size-3.5" aria-hidden />
+                                    Delete task
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <h3 className="mt-3 line-clamp-2 text-[11px] font-medium text-[#f0f1f0]">{task.title}</h3>
                       {task.description && (
@@ -1104,20 +1302,60 @@ export function TasksView({ projectId, creationProjectId, sort }: ViewProps) {
           );
         })}
       </div>
-      <CreateButton label="Add Tasks" onClick={() => setDialogOpen(true)} />
+      <CreateButton label="Add Tasks" onClick={() => openCreateTask()} />
       {dialogOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-5 backdrop-blur-[2px]" onMouseDown={(event) => { if (event.currentTarget === event.target) setDialogOpen(false); }}>
-          <form className="w-full max-w-[700px] rounded-2xl border border-[#2c2c2c] bg-[#111] p-6 shadow-[0_25px_70px_rgba(0,0,0,.75)]" onSubmit={createTask}>
-            <h2 className="font-[var(--font-bricolage)] text-lg font-semibold">Create New Task</h2>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-5 backdrop-blur-[2px]" onMouseDown={(event) => { if (event.currentTarget === event.target) resetTaskForm(); }}>
+          <form className="w-full max-w-[700px] rounded-2xl border border-[#2c2c2c] bg-[#111] p-6 shadow-[0_25px_70px_rgba(0,0,0,.75)]" onSubmit={saveTask}>
+            <h2 className="font-[var(--font-bricolage)] text-lg font-semibold">{editingTask ? "Edit Task" : "Create New Task"}</h2>
             <div className="mt-5 flex items-center justify-between gap-4"><span className="text-xs text-[#e2e4e3]">Task Information</span><span className="relative"><select className="h-8 appearance-none rounded-lg border border-[#333] bg-[#232323] pr-8 pl-3 text-[11px] outline-none" onChange={(event) => setStatus(event.target.value as "open" | "in_progress")} value={status}><option value="open">To-do</option><option value="in_progress">In progress</option></select><ChevronDown className="pointer-events-none absolute top-1/2 right-2 size-3 -translate-y-1/2" /></span></div>
             <div className="mt-4 space-y-4">
               <Field label="Task Name"><input className={inputClass} onChange={(event) => setTitle(event.target.value)} placeholder="Task name" required value={title} /></Field>
               <Field label="Priority"><span className="relative"><select className={`${inputClass} appearance-none pr-9`} onChange={(event) => setPriority(event.target.value as typeof priority)} value={priority}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select><ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-3.5 -translate-y-1/2" /></span></Field>
-              <div className="grid grid-cols-2 gap-4 max-[560px]:grid-cols-1"><Field label="Start Date"><input className={inputClass} min={localDateInputValue()} onChange={(event) => { const value = event.target.value; setStartsAt(value); if (dueAt && dueAt < value) setDueAt(value); }} required type="date" value={startsAt} /></Field><Field label="End Date"><input className={inputClass} min={startsAt || localDateInputValue()} onChange={(event) => setDueAt(event.target.value)} required type="date" value={dueAt} /></Field></div>
+              <div className="grid grid-cols-2 gap-4 max-[560px]:grid-cols-1"><Field label="Start Date"><input className={inputClass} min={minimumStartDate} onChange={(event) => { const value = event.target.value; setStartsAt(value); if (value && dueAt && dueAt < value) setDueAt(value); }} required={!editingTask} type="date" value={startsAt} /></Field><Field label="End Date"><input className={inputClass} min={minimumDueDate} onChange={(event) => setDueAt(event.target.value)} required={!editingTask} type="date" value={dueAt} /></Field></div>
               <Field label="Description"><RichTextEditor ariaLabel="Task description" minHeight="min-h-28" onChange={setDescription} placeholder="Task description" value={description} /></Field>
             </div>
-            <div className="mt-5 flex justify-end gap-3"><button className="h-9 rounded-full bg-[#171918] px-8 text-[11px] hover:bg-[#232523]" onClick={() => setDialogOpen(false)} type="button">Cancel</button><button className="h-9 rounded-full bg-[#1f704d] px-8 text-[11px] font-medium hover:bg-[#27845c] disabled:opacity-50" disabled={saving} type="submit">{saving ? "Creating..." : "Confirm"}</button></div>
+            <div className="mt-5 flex justify-end gap-3"><button className="h-9 rounded-full bg-[#171918] px-8 text-[11px] hover:bg-[#232523]" onClick={resetTaskForm} type="button">Cancel</button><button className="h-9 rounded-full bg-[#1f704d] px-8 text-[11px] font-medium hover:bg-[#27845c] disabled:opacity-50" disabled={saving} type="submit">{saving ? "Saving..." : editingTask ? "Save changes" : "Confirm"}</button></div>
           </form>
+        </div>
+      )}
+      {deletingTask && (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 p-5 backdrop-blur-[2px]"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target && !deleting)
+              setDeletingTask(null);
+          }}
+        >
+          <div className="w-full max-w-sm rounded-2xl border border-[#343735] bg-[#151716] p-5 shadow-[0_25px_70px_rgba(0,0,0,.75)]">
+            <div className="flex size-9 items-center justify-center rounded-lg bg-[#4b2323] text-[#ffaaaa]">
+              <Trash2 className="size-4" aria-hidden />
+            </div>
+            <h2 className="mt-4 font-[var(--font-bricolage)] text-base font-semibold text-[#f1f3f2]">
+              Delete this task?
+            </h2>
+            <p className="mt-2 text-[11px] leading-5 text-[#929694]">
+              “{deletingTask.title}” will disappear from the task board. Its
+              audit history will be retained.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                className="h-9 rounded-lg border border-[#343735] bg-[#1d1f1e] px-4 text-[11px] text-[#dadddb] hover:bg-[#252826]"
+                disabled={deleting}
+                onClick={() => setDeletingTask(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="h-9 rounded-lg bg-[#8d3838] px-4 text-[11px] font-medium text-white hover:bg-[#a64343] disabled:opacity-50"
+                disabled={deleting}
+                onClick={() => void deleteTask()}
+                type="button"
+              >
+                {deleting ? "Deleting..." : "Delete task"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

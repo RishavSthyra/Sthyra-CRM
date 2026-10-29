@@ -21,7 +21,10 @@ export async function GET(request: NextRequest) {
   if (!pagination.ok)
     return NextResponse.json({ error: pagination.error }, { status: 400 });
   const values: unknown[] = [getAccessibleProjectIds(scope.context.access)];
-  const filters = ["t.project_id=ANY($1::integer[])"];
+  const filters = [
+    "t.project_id=ANY($1::integer[])",
+    "t.deleted_at IS NULL",
+  ];
   const projectValue = request.nextUrl.searchParams.get("project_id");
   if (projectValue) {
     const projectId = parsePositiveInteger(projectValue);

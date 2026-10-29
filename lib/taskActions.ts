@@ -8,17 +8,17 @@ import {
 } from "@/lib/activities";
 import {
   canAccessOperationsEntity,
-  requireOperationsContext,
 } from "@/lib/operationsAccess";
 import { isObject } from "@/utils/isObject";
 import { validateText } from "@/utils/validateText";
+import { requirePermission } from "@/lib/authorization";
 
 export async function changeTaskState(
   request: NextRequest,
   rawTaskId: string,
   action: "complete" | "cancel" | "reopen",
 ) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "ACTIVITIES_EDIT");
   if (!scope.ok) return scope.response;
   const taskId = parseActivityUuid(rawTaskId);
   if (!taskId)
@@ -56,7 +56,7 @@ export async function changeTaskState(
   try {
     await client.query("BEGIN");
     const currentResult = await client.query(
-      "SELECT * FROM tasks WHERE task_id=$1 FOR UPDATE",
+      "SELECT * FROM tasks WHERE task_id=$1 AND deleted_at IS NULL FOR UPDATE",
       [taskId],
     );
     if (!currentResult.rowCount) {
@@ -129,7 +129,7 @@ export async function changeTaskState(
 }
 
 export async function reassignTask(request: NextRequest, rawTaskId: string) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "ACTIVITIES_EDIT");
   if (!scope.ok) return scope.response;
   const taskId = parseActivityUuid(rawTaskId);
   if (!taskId)
@@ -189,7 +189,7 @@ export async function reassignTask(request: NextRequest, rawTaskId: string) {
   try {
     await client.query("BEGIN");
     const currentResult = await client.query(
-      "SELECT * FROM tasks WHERE task_id=$1 FOR UPDATE",
+      "SELECT * FROM tasks WHERE task_id=$1 AND deleted_at IS NULL FOR UPDATE",
       [taskId],
     );
     if (!currentResult.rowCount) {

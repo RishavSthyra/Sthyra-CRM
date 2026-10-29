@@ -15,6 +15,7 @@ import {
 } from "@/lib/operationsAccess";
 import { canAccessProject } from "@/lib/projectAccess";
 import { taskScheduleError } from "@/lib/taskTiming";
+import { requirePermission } from "@/lib/authorization";
 
 type Context = { params: Promise<{ taskid: string }> };
 
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest, context: Context) {
        LEFT JOIN contacts c ON c.contact_id=t.contact_id
        LEFT JOIN users u ON u.user_id=t.assigned_to_user_id
        LEFT JOIN teams team ON team.team_id=t.assigned_to_team_id
-       WHERE t.task_id=$1`,
+       WHERE t.task_id=$1 AND t.deleted_at IS NULL`,
       [taskId],
     );
     if (!result.rowCount)
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest, context: Context) {
 }
 
 export async function PATCH(request: NextRequest, context: Context) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "ACTIVITIES_EDIT");
   if (!scope.ok) return scope.response;
   const taskId = parseActivityUuid((await context.params).taskid);
   if (!taskId)
@@ -91,7 +92,7 @@ export async function PATCH(request: NextRequest, context: Context) {
   try {
     await client.query("BEGIN");
     const currentResult = await client.query(
-      "SELECT * FROM tasks WHERE task_id=$1 FOR UPDATE",
+      "SELECT * FROM tasks WHERE task_id=$1 AND deleted_at IS NULL FOR UPDATE",
       [taskId],
     );
     if (!currentResult.rowCount) {
@@ -234,6 +235,80 @@ export async function PATCH(request: NextRequest, context: Context) {
     console.error("Failed to update task", error);
     return NextResponse.json(
       { error: "Unable to update task" },
+      { status: 500 },
+    );
+  } finally {
+    client.release();
+  }
+}
+
+export async function DELETE(request: NextRequest, context: Context) {
+  const scope = await requirePermission(request, "ACTIVITIES_DELETE");
+  if (!scope.ok) return scope.response;
+  const taskId = parseActivityUuid((await context.params).taskid);
+  if (!taskId) {
+    return NextResponse.json(
+      { error: "taskId must be a valid UUID" },
+      { status: 400 },
+    );
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const currentResult = await client.query(
+      "SELECT * FROM tasks WHERE task_id=$1 AND deleted_at IS NULL FOR UPDATE",
+      [taskId],
+    );
+    if (!currentResult.rowCount) {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    }
+    const current = currentResult.rows[0];
+    if (
+      !canAccessOperationsEntity(
+        scope.context.access,
+        Number(current.company_id),
+        Number(current.project_id),
+      )
+    ) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { error: "You do not have access to this task" },
+        { status: 403 },
+      );
+    }
+
+    const result = await client.query(
+      `UPDATE tasks
+       SET deleted_at=CURRENT_TIMESTAMP, deleted_by=$2,
+           updated_by=$2, updated_at=CURRENT_TIMESTAMP
+       WHERE task_id=$1
+       RETURNING *`,
+      [taskId, scope.context.userId],
+    );
+    const task = result.rows[0];
+    await recordActivity(
+      client,
+      task,
+      "task",
+      "task_deleted",
+      `Task deleted: ${task.title}`,
+      scope.context.userId,
+      {
+        metadata: {
+          previous_status: current.status,
+          deleted_at: task.deleted_at,
+        },
+      },
+    );
+    await client.query("COMMIT");
+    return NextResponse.json({ message: "Task deleted" });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    console.error("Failed to delete task", error);
+    return NextResponse.json(
+      { error: "Unable to delete task" },
       { status: 500 },
     );
   } finally {
