@@ -19,6 +19,7 @@ import { advanceOpportunityToStage } from "@/lib/opportunities";
 import { parseUuid } from "@/lib/operations";
 import { recordQuotationEvent } from "@/lib/quotations";
 import { isObject } from "@/utils/isObject";
+import { queueWhatsAppAutomationEvent } from "@/lib/whatsappAutomation";
 
 type Context = {
   params: Promise<{ opportunityid: string; quotationid: string }>;
@@ -379,6 +380,14 @@ export async function POST(request: NextRequest, context: Context) {
       opportunityId: access.opportunityId,
       value: Number(quotation.total_amount),
       currency: String(quotation.currency),
+    });
+    await queueWhatsAppAutomationEvent(client, {
+      companyId: Number(quotation.company_id),
+      projectId: Number(quotation.project_id),
+      eventName: "booking_confirmed",
+      leadId: access.opportunity.lead_id as string,
+      opportunityId: access.opportunityId,
+      context: { quotation_id: quotationId, unit_id: unitId },
     });
     await recordQuotationEvent(client, quotation, "booking_created", {
       actorUserId: access.context.userId,

@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import {
+  escapeLiteral,
   Pool,
   PoolClient,
   PoolConfig,
@@ -90,7 +91,7 @@ async function requestAuthContext(): Promise<TenantAuthContext | null> {
   }
 }
 
-async function applyAuthenticatedRole(
+async function beginAuthenticatedTransaction(
   client: PoolClient,
   authContext: TenantAuthContext,
 ): Promise<void> {
@@ -98,37 +99,26 @@ async function applyAuthenticatedRole(
   // backend that was previously used by a client which changed search_path
   // (pg_dump, for example, sets it to an empty value). Never inherit that
   // backend-local state: all application SQL expects CRM tables in public.
-  await client.query(
-    "SET LOCAL search_path = pg_catalog, public, extensions, pg_temp",
-  );
-  await client.query(
-    `SELECT set_config(
-       'request.jwt.claims',
-       json_build_object(
-         'sub', $1::text,
-         'role', 'authenticated',
-         'app_server', TRUE,
-         'workspace_slug', $2::text
-       )::text,
-       TRUE
-     )`,
-    [authContext.authUserId, authContext.workspaceSlug],
-  );
-  await client.query(
-    "SELECT set_config('request.jwt.claim.sub', $1, TRUE)",
-    [authContext.authUserId],
-  );
-  await client.query(
-    "SELECT set_config('request.jwt.claim.role', 'authenticated', TRUE)",
-  );
-  await client.query(
-    "SELECT set_config('request.jwt.claim.workspace_slug', $1, TRUE)",
-    [authContext.workspaceSlug ?? ""],
-  );
-  // The browser-facing Supabase roles have no direct access to CRM tables.
-  // Only the trusted Next.js server assumes this NOLOGIN role after the proxy
-  // has verified the Supabase user and signed the internal request context.
-  await client.query("SET LOCAL ROLE sthyra_app_server");
+  const claims = JSON.stringify({
+    app_server: true,
+    role: "authenticated",
+    sub: authContext.authUserId,
+    workspace_slug: authContext.workspaceSlug,
+  });
+  const subject = escapeLiteral(authContext.authUserId);
+  const workspace = escapeLiteral(authContext.workspaceSlug ?? "");
+  const serializedClaims = escapeLiteral(claims);
+
+  // The database is remote in production. Send transaction startup and all
+  // request-local RLS settings in one protocol round trip instead of seven.
+  await client.query(`BEGIN;
+    SET LOCAL search_path = pg_catalog, public, extensions, pg_temp;
+    SELECT
+      set_config('request.jwt.claims', ${serializedClaims}, TRUE),
+      set_config('request.jwt.claim.sub', ${subject}, TRUE),
+      set_config('request.jwt.claim.role', 'authenticated', TRUE),
+      set_config('request.jwt.claim.workspace_slug', ${workspace}, TRUE);
+    SET LOCAL ROLE sthyra_app_server`);
 }
 
 type QueryArguments = [query: unknown, values?: unknown];
@@ -148,8 +138,7 @@ async function runScopedQuery<Row extends QueryResultRow = QueryResultRow>(
 
   const client = await rawTenantPool.connect();
   try {
-    await client.query("BEGIN");
-    await applyAuthenticatedRole(client, authContext);
+    await beginAuthenticatedTransaction(client, authContext);
     const result = (await Reflect.apply(
       client.query,
       client,
@@ -191,10 +180,9 @@ async function connectScopedClient(): Promise<PoolClient> {
         const command = statement.trim().split(/\s+/, 1)[0]?.toUpperCase();
 
         if (command === "BEGIN" || command === "START") {
-          const result = await Reflect.apply(query, client, args);
-          await applyAuthenticatedRole(client, authContext);
+          await beginAuthenticatedTransaction(client, authContext);
           contextApplied = true;
-          return result;
+          return { command: "BEGIN", rowCount: null, rows: [] };
         }
         if (
           !contextApplied &&

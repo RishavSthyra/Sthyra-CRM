@@ -9,9 +9,14 @@ import { isIP } from "node:net";
 import type { ScryptOptions } from "node:crypto";
 import type { PoolClient } from "pg";
 import { connection, NextRequest, NextResponse } from "next/server";
+import { createAsyncTtlCache } from "@/lib/asyncTtlCache";
 import pool from "@/lib/db";
 import { isSupabaseAuthConfigured } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  readTenantAuthContext,
+  TENANT_AUTH_HEADER,
+} from "@/lib/tenantRequestContext";
 import { workspaceSlugFromHostname } from "@/lib/tenantHost";
 
 function scrypt(
@@ -73,6 +78,44 @@ export type AuthenticatedUser = {
 export type AuthenticationResult =
   | { ok: true; auth: AuthenticatedUser }
   | { ok: false; response: NextResponse };
+
+const authenticatedUserCache = createAsyncTtlCache<
+  string,
+  Record<string, unknown> | null
+>({ ttlMs: 15_000 });
+
+async function loadSupabaseWorkspaceUser(
+  authUserId: string,
+  workspaceSlug: string | null,
+): Promise<Record<string, unknown> | null> {
+  const result = await pool.query(
+    `SELECT ${AUTH_USER_COLUMNS}
+     FROM public.users u
+     JOIN public.workspace_memberships membership
+       ON membership.crm_user_id = u.user_id
+      AND membership.auth_user_id = $1
+      AND membership.is_active = TRUE
+     JOIN public.companies company
+       ON company.company_id = membership.company_id
+     WHERE u.auth_user_id = $1
+       AND u.is_active = TRUE
+       AND u.deleted_at IS NULL
+       AND ($2::text IS NULL OR company.workspace_slug = $2)
+     LIMIT 1`,
+    [authUserId, workspaceSlug],
+  );
+  return result.rows[0] ?? null;
+}
+
+function getSupabaseWorkspaceUser(
+  authUserId: string,
+  workspaceSlug: string | null,
+) {
+  return authenticatedUserCache.get(
+    `${authUserId}:${workspaceSlug ?? "-"}`,
+    () => loadSupabaseWorkspaceUser(authUserId, workspaceSlug),
+  );
+}
 
 function getAuthSecret(): string {
   const secret = process.env.AUTH_SECRET;
@@ -320,9 +363,28 @@ export async function authenticateRequest(
   await connection();
   try {
     if (isSupabaseAuthConfigured()) {
-      const supabase = await createSupabaseServerClient();
-      const { data, error } = await supabase.auth.getClaims();
-      const authUserId = !error ? data?.claims?.sub : null;
+      // The proxy already verifies Supabase claims and signs this short-lived
+      // internal context. Reuse it instead of verifying the same JWT twice for
+      // every API request. Direct handler calls still use the safe fallback.
+      const proxyContext = readTenantAuthContext(
+        request.headers.get(TENANT_AUTH_HEADER),
+      );
+      let authUserId = proxyContext?.authUserId ?? null;
+      let workspaceSlug =
+        proxyContext?.workspaceSlug ??
+        workspaceSlugFromHostname(request.nextUrl.hostname);
+      let sessionId = proxyContext?.sessionId ?? null;
+
+      if (!proxyContext) {
+        const supabase = await createSupabaseServerClient();
+        const { data, error } = await supabase.auth.getClaims();
+        authUserId = !error ? data?.claims?.sub ?? null : null;
+        sessionId =
+          typeof data?.claims?.session_id === "string"
+            ? data.claims.session_id
+            : null;
+        workspaceSlug = workspaceSlugFromHostname(request.nextUrl.hostname);
+      }
       if (typeof authUserId !== "string") {
         return {
           ok: false,
@@ -333,27 +395,8 @@ export async function authenticateRequest(
         };
       }
 
-      const workspaceSlug = workspaceSlugFromHostname(
-        request.nextUrl.hostname,
-      );
-
-      const result = await pool.query(
-        `SELECT ${AUTH_USER_COLUMNS}
-         FROM public.users u
-         JOIN public.workspace_memberships membership
-           ON membership.crm_user_id = u.user_id
-          AND membership.auth_user_id = $1
-          AND membership.is_active = TRUE
-         JOIN public.companies company
-           ON company.company_id = membership.company_id
-         WHERE u.auth_user_id = $1
-           AND u.is_active = TRUE
-           AND u.deleted_at IS NULL
-           AND ($2::text IS NULL OR company.workspace_slug = $2)
-         LIMIT 1`,
-        [authUserId, workspaceSlug],
-      );
-      if (result.rowCount === 0) {
+      const user = await getSupabaseWorkspaceUser(authUserId, workspaceSlug);
+      if (!user) {
         return {
           ok: false,
           response: NextResponse.json(
@@ -367,13 +410,12 @@ export async function authenticateRequest(
         };
       }
 
-      const sessionId =
-        typeof data?.claims?.session_id === "string"
-          ? data.claims.session_id
-          : authUserId;
       return {
         ok: true,
-        auth: { sessionId, user: result.rows[0] },
+        auth: {
+          sessionId: sessionId ?? authUserId,
+          user: user as AuthenticatedUser["user"],
+        },
       };
     }
 

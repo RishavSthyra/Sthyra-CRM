@@ -3,6 +3,7 @@ import { startSlaInstancesForLead } from "@/lib/assignmentService";
 import { addOwnershipHistory } from "@/lib/leadHistory";
 import { isUuid } from "@/lib/permissions";
 import { applyRoutingForLead } from "@/lib/routingService";
+import { queueWhatsAppAutomationEvent } from "@/lib/whatsappAutomation";
 import { isObject } from "@/utils/isObject";
 import { validateText } from "@/utils/validateText";
 
@@ -457,5 +458,12 @@ export async function createLead(
   );
   await startSlaInstancesForLead(client, created);
   await applyRoutingForLead(client, created);
+  await queueWhatsAppAutomationEvent(client, {
+    companyId,
+    projectId: Number(created.project_id),
+    eventName: "lead_created",
+    leadId: String(created.lead_id),
+    contactId: String(created.contact_id),
+  });
   return created;
 }

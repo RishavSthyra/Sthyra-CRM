@@ -503,7 +503,7 @@ export async function validateActivityReferences(
 export async function recordActivity(
   client: Pick<PoolClient, "query">,
   entity: Record<string, unknown>,
-  sourceType: "task" | "note" | "appointment" | "call" | "email",
+  sourceType: "task" | "note" | "appointment" | "call" | "email" | "whatsapp",
   activityType: string,
   title: string,
   actorUserId: string | null,

@@ -49,6 +49,8 @@ export async function GET(request: NextRequest) {
     : getAccessibleProjectIds(scope.context.access);
   const params = [projectIds, rangeParam];
   const projectFilter = "= ANY($1::integer[])";
+  const includeGeography =
+    request.nextUrl.searchParams.get("include_geography") !== "false";
 
   try {
     // These aggregates do not depend on one another. Running them through the
@@ -217,8 +219,9 @@ export async function GET(request: NextRequest) {
          GROUP BY months.month ORDER BY months.month`,
         [projectIds],
       ),
-      pool.query(
-        `WITH lead_locations AS (
+      includeGeography
+        ? pool.query(
+            `WITH lead_locations AS (
            SELECT
              NULLIF(BTRIM(COALESCE(
                CASE WHEN contact.latitude IS NOT NULL AND contact.longitude IS NOT NULL
@@ -285,8 +288,9 @@ export async function GET(request: NextRequest) {
                 COUNT(*)::integer AS leads
          FROM lead_locations
          GROUP BY country, state, district, city, latitude, longitude`,
-        params,
-      ),
+            params,
+          )
+        : Promise.resolve(null),
     ]);
 
     const summaryRow = numericRows(summary.rows)[0] ?? {};
@@ -324,10 +328,14 @@ export async function GET(request: NextRequest) {
       inventory_mix: numericRows(inventoryMix.rows),
       revenue_forecast: numericRows(revenueForecast.rows),
       conversion_funnel: numericRows(funnel.rows),
-      lead_geography: buildLeadGeography(
-        numericRows(geography.rows),
-        leadsReceived,
-      ),
+      ...(geography
+        ? {
+            lead_geography: buildLeadGeography(
+              numericRows(geography.rows),
+              leadsReceived,
+            ),
+          }
+        : {}),
     });
   } catch (error) {
     console.error("Failed to load dashboard analytics", error);

@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Area,
   CartesianGrid,
@@ -37,6 +37,12 @@ const LeadGeographyMap = dynamic(
 
 type DataRow = Record<string, string | number | null>;
 
+type LeadGeography = {
+  points: GeographyPoint[];
+  mapped_leads: number;
+  unmapped_leads: number;
+};
+
 type Analytics = {
   generated_at: string;
   projects: Array<{ project_id: number; project_name: string }>;
@@ -60,11 +66,6 @@ type Analytics = {
   inventory_mix: DataRow[];
   revenue_forecast: DataRow[];
   conversion_funnel: DataRow[];
-  lead_geography: {
-    points: GeographyPoint[];
-    mapped_leads: number;
-    unmapped_leads: number;
-  };
 };
 
 const MONOCHROME = [
@@ -162,26 +163,64 @@ export function AnalyticsDashboard() {
   const [days, setDays] = useState(90);
   const [projectId, setProjectId] = useState("");
   const [loading, setLoading] = useState(true);
+  const [geography, setGeography] = useState<LeadGeography | null>(null);
+  const [geographyError, setGeographyError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const requestRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
+    requestRef.current?.abort();
+    const controller = new AbortController();
+    requestRef.current = controller;
     setLoading(true);
     setError(null);
+    setGeography(null);
+    setGeographyError(null);
     const query = new URLSearchParams({ days: String(days) });
     if (projectId) query.set("project_id", projectId);
+    let coreLoaded = false;
     try {
+      const coreQuery = new URLSearchParams(query);
+      coreQuery.set("include_geography", "false");
       const response = await fetchWithSession(
-        `/api/dashboard/analytics?${query}`,
-        { cache: "no-store" },
+        `/api/dashboard/analytics?${coreQuery}`,
+        { cache: "no-store", signal: controller.signal },
       );
       if (!response.ok) throw new Error(await getApiError(response));
+      if (controller.signal.aborted) return;
       setData((await response.json()) as Analytics);
+      coreLoaded = true;
+      setLoading(false);
+
+      // Geography is visually heavy and is not needed for the KPI shell. Load
+      // it only after the rest of the dashboard is usable.
+      const geographyResponse = await fetchWithSession(
+        `/api/dashboard/geography?${query}`,
+        { cache: "no-store", signal: controller.signal },
+      );
+      if (!geographyResponse.ok) {
+        throw new Error(await getApiError(geographyResponse));
+      }
+      const body = (await geographyResponse.json()) as {
+        lead_geography: LeadGeography;
+      };
+      if (!controller.signal.aborted) setGeography(body.lead_geography);
     } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "AbortError") return;
+      if (controller.signal.aborted) return;
+      if (coreLoaded) {
+        setGeographyError(
+          cause instanceof Error
+            ? cause.message
+            : "Unable to load lead geography",
+        );
+        return;
+      }
       setError(
         cause instanceof Error ? cause.message : "Unable to load analytics",
       );
     } finally {
-      setLoading(false);
+      if (requestRef.current === controller) setLoading(false);
     }
   }, [days, projectId]);
 
@@ -189,6 +228,13 @@ export function AnalyticsDashboard() {
     const timeout = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timeout);
   }, [load]);
+
+  useEffect(
+    () => () => {
+      requestRef.current?.abort();
+    },
+    [],
+  );
 
   if (error) {
     return (
@@ -356,11 +402,17 @@ export function AnalyticsDashboard() {
                 detail="Click a highlighted region or use + / − to drill down"
                 title="Geographic lead concentration"
               />
-              <LeadGeographyMap
-                mappedLeads={data.lead_geography.mapped_leads}
-                points={data.lead_geography.points}
-                unmappedLeads={data.lead_geography.unmapped_leads}
-              />
+              {geography ? (
+                <LeadGeographyMap
+                  mappedLeads={geography.mapped_leads}
+                  points={geography.points}
+                  unmappedLeads={geography.unmapped_leads}
+                />
+              ) : (
+                <div className="grid min-h-[430px] place-items-center bg-[#0b0c0e] px-6 text-center text-[11px] text-[#858585]">
+                  {geographyError ? geographyError : "Loading map…"}
+                </div>
+              )}
             </article>
           </section>
 

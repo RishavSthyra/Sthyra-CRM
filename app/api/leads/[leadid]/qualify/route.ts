@@ -12,6 +12,7 @@ import {
   requireOperationsContext,
 } from "@/lib/operationsAccess";
 import { queueMarketingConversion } from "@/lib/marketing";
+import { queueWhatsAppAutomationEvent } from "@/lib/whatsappAutomation";
 import { isObject } from "@/utils/isObject";
 
 type Context = { params: Promise<{ leadid: string }> };
@@ -174,6 +175,14 @@ export async function POST(request: NextRequest, context: Context) {
       transactionId: `lead-qualified:${leadId}`,
       leadId,
       opportunityId: String(opportunity.opportunity_id),
+    });
+    await queueWhatsAppAutomationEvent(client, {
+      companyId: Number(project.rows[0].company_id),
+      projectId: Number(lead.project_id),
+      eventName: "lead_qualified",
+      leadId,
+      contactId: String(lead.contact_id),
+      context: { opportunity_id: opportunity.opportunity_id },
     });
     await client.query("COMMIT");
     return NextResponse.json({

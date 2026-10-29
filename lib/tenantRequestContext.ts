@@ -5,6 +5,7 @@ const CONTEXT_TTL_SECONDS = 5 * 60;
 
 export type TenantAuthContext = {
   authUserId: string;
+  sessionId: string | null;
   workspaceSlug: string | null;
 };
 
@@ -25,10 +26,12 @@ function sign(value: string): string {
 export function createTenantAuthContext(
   authUserId: string,
   workspaceSlug: string | null = null,
+  sessionId: string | null = null,
 ): string {
   const issuedAt = Math.floor(Date.now() / 1000);
   const tenant = workspaceSlug ?? "-";
-  const payload = `${authUserId}.${tenant}.${issuedAt}`;
+  const session = sessionId ?? "-";
+  const payload = `${authUserId}.${tenant}.${session}.${issuedAt}`;
   return `${payload}.${sign(payload)}`;
 }
 
@@ -37,12 +40,16 @@ export function readTenantAuthContext(
 ): TenantAuthContext | null {
   if (!value) return null;
   const parts = value.split(".");
-  if (parts.length !== 4) return null;
-  const [authUserId, tenant, issuedAtValue, signature] = parts;
+  if (parts.length !== 4 && parts.length !== 5) return null;
+  const [authUserId, tenant] = parts;
+  const sessionId = parts.length === 5 ? parts[2] : "-";
+  const issuedAtValue = parts.at(-2)!;
+  const signature = parts.at(-1)!;
   if (!/^[0-9a-f-]{36}$/i.test(authUserId)) return null;
   if (tenant !== "-" && !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(tenant)) {
     return null;
   }
+  if (sessionId !== "-" && !/^[0-9a-f-]{36}$/i.test(sessionId)) return null;
 
   const issuedAt = Number(issuedAtValue);
   const now = Math.floor(Date.now() / 1000);
@@ -54,7 +61,10 @@ export function readTenantAuthContext(
     return null;
   }
 
-  const payload = `${authUserId}.${tenant}.${issuedAtValue}`;
+  const payload =
+    parts.length === 5
+      ? `${authUserId}.${tenant}.${sessionId}.${issuedAtValue}`
+      : `${authUserId}.${tenant}.${issuedAtValue}`;
   const expected = Buffer.from(sign(payload), "base64url");
   const received = Buffer.from(signature, "base64url");
   if (
@@ -65,6 +75,7 @@ export function readTenantAuthContext(
   }
   return {
     authUserId,
+    sessionId: sessionId === "-" ? null : sessionId,
     workspaceSlug: tenant === "-" ? null : tenant,
   };
 }

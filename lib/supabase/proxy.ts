@@ -73,9 +73,15 @@ export async function updateSupabaseSession(request: NextRequest) {
   const subject = !error && data?.claims?.sub;
   if (typeof subject === "string") {
     const workspaceSlug = workspaceSlugFromHostname(request.nextUrl.hostname);
+    const claimedSessionId = data?.claims?.session_id;
+    const sessionId =
+      typeof claimedSessionId === "string" &&
+      /^[0-9a-f-]{36}$/i.test(claimedSessionId)
+        ? claimedSessionId
+        : null;
     requestHeaders.set(
       TENANT_AUTH_HEADER,
-      createTenantAuthContext(subject, workspaceSlug),
+      createTenantAuthContext(subject, workspaceSlug, sessionId),
     );
     const authenticatedResponse = NextResponse.next({
       request: { headers: requestHeaders },

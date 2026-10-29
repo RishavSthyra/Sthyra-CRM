@@ -12,6 +12,7 @@ import {
   recordQuotationEvent,
 } from "@/lib/quotations";
 import { isObject } from "@/utils/isObject";
+import { queueWhatsAppAutomationEvent } from "@/lib/whatsappAutomation";
 
 type Context = {
   params: Promise<{ opportunityid: string; quotationid: string }>;
@@ -259,6 +260,13 @@ export async function POST(request: NextRequest, context: Context) {
     await recordQuotationEvent(eventClient, updated.rows[0], "sent", {
       actorUserId: access.context.userId,
       metadata: { recipient_email: toAddress, email_id: emailId },
+    });
+    await queueWhatsAppAutomationEvent(eventClient, {
+      companyId: Number(updated.rows[0].company_id),
+      projectId: Number(updated.rows[0].project_id),
+      eventName: "quotation_sent",
+      opportunityId: String(updated.rows[0].opportunity_id),
+      context: { quotation_id: quotationId },
     });
     await eventClient.query("COMMIT");
     return NextResponse.json({

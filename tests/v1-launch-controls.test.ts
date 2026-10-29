@@ -66,9 +66,11 @@ test("signed request context binds an auth user to its tenant hostname", () => {
   const previous = process.env.AUTH_SECRET;
   process.env.AUTH_SECRET = "test-auth-secret-that-is-at-least-thirty-two-characters";
   const authUserId = "123e4567-e89b-12d3-a456-426614174000";
-  const context = createTenantAuthContext(authUserId, "abhigna");
+  const sessionId = "22222222-2222-4222-8222-222222222222";
+  const context = createTenantAuthContext(authUserId, "abhigna", sessionId);
   assert.deepEqual(readTenantAuthContext(context), {
     authUserId,
+    sessionId,
     workspaceSlug: "abhigna",
   });
   assert.equal(readTenantAuthContext(context.replace("abhigna", "nykaa")), null);

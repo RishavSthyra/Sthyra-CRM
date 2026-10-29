@@ -14,6 +14,7 @@ import {
 } from "@/lib/quotations";
 import { enforceRateLimits } from "@/lib/rateLimit";
 import { isObject } from "@/utils/isObject";
+import { queueWhatsAppAutomationEvent } from "@/lib/whatsappAutomation";
 
 type Context = { params: Promise<{ token: string }> };
 
@@ -286,6 +287,13 @@ export async function PATCH(request: NextRequest, context: Context) {
         actorName: name,
         actorEmail: email,
         comment: comment || null,
+      });
+      await queueWhatsAppAutomationEvent(client, {
+        companyId: Number(quotation.company_id),
+        projectId: Number(quotation.project_id),
+        eventName: "quotation_accepted",
+        opportunityId: String(quotation.opportunity_id),
+        context: { quotation_id: quotation.quotation_id },
       });
       await advanceOpportunityToStage(
         client,

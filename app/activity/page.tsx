@@ -17,6 +17,7 @@ import {
   Funnel,
   ListFilter,
   Mail,
+  MessageCircle,
   Phone,
   StickyNote,
   X,
@@ -27,13 +28,14 @@ import {
   NotesView,
   TasksView,
 } from "@/components/activity/ActivityTabViews";
+import { WhatsAppView } from "@/components/activity/WhatsAppView";
 import { RichTextContent } from "@/components/activity/RichTextEditor";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 import { getWorkspaceContext } from "@/lib/clientWorkspaceContext";
 
-type ActivityTab = "activity" | "calls" | "email" | "tasks" | "notes";
-type ActivityFilter = "all" | "appointment" | "call" | "email" | "task" | "note";
+type ActivityTab = "activity" | "calls" | "email" | "whatsapp" | "tasks" | "notes";
+type ActivityFilter = "all" | "appointment" | "call" | "email" | "whatsapp" | "task" | "note";
 type DateRange = "all" | "today" | "week" | "month";
 type SortOrder = "newest" | "oldest";
 type EmailComposeContext = { key: string; leadId: string; to: string };
@@ -60,7 +62,7 @@ type ActivityRecord = {
   contact_first_name?: string | null;
   contact_last_name?: string | null;
   activity_type: string;
-  source_type: "task" | "note" | "appointment" | "call" | "email";
+  source_type: "task" | "note" | "appointment" | "call" | "email" | "whatsapp";
   source_appointment_type?: string | null;
   source_starts_at?: string | null;
   source_description?: string | null;
@@ -90,6 +92,7 @@ const tabs: Array<{ id: ActivityTab; label: string }> = [
   { id: "activity", label: "Activity" },
   { id: "calls", label: "Calls" },
   { id: "email", label: "Email" },
+  { id: "whatsapp", label: "WhatsApp" },
   { id: "tasks", label: "Tasks" },
   { id: "notes", label: "Notes" },
 ];
@@ -105,6 +108,7 @@ const filterOptions: Array<{ id: ActivityFilter; label: string }> = [
   { id: "all", label: "All activity" },
   { id: "call", label: "Calls" },
   { id: "email", label: "Emails" },
+  { id: "whatsapp", label: "WhatsApp" },
   { id: "appointment", label: "Appointments" },
   { id: "task", label: "Tasks" },
   { id: "note", label: "Notes" },
@@ -206,6 +210,9 @@ function ActivityMarkerIcon({ activity }: { activity: ActivityRecord }) {
   if (kind === "email") {
     return <Mail aria-hidden className="size-2.5" strokeWidth={2} />;
   }
+  if (kind === "whatsapp") {
+    return <MessageCircle aria-hidden className="size-2.5" strokeWidth={2} />;
+  }
   if (kind === "task") {
     return <CheckCircle2 aria-hidden className="size-2.5" strokeWidth={2} />;
   }
@@ -219,6 +226,7 @@ function markerTone(activity: ActivityRecord) {
   const kind = activityKind(activity);
   if (kind === "call") return "border-[#2aa284]/45 bg-[#173e34] text-[#70d5b4]";
   if (kind === "email") return "border-[#a58bfa]/35 bg-[#302a4b] text-[#b7a7f8]";
+  if (kind === "whatsapp") return "border-[#41a782]/35 bg-[#183a30] text-[#72c9aa]";
   if (kind === "task") return "border-[#efc36a]/35 bg-[#433719] text-[#efc36a]";
   if (kind === "note") return "border-[#e79870]/35 bg-[#472d22] text-[#efa27c]";
   return "border-[#75a7e8]/35 bg-[#20354e] text-[#89b9ef]";
@@ -667,6 +675,7 @@ export default function ActivityPage() {
         tab === "activity" ||
         (tab === "calls" && kind === "call") ||
         (tab === "email" && kind === "email") ||
+        (tab === "whatsapp" && activity.source_type === "whatsapp") ||
         (tab === "tasks" && activity.source_type === "task") ||
         (tab === "notes" && activity.source_type === "note");
       const inFilter =
@@ -929,6 +938,12 @@ export default function ActivityPage() {
                   onInitialComposeConsumed={() =>
                     setInitialEmailCompose(null)
                   }
+                  projectId={selectedProjectId}
+                  sort={sort}
+                />
+              ) : tab === "whatsapp" ? (
+                <WhatsAppView
+                  creationProjectId={creationProjectId}
                   projectId={selectedProjectId}
                   sort={sort}
                 />
