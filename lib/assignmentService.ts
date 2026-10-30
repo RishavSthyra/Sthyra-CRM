@@ -366,15 +366,9 @@ export async function chooseQueueAssignee(
   let orderBy = "qm.position, qm.user_id";
   if (queue.assignment_strategy === "load_balanced") {
     orderBy = "active_assignments, qm.position, qm.user_id";
-  } else if (queue.assignment_strategy === "round_robin") {
-    orderBy = "(qm.user_id = $2::uuid), qm.position, qm.user_id";
-  }
-  const queryValues: unknown[] = [queue.queue_id];
-  if (queue.assignment_strategy === "round_robin") {
-    queryValues.push(queue.last_assigned_user_id ?? null);
   }
   const result = await client.query(
-    `SELECT qm.user_id,
+    `SELECT qm.user_id, qm.position,
        COUNT(a.assignment_id) FILTER (WHERE a.status IN ('pending','accepted'))::integer AS active_assignments
      FROM queue_members qm
      JOIN users u ON u.user_id=qm.user_id
@@ -390,13 +384,36 @@ export async function chooseQueueAssignee(
            AND CURRENT_DATE BETWEEN leave_record.start_date AND leave_record.end_date
        )
      GROUP BY qm.user_id, qm.position
-     ORDER BY ${orderBy}
-     LIMIT 1`,
-    queryValues,
+     ORDER BY ${orderBy}`,
+    [queue.queue_id],
   );
   if (!result.rowCount)
     throw new OperationsConflictError("Queue has no available members");
+
+  if (queue.assignment_strategy === "round_robin") {
+    return nextRoundRobinAssignee(
+      result.rows,
+      (queue.last_assigned_user_id as string | null) ?? null,
+    );
+  }
   return result.rows[0].user_id as string;
+}
+
+export function nextRoundRobinAssignee(
+  candidates: Array<{ user_id: string; position?: number }>,
+  lastAssignedUserId: string | null,
+): string {
+  if (!candidates.length)
+    throw new OperationsConflictError("Queue has no available members");
+
+  const ordered = [...candidates].sort((left, right) => {
+    const positionDifference = (left.position ?? 0) - (right.position ?? 0);
+    return positionDifference || left.user_id.localeCompare(right.user_id);
+  });
+  const previousIndex = lastAssignedUserId
+    ? ordered.findIndex(({ user_id }) => user_id === lastAssignedUserId)
+    : -1;
+  return ordered[(previousIndex + 1) % ordered.length].user_id;
 }
 
 export async function getQueueForUpdate(
