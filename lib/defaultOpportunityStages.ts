@@ -7,17 +7,17 @@ export const DEFAULT_PROJECT_OPPORTUNITY_STAGES = [
     is_initial: true,
   },
   {
-    stage_key: "shortlisting",
-    stage_name: "Shortlisting",
+    stage_key: "site_visit",
+    stage_name: "Site Visit",
     probability: 40,
-    color: "#a98af7",
+    color: "#e7aa51",
     is_initial: false,
   },
   {
-    stage_key: "site_visit",
-    stage_name: "Site Visit",
+    stage_key: "shortlisting",
+    stage_name: "Shortlisting",
     probability: 55,
-    color: "#e7aa51",
+    color: "#a98af7",
     is_initial: false,
   },
   {
