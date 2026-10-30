@@ -34,6 +34,7 @@ import {
   canMoveLeadToDeadFromCall,
   leadStageForCallOutcome,
 } from "@/lib/callOutcomes";
+import { leadRequiresReopen } from "@/lib/leadMutationPolicy";
 import { DEFAULT_PROJECT_LEAD_STAGES } from "@/lib/defaultLeadStages";
 import {
   DEAD_LEADS_TAB_KEY,
@@ -273,8 +274,10 @@ function availableLeadActions(lead: Lead) {
       ? new Set(["qualify", "reopen", "mark-duplicate", "mark-invalid"])
       : status === "closed" || status === "invalid"
         ? new Set(["reopen"])
-        : status === "qualified" || status === "duplicate"
-          ? new Set<string>()
+        : status === "duplicate"
+          ? new Set(["reopen"])
+          : status === "qualified"
+            ? new Set<string>()
           : new Set([
               "change-stage",
               "qualify",
@@ -489,6 +492,9 @@ export default function LeadsPage() {
   const [nextFollowUpMin, setNextFollowUpMin] = useState("");
   const [deadCallConfirmationOpen, setDeadCallConfirmationOpen] =
     useState(false);
+  const [reopenConfirmationOpen, setReopenConfirmationOpen] = useState(false);
+  const [reopenActionLabel, setReopenActionLabel] = useState("make changes");
+  const [reopenSaving, setReopenSaving] = useState(false);
   const [callSaving, setCallSaving] = useState(false);
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [drawerError, setDrawerError] = useState<string | null>(null);
@@ -825,6 +831,10 @@ export default function LeadsPage() {
 
     function closeDrawerOnEscape(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
+      if (reopenConfirmationOpen) {
+        setReopenConfirmationOpen(false);
+        return;
+      }
       if (deadCallConfirmationOpen) {
         setDeadCallConfirmationOpen(false);
         return;
@@ -839,7 +849,7 @@ export default function LeadsPage() {
       document.removeEventListener("keydown", closeDrawerOnEscape);
       document.body.style.overflow = previousOverflow;
     };
-  }, [deadCallConfirmationOpen, selectedLeadId]);
+  }, [deadCallConfirmationOpen, reopenConfirmationOpen, selectedLeadId]);
 
   useEffect(() => {
     if (!selectedLeadId) return;
@@ -865,6 +875,8 @@ export default function LeadsPage() {
       setCallSummary("");
       setNextFollowUpAt("");
       setDeadCallConfirmationOpen(false);
+      setReopenConfirmationOpen(false);
+      setReopenActionLabel("make changes");
       setDrawerTab("activity");
 
       try {
@@ -960,6 +972,76 @@ export default function LeadsPage() {
     });
     if (email) params.set("to", email);
     router.push(`/activity?${params.toString()}`);
+  }
+
+  function requestLeadMutation(actionLabel: string): boolean {
+    const lead = leadDetail ?? selectedLead;
+    if (!lead || !leadRequiresReopen(lead.status)) return true;
+    setReopenActionLabel(actionLabel);
+    setReopenConfirmationOpen(true);
+    return false;
+  }
+
+  async function reopenSelectedLead() {
+    const lead = leadDetail ?? selectedLead;
+    if (!lead) return;
+    setReopenSaving(true);
+    try {
+      const response = await fetchWithSession(
+        `/api/leads/${lead.lead_id}/reopen`,
+        {
+          body: JSON.stringify({}),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        },
+      );
+      if (response.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      if (!response.ok) throw new Error(await getApiError(response));
+      const body = (await response.json()) as {
+        lead?: Lead;
+        message?: string;
+        stage?: {
+          stage_id?: string | null;
+          stage_key?: string | null;
+          stage_name?: string | null;
+        };
+      };
+      if (!body.lead) throw new Error("The reopened lead was not returned");
+      const leadUpdate = {
+        status: body.lead.status,
+        stage_id: body.stage?.stage_id ?? body.lead.stage_id,
+        stage_key: body.stage?.stage_key ?? null,
+        stage_name: body.stage?.stage_name ?? null,
+      };
+      setSelectedLead((current) =>
+        current ? { ...current, ...leadUpdate } : current,
+      );
+      setLeadDetail((current) =>
+        current
+          ? {
+              ...current,
+              ...leadUpdate,
+              stage: body.stage?.stage_name
+                ? { stage_name: body.stage.stage_name }
+                : current.stage,
+            }
+          : current,
+      );
+      setReopenConfirmationOpen(false);
+      toast.success(
+        `${body.message || "Lead reopened"}. You can now ${reopenActionLabel}.`,
+      );
+      await loadLeads({ forceNetwork: true, forceSummary: true });
+    } catch (cause) {
+      toast.error(
+        cause instanceof Error ? cause.message : "Unable to reopen lead",
+      );
+    } finally {
+      setReopenSaving(false);
+    }
   }
 
   async function updateContactProfile(profile: ContactProfileWrite) {
@@ -1891,6 +1973,7 @@ export default function LeadsPage() {
           className="fixed inset-0 z-[80] bg-black/70"
           onMouseDown={() => {
             setDeadCallConfirmationOpen(false);
+            setReopenConfirmationOpen(false);
             setSelectedLead(null);
           }}
         >
@@ -1908,6 +1991,7 @@ export default function LeadsPage() {
                 aria-label="Close lead overview"
                 onClick={() => {
                   setDeadCallConfirmationOpen(false);
+                  setReopenConfirmationOpen(false);
                   setSelectedLead(null);
                 }}
                 type="button"
@@ -1936,6 +2020,9 @@ export default function LeadsPage() {
                     <section className="relative flex min-h-[84px] items-center gap-3.5 border-b border-[#2c2c2c] px-[22px] max-[560px]:gap-2.5 max-[560px]:px-4">
                       <ContactProfilePopover
                         name={name}
+                        onBeforeEdit={() =>
+                          requestLeadMutation("edit the contact profile")
+                        }
                         onSave={updateContactProfile}
                         profile={{
                           ...contact,
@@ -1962,6 +2049,11 @@ export default function LeadsPage() {
                         <a
                           href={`tel:${phone}`}
                           className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#216939] px-[15px] py-[11px] text-xs text-white no-underline shadow-[inset_0_4px_12px_rgba(0,0,0,0.25)] max-[560px]:px-2.5 max-[560px]:py-[9px] max-[560px]:text-[11px]"
+                          onClick={(event) => {
+                            if (!requestLeadMutation("call this lead")) {
+                              event.preventDefault();
+                            }
+                          }}
                         >
                           <Phone
                             aria-hidden
@@ -2146,7 +2238,11 @@ export default function LeadsPage() {
                               </span>
                               <button
                                 className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#315f50] bg-[#18382e] px-3 text-[10px] font-medium text-[#bdebdc] transition hover:bg-[#214a3d]"
-                                onClick={toggleCallComposer}
+                                onClick={() => {
+                                  if (requestLeadMutation("log a call")) {
+                                    toggleCallComposer();
+                                  }
+                                }}
                                 type="button"
                               >
                                 <Plus className="size-3" aria-hidden />
@@ -2293,6 +2389,7 @@ export default function LeadsPage() {
                                 <button
                                   className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg bg-[#247b5d] px-4 text-[10px] font-semibold text-white transition hover:bg-[#2d9470]"
                                   onClick={() =>
+                                    requestLeadMutation("send an email") &&
                                     openLeadEmailComposer(
                                       currentLead,
                                       email ?? "",
@@ -2352,9 +2449,13 @@ export default function LeadsPage() {
                               </span>
                               <button
                                 className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#315f50] bg-[#18382e] px-3 text-[10px] font-medium text-[#bdebdc] transition hover:bg-[#214a3d]"
-                                onClick={() =>
-                                  setNoteComposerOpen((current) => !current)
-                                }
+                                onClick={() => {
+                                  if (requestLeadMutation("add a note")) {
+                                    setNoteComposerOpen(
+                                      (current) => !current,
+                                    );
+                                  }
+                                }}
                                 type="button"
                               >
                                 <Plus className="size-3" aria-hidden />
@@ -2510,6 +2611,61 @@ export default function LeadsPage() {
                     type="button"
                   >
                     {callSaving ? "Saving…" : "Move to Dead"}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+      {reopenConfirmationOpen && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              aria-labelledby="reopen-lead-confirmation-title"
+              aria-modal="true"
+              className="fixed inset-0 z-[130] flex items-center justify-center bg-black/75 p-4"
+              onMouseDown={() => {
+                if (!reopenSaving) setReopenConfirmationOpen(false);
+              }}
+              role="dialog"
+            >
+              <div
+                className="w-full max-w-md rounded-2xl border border-[#343936] bg-[#121513] p-5 shadow-2xl"
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <span className="flex size-10 items-center justify-center rounded-full border border-[#40594f] bg-[#18251f] text-[#7fd4b6]">
+                  <RefreshCw className="size-5" aria-hidden />
+                </span>
+                <h2
+                  className="mt-4 text-base font-semibold text-[#f2f4f3]"
+                  id="reopen-lead-confirmation-title"
+                >
+                  Reopen this lead?
+                </h2>
+                <p className="mt-2 text-xs leading-5 text-[#999f9c]">
+                  This lead is currently {" "}
+                  <strong className="font-medium text-[#d9dddb]">
+                    {label((leadDetail ?? selectedLead)?.status)}
+                  </strong>
+                  . Reopen it before you can {reopenActionLabel}. It will return
+                  to the project&apos;s initial active stage.
+                </p>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    className="h-10 rounded-lg px-4 text-xs font-medium text-[#999f9c] hover:bg-white/[0.04] disabled:opacity-50"
+                    disabled={reopenSaving}
+                    onClick={() => setReopenConfirmationOpen(false)}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="h-10 rounded-lg bg-[#247b5d] px-4 text-xs font-semibold text-white hover:bg-[#2d9470] disabled:opacity-50"
+                    disabled={reopenSaving}
+                    onClick={() => void reopenSelectedLead()}
+                    type="button"
+                  >
+                    {reopenSaving ? "Reopening…" : "Reopen lead"}
                   </button>
                 </div>
               </div>

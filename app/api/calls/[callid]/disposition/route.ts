@@ -7,6 +7,10 @@ import {
 } from "@/lib/operationsAccess";
 import { applyLeadCallWorkflow } from "@/lib/leadCallWorkflow";
 import {
+  assertLeadOpenForMutation,
+  isLeadReopenRequiredError,
+} from "@/lib/leadMutationPolicy";
+import {
   TERMINAL_CALL_STATUSES,
   addCallHistory,
   validateDisposition,
@@ -71,6 +75,11 @@ export async function POST(request: NextRequest, context: Context) {
         { status: 409 },
       );
     }
+    await assertLeadOpenForMutation(client, {
+      leadId: call.lead_id,
+      companyId: Number(call.company_id),
+      projectId: Number(call.project_id),
+    });
     if (validation.data.mark_lead_dead && !call.lead_id) {
       await client.query("ROLLBACK");
       return NextResponse.json(
@@ -136,6 +145,12 @@ export async function POST(request: NextRequest, context: Context) {
     });
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
+    if (isLeadReopenRequiredError(error)) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: 409 },
+      );
+    }
     console.error("Failed to disposition call", error);
     return NextResponse.json(
       { error: "Unable to save call disposition" },

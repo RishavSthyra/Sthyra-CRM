@@ -7,6 +7,10 @@ import {
   validateCallPayload,
 } from "@/lib/communications";
 import { applyLeadCallWorkflow } from "@/lib/leadCallWorkflow";
+import {
+  assertLeadOpenForMutation,
+  isLeadReopenRequiredError,
+} from "@/lib/leadMutationPolicy";
 import { requireOperationsContext } from "@/lib/operationsAccess";
 import { canAccessProject, getAccessibleProjectIds } from "@/lib/projectAccess";
 import { parsePagination } from "@/utils/parsePagination";
@@ -133,6 +137,11 @@ export async function POST(request: NextRequest) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    await assertLeadOpenForMutation(client, {
+      leadId: validation.data.lead_id,
+      companyId: scope.context.access.company.company_id,
+      projectId: validation.data.project_id,
+    });
     const contactId = await resolveCommunicationContact(
       client,
       scope.context.access.company.company_id,
@@ -224,6 +233,12 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
+    if (isLeadReopenRequiredError(error)) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: 409 },
+      );
+    }
     const message = error instanceof Error ? error.message : "Unable to log call";
     if (message.includes("lead_id") || message.includes("contact_id")) {
       return NextResponse.json({ error: message }, { status: 422 });

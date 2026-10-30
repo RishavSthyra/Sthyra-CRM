@@ -9,6 +9,7 @@ import {
   canUpdateLead,
   requireLeadVisibility,
 } from "@/lib/leadVisibility";
+import { leadRequiresReopen } from "@/lib/leadMutationPolicy";
 
 type Context = { params: Promise<{ leadid: string }> };
 
@@ -76,12 +77,23 @@ export async function PUT(request: NextRequest, context: Context) {
   try {
     await client.query("BEGIN");
     const lead = await client.query(
-      "SELECT 1 FROM leads WHERE lead_id=$1 FOR UPDATE",
+      "SELECT status FROM leads WHERE lead_id=$1 FOR UPDATE",
       [leadId],
     );
     if (!lead.rowCount) {
       await client.query("ROLLBACK");
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+    }
+    const leadStatus = String(lead.rows[0]?.status ?? "");
+    if (leadRequiresReopen(leadStatus)) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        {
+          error: `Reopen this ${leadStatus} lead before changing its next follow-up`,
+          code: "LEAD_REOPEN_REQUIRED",
+        },
+        { status: 409 },
+      );
     }
     const previous = await client.query(
       "SELECT * FROM lead_next_actions WHERE lead_id=$1 FOR UPDATE",

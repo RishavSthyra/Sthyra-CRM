@@ -9,6 +9,10 @@ import {
   validateNotePayload,
 } from "@/lib/activities";
 import { requireOperationsContext } from "@/lib/operationsAccess";
+import {
+  assertLeadOpenForMutation,
+  isLeadReopenRequiredError,
+} from "@/lib/leadMutationPolicy";
 import { canAccessProject, getAccessibleProjectIds } from "@/lib/projectAccess";
 import { parsePagination } from "@/utils/parsePagination";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
@@ -148,6 +152,11 @@ export async function POST(request: NextRequest) {
       scope.context.access.company.company_id,
       validation.data,
     );
+    await assertLeadOpenForMutation(client, {
+      leadId: validation.data.lead_id,
+      companyId: scope.context.access.company.company_id,
+      projectId: validation.data.project_id as number,
+    });
     const user = await client.query(
       "SELECT team_id FROM users WHERE user_id=$1",
       [scope.context.userId],
@@ -186,6 +195,12 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
+    if (isLeadReopenRequiredError(error)) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: 409 },
+      );
+    }
     if (error instanceof ActivityReferenceError)
       return NextResponse.json({ error: error.message }, { status: 422 });
     console.error("Failed to create note", error);

@@ -7,6 +7,7 @@ import {
   addLeadVisibilityFilter,
   requireLeadVisibility,
 } from "@/lib/leadVisibility";
+import { leadRequiresReopen } from "@/lib/leadMutationPolicy";
 
 type Context = { params: Promise<{ leadid: string }> };
 
@@ -47,7 +48,7 @@ export async function PATCH(request: NextRequest, context: Context) {
     const filters = ["l.lead_id=$1"];
     addLeadVisibilityFilter(filters, values, scope.context.leadVisibility);
     const result = await client.query(
-      `SELECT c.*
+      `SELECT c.*, l.status AS lead_status
        FROM leads l
        JOIN contacts c ON c.contact_id=l.contact_id
        WHERE ${filters.join(" AND ")}
@@ -59,6 +60,16 @@ export async function PATCH(request: NextRequest, context: Context) {
     if (!result.rowCount) {
       await client.query("ROLLBACK");
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+    }
+    if (leadRequiresReopen(result.rows[0].lead_status)) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        {
+          error: `Reopen this ${result.rows[0].lead_status} lead before editing its contact profile`,
+          code: "LEAD_REOPEN_REQUIRED",
+        },
+        { status: 409 },
+      );
     }
 
     const contact = await updateContact(

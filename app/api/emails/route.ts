@@ -9,6 +9,10 @@ import {
   validateEmailPayload,
 } from "@/lib/communications";
 import { requireOperationsContext } from "@/lib/operationsAccess";
+import {
+  assertLeadOpenForMutation,
+  isLeadReopenRequiredError,
+} from "@/lib/leadMutationPolicy";
 import { canAccessProject, getAccessibleProjectIds } from "@/lib/projectAccess";
 import { parsePagination } from "@/utils/parsePagination";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
@@ -164,6 +168,13 @@ export async function POST(request: NextRequest) {
   try {
     await client.query("BEGIN");
     const outbound = (validation.data.direction ?? "outbound") === "outbound";
+    if (outbound) {
+      await assertLeadOpenForMutation(client, {
+        leadId: validation.data.lead_id,
+        companyId: scope.context.access.company.company_id,
+        projectId: validation.data.project_id,
+      });
+    }
     let sender = validation.data.from_address ?? "";
     let provider: string | null = null;
     if (outbound) {
@@ -284,6 +295,12 @@ export async function POST(request: NextRequest) {
     createdAttachments = attachments;
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
+    if (isLeadReopenRequiredError(error)) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: 409 },
+      );
+    }
     const message = error instanceof Error ? error.message : "Unable to record email";
     if (message.includes("lead_id") || message.includes("contact_id")) {
       return NextResponse.json({ error: message }, { status: 422 });

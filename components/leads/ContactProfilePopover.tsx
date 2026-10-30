@@ -61,6 +61,7 @@ type Props = {
   name: string;
   profile: ContactProfile;
   onSave: (profile: ContactProfileWrite) => Promise<void>;
+  onBeforeEdit?: () => boolean;
 };
 
 const maritalOptions = [
@@ -143,7 +144,12 @@ type PanelPosition = {
   width: number;
 };
 
-export function ContactProfilePopover({ name, profile, onSave }: Props) {
+export function ContactProfilePopover({
+  name,
+  profile,
+  onSave,
+  onBeforeEdit,
+}: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const [open, setOpen] = useState(false);
@@ -238,6 +244,7 @@ export function ContactProfilePopover({ name, profile, onSave }: Props) {
   }
 
   function beginEditing() {
+    if (onBeforeEdit && !onBeforeEdit()) return;
     setSaveError(null);
     setLocationNotice(null);
     const initialForm: ContactProfileWrite = {
