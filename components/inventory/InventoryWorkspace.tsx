@@ -39,6 +39,7 @@ import toast from "react-hot-toast";
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 import { getWorkspaceContext } from "@/lib/clientWorkspaceContext";
+import { hasPricingComponents, totalPrice } from "@/lib/inventoryPricing";
 import { ImportTemplateHint, InventoryDialog } from "./InventoryDialogs";
 import { InventoryAttributesManager } from "./InventoryAttributesManager";
 import { InventoryPricingWorkspace } from "./InventoryPricingWorkspace";
@@ -60,11 +61,7 @@ import type {
 
 type Tab = "units" | "catalogue" | "structure" | "pricing" | "imports";
 type ActionKind =
-  | "hold"
-  | "reserve"
-  | "release"
-  | "cancelReservation"
-  | "status";
+  "hold" | "reserve" | "release" | "cancelReservation" | "status";
 type EditableInventoryItem =
   InventoryUnit | UnitType | InventoryNode | PriceBook;
 
@@ -1015,6 +1012,9 @@ export function InventoryWorkspace() {
     kind: ActionKind;
     status?: InventoryStatus;
   } | null>(null);
+  const showTemplateTotals = unitTypes.some((type) =>
+    hasPricingComponents(type.pricing_components),
+  );
 
   useEffect(() => {
     const timer = window.setTimeout(
@@ -1598,7 +1598,11 @@ export function InventoryWorkspace() {
                       <div className="overflow-hidden rounded-xl border border-[#2c2c2c] bg-[#080808] divide-y divide-[#2c2c2c]">
                         {unitTypes.map((type) => (
                           <div
-                            className="grid grid-cols-[minmax(0,1.3fr)_minmax(100px,.65fr)_minmax(120px,.65fr)_130px] items-center gap-5 px-4 py-4 transition hover:bg-[#101010] max-[760px]:grid-cols-[minmax(0,1fr)_130px]"
+                            className={`grid items-center gap-5 px-4 py-4 transition hover:bg-[#101010] max-[760px]:grid-cols-[minmax(0,1fr)_130px] ${
+                              showTemplateTotals
+                                ? "grid-cols-[minmax(0,1.25fr)_minmax(90px,.55fr)_minmax(120px,.6fr)_minmax(150px,.7fr)_130px]"
+                                : "grid-cols-[minmax(0,1.3fr)_minmax(100px,.65fr)_minmax(120px,.65fr)_130px]"
+                            }`}
                             key={type.unit_type_id}
                           >
                             <div className="flex min-w-0 items-center gap-3">
@@ -1631,6 +1635,24 @@ export function InventoryWorkspace() {
                                 {formatMoney(type.base_price, type.currency)}
                               </p>
                             </div>
+                            {showTemplateTotals && (
+                              <div className="max-[760px]:hidden">
+                                <p className="text-[10px] tracking-[0.08em] text-[#606864] uppercase">
+                                  Total price without GST
+                                </p>
+                                <p className="mt-1 text-sm font-medium text-[#d7dcda]">
+                                  {formatMoney(
+                                    totalPrice(
+                                      type.pricing_base_amount ??
+                                        type.base_price ??
+                                        0,
+                                      type.pricing_components,
+                                    ),
+                                    type.currency,
+                                  )}
+                                </p>
+                              </div>
+                            )}
                             <div className="flex items-center justify-end gap-2">
                               <span className="text-xs text-[#59615d]">
                                 {type.layout_rooms.length} room

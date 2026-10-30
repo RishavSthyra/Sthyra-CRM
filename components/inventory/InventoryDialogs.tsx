@@ -26,6 +26,7 @@ import {
   getInventoryTemplateAreaSqft,
   inferInventoryRoomType,
 } from "@/lib/inventoryLayouts";
+import { pricingComponentsTotal } from "@/lib/inventoryPricing";
 import type {
   AssetType,
   InventoryAttributeDefinition,
@@ -42,6 +43,27 @@ import type {
 const inputClass =
   "h-11 w-full rounded-lg border border-white/[0.11] bg-[#0b0e0c] px-3 text-sm text-white outline-none transition placeholder:text-[#606763] focus:border-[#57d6b1]/55 focus:ring-2 focus:ring-[#57d6b1]/10";
 const labelClass = "mb-2 block text-xs font-medium text-[#aeb4b1]";
+
+const pricingComponentOrder = [
+  "Infrastructure Charges @ Rs.649/sft.",
+  "Preferential Location Charges (PLC) Extra",
+  "Extar plot area (PLA) Extra",
+] as const;
+
+function pricingComponentRank(label: string) {
+  const index = pricingComponentOrder.indexOf(
+    label as (typeof pricingComponentOrder)[number],
+  );
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+}
+
+function formatCurrency(value: number, currency: string) {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(value);
+}
 
 function SelectControl({
   children,
@@ -88,8 +110,7 @@ type DialogProps = {
   nodes: InventoryNode[];
   assetTypes: AssetType[];
   attributes: InventoryAttributeDefinition[];
-  editing?:
-    InventoryUnit | UnitType | InventoryNode | PriceBook | null;
+  editing?: InventoryUnit | UnitType | InventoryNode | PriceBook | null;
   onClose: () => void;
   onSaved: () => Promise<void> | void;
 };
@@ -243,7 +264,9 @@ function emptyRoom(): InventoryLayoutRoom {
 
 function layoutPayload(layout: InventoryLayout) {
   const numberOrNull = (value: number | string | null | undefined) =>
-    value === null || value === undefined || value === "" ? null : Number(value);
+    value === null || value === undefined || value === ""
+      ? null
+      : Number(value);
   return {
     notes: layout.notes || null,
     rooms: layout.rooms.map((room) => ({
@@ -288,13 +311,13 @@ function LayoutEditor({
       <div className="flex items-start justify-between gap-4">
         <div>
           <h3 className="text-sm font-semibold text-[#e4e8e5]">{title}</h3>
-          <p className="mt-1 text-xs leading-5 text-[#707975]">
-            {description}
-          </p>
+          <p className="mt-1 text-xs leading-5 text-[#707975]">{description}</p>
         </div>
         <button
           className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-white/[0.1] px-3 text-xs font-semibold text-[#c7cdca] hover:bg-white/[0.05]"
-          onClick={() => onChange({ ...layout, rooms: [...layout.rooms, emptyRoom()] })}
+          onClick={() =>
+            onChange({ ...layout, rooms: [...layout.rooms, emptyRoom()] })
+          }
           type="button"
         >
           <Plus className="size-3.5" /> Add room
@@ -305,9 +328,10 @@ function LayoutEditor({
         {layout.rooms.map((room, index) => {
           const length = Number(room.length || 0);
           const width = Number(room.width || 0);
-          const area = length && width
-            ? length * width * (room.measurement_unit === "m" ? 10.7639 : 1)
-            : Number(room.area_sqft || 0);
+          const area =
+            length && width
+              ? length * width * (room.measurement_unit === "m" ? 10.7639 : 1)
+              : Number(room.area_sqft || 0);
           return (
             <div
               className="border-b border-white/[0.07] py-3 last:border-b-0"
@@ -372,7 +396,14 @@ function LayoutEditor({
                 <button
                   aria-label={`Remove ${room.room_name || `room ${index + 1}`}`}
                   className="grid size-9 place-items-center self-center rounded-lg text-[#7f8783] hover:bg-[#ff665a]/10 hover:text-[#ff9188]"
-                  onClick={() => onChange({ ...layout, rooms: layout.rooms.filter((_, position) => position !== index) })}
+                  onClick={() =>
+                    onChange({
+                      ...layout,
+                      rooms: layout.rooms.filter(
+                        (_, position) => position !== index,
+                      ),
+                    })
+                  }
                   type="button"
                 >
                   <Trash2 className="size-3.5" />
@@ -406,10 +437,20 @@ function LayoutEditor({
           <div className="contents" key={asset.layout_asset_id || index}>
             <SelectControl
               aria-label={`Layout file ${index + 1} type`}
-              onChange={(event) => onChange({
-                ...layout,
-                assets: layout.assets.map((item, position) => position === index ? { ...item, asset_kind: event.target.value as typeof item.asset_kind } : item),
-              })}
+              onChange={(event) =>
+                onChange({
+                  ...layout,
+                  assets: layout.assets.map((item, position) =>
+                    position === index
+                      ? {
+                          ...item,
+                          asset_kind: event.target
+                            .value as typeof item.asset_kind,
+                        }
+                      : item,
+                  ),
+                })
+              }
               value={asset.asset_kind}
             >
               <option value="floor_plan">Floor plan</option>
@@ -419,10 +460,16 @@ function LayoutEditor({
             <input
               aria-label={`Layout file ${index + 1} URL`}
               className={inputClass}
-              onChange={(event) => onChange({
-                ...layout,
-                assets: layout.assets.map((item, position) => position === index ? { ...item, asset_url: event.target.value } : item),
-              })}
+              onChange={(event) =>
+                onChange({
+                  ...layout,
+                  assets: layout.assets.map((item, position) =>
+                    position === index
+                      ? { ...item, asset_url: event.target.value }
+                      : item,
+                  ),
+                })
+              }
               placeholder="https://… plan image or PDF"
               required
               type="url"
@@ -431,7 +478,14 @@ function LayoutEditor({
             <button
               aria-label="Remove layout file"
               className="grid size-9 place-items-center self-center rounded-lg text-[#7f8783] hover:bg-[#ff665a]/10 hover:text-[#ff9188]"
-              onClick={() => onChange({ ...layout, assets: layout.assets.filter((_, position) => position !== index) })}
+              onClick={() =>
+                onChange({
+                  ...layout,
+                  assets: layout.assets.filter(
+                    (_, position) => position !== index,
+                  ),
+                })
+              }
               type="button"
             >
               <Trash2 className="size-3.5" />
@@ -441,10 +495,20 @@ function LayoutEditor({
       </div>
       <button
         className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/[0.1] px-3 text-xs font-medium text-[#aeb6b1] hover:bg-white/[0.04] hover:text-white"
-        onClick={() => onChange({
-          ...layout,
-          assets: [...layout.assets, { asset_kind: "floor_plan", asset_url: "", file_name: null, mime_type: null }],
-        })}
+        onClick={() =>
+          onChange({
+            ...layout,
+            assets: [
+              ...layout.assets,
+              {
+                asset_kind: "floor_plan",
+                asset_url: "",
+                file_name: null,
+                mime_type: null,
+              },
+            ],
+          })
+        }
         type="button"
       >
         <Plus className="size-3.5" /> Add plan or document
@@ -454,7 +518,9 @@ function LayoutEditor({
         <span className={labelClass}>Layout notes</span>
         <textarea
           className={`${inputClass} min-h-20 resize-y py-3`}
-          onChange={(event) => onChange({ ...layout, notes: event.target.value })}
+          onChange={(event) =>
+            onChange({ ...layout, notes: event.target.value })
+          }
           placeholder="Internal layout notes, revision details, or special dimensions"
           value={layout.notes ?? ""}
         />
@@ -678,12 +744,17 @@ function AddUnitForm({
       ? {
           notes: unitDetail.custom_layout.notes,
           rooms: unitDetail.custom_layout.rooms.map((room) => ({ ...room })),
-          assets: unitDetail.custom_layout.assets.map((asset) => ({ ...asset })),
+          assets: unitDetail.custom_layout.assets.map((asset) => ({
+            ...asset,
+          })),
         }
       : {
           notes: initialTemplate?.layout_notes ?? null,
-          rooms: initialTemplate?.layout_rooms?.map((room) => ({ ...room })) ?? [],
-          assets: initialTemplate?.layout_assets?.map((asset) => ({ ...asset })) ?? [],
+          rooms:
+            initialTemplate?.layout_rooms?.map((room) => ({ ...room })) ?? [],
+          assets:
+            initialTemplate?.layout_assets?.map((asset) => ({ ...asset })) ??
+            [],
         },
   );
   const selectedTemplate = unitTypes.find(
@@ -770,8 +841,7 @@ function AddUnitForm({
               setForm((current) => ({
                 ...current,
                 unit_type_id: unitTypeId,
-                area_sqft:
-                  inheritedArea === null ? "" : String(inheritedArea),
+                area_sqft: inheritedArea === null ? "" : String(inheritedArea),
               }));
             }}
             required
@@ -889,8 +959,14 @@ function AddUnitForm({
               setLayoutMode("custom");
               setLayout({
                 notes: selectedTemplate?.layout_notes ?? null,
-                rooms: selectedTemplate?.layout_rooms?.map((room) => ({ ...room })) ?? [],
-                assets: selectedTemplate?.layout_assets?.map((asset) => ({ ...asset })) ?? [],
+                rooms:
+                  selectedTemplate?.layout_rooms?.map((room) => ({
+                    ...room,
+                  })) ?? [],
+                assets:
+                  selectedTemplate?.layout_assets?.map((asset) => ({
+                    ...asset,
+                  })) ?? [],
               });
             }}
             type="button"
@@ -932,17 +1008,21 @@ function AddUnitTypeForm({
   projectId,
 }: Pick<
   DialogProps,
-  | "assetTypes"
-  | "attributes"
-  | "editing"
-  | "onClose"
-  | "onSaved"
-  | "projectId"
+  "assetTypes" | "attributes" | "editing" | "onClose" | "onSaved" | "projectId"
 >) {
   const unitType = isUnitType(editing) ? editing : null;
   const [busy, setBusy] = useState(false);
   const [customValues, setCustomValues] = useState<Record<string, unknown>>(
     unitType?.specifications ?? {},
+  );
+  const [pricingComponents, setPricingComponents] = useState<
+    Record<string, string>
+  >(
+    Object.fromEntries(
+      Object.entries(unitType?.pricing_components ?? {}).map(
+        ([label, amount]) => [label, String(amount)],
+      ),
+    ),
   );
   const customDefinitions = attributes.filter(
     (attribute) => attribute.applies_to === "unit_type",
@@ -985,6 +1065,24 @@ function AddUnitTypeForm({
     (type) => type.asset_type_id === form.asset_type_id,
   );
   const assetTerminology = getInventoryAssetTerminology(selectedAssetType);
+  const pricingComponentEntries = useMemo(
+    () =>
+      Object.entries(pricingComponents).sort(
+        ([left], [right]) =>
+          pricingComponentRank(left) - pricingComponentRank(right) ||
+          left.localeCompare(right),
+      ),
+    [pricingComponents],
+  );
+  const pricingComponentTotal = pricingComponentsTotal(
+    Object.fromEntries(
+      pricingComponentEntries.map(([label, amount]) => [
+        label,
+        Number(amount || 0),
+      ]),
+    ),
+  );
+  const totalWithoutGst = Number(form.base_price || 0) + pricingComponentTotal;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -1003,6 +1101,16 @@ function AddUnitTypeForm({
         built_up_area_sqft: numeric(form.built_up_area_sqft),
         saleable_area_sqft: numeric(form.saleable_area_sqft),
         base_price: numeric(form.base_price),
+        ...(pricingComponentEntries.length
+          ? {
+              pricing_components: Object.fromEntries(
+                pricingComponentEntries.map(([label, amount]) => [
+                  label,
+                  Number(amount || 0),
+                ]),
+              ),
+            }
+          : {}),
         currency: form.currency,
         layout: layoutPayload(layout),
         specifications: customAttributePayload(customDefinitions, customValues),
@@ -1132,6 +1240,57 @@ function AddUnitTypeForm({
           />
         </Field>
       </FormGrid>
+      {pricingComponentEntries.length > 0 && (
+        <section className="mt-6 rounded-xl border border-white/[0.09] bg-white/[0.018] p-4">
+          <div>
+            <p className="text-sm font-semibold text-[#e0e4e1]">
+              Pricing breakdown
+            </p>
+            <p className="mt-1 text-xs text-[#747c78]">
+              Template charges inherited by quotations. GST is added separately
+              in the quotation.
+            </p>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-4 max-[680px]:grid-cols-1">
+            {pricingComponentEntries.map(([label, amount]) => (
+              <Field key={label} label={label}>
+                <input
+                  className={inputClass}
+                  min="0"
+                  onChange={(event) =>
+                    setPricingComponents((current) => ({
+                      ...current,
+                      [label]: event.target.value,
+                    }))
+                  }
+                  required
+                  step="0.01"
+                  type="number"
+                  value={amount}
+                />
+              </Field>
+            ))}
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-4 border-t border-white/[0.08] pt-4 max-[680px]:grid-cols-1">
+            <div>
+              <p className="text-[10px] tracking-[0.08em] text-[#69716d] uppercase">
+                Total Infra+PLC Cost
+              </p>
+              <p className="mt-1 text-sm text-[#c2c8c4]">
+                {formatCurrency(pricingComponentTotal, form.currency)}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] tracking-[0.08em] text-[#69716d] uppercase">
+                Total Cost Without GST
+              </p>
+              <p className="mt-1 text-sm font-semibold text-white">
+                {formatCurrency(totalWithoutGst, form.currency)}
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
       <LayoutEditor
         description={`Attach the plan and define every room once. New ${assetTerminology.plural} created from this template inherit it automatically.`}
         layout={layout}
@@ -2128,10 +2287,10 @@ export function InventoryDialog(props: DialogProps) {
           props.kind === "unitType"
             ? "unit template"
             : props.kind === "priceBook"
-                ? "price book"
-                : props.kind === "node"
-                  ? "structure"
-                  : "inventory unit"
+              ? "price book"
+              : props.kind === "node"
+                ? "structure"
+                : "inventory unit"
         }`,
         description: "Update the saved inventory details.",
       }

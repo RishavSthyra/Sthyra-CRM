@@ -64,6 +64,8 @@ export type UnitType = {
   built_up_area_sqft: number | string | null;
   saleable_area_sqft: number | string | null;
   base_price: number | string | null;
+  pricing_base_amount: number | string | null;
+  pricing_components: Record<string, number>;
   currency: string;
   specifications: Record<string, unknown>;
   is_active: boolean;
@@ -248,9 +250,4 @@ export type EffectiveInventoryPrice = {
 };
 
 export type InventoryDialogKind =
-  | "unit"
-  | "unitType"
-  | "node"
-  | "generate"
-  | "import"
-  | "priceBook";
+  "unit" | "unitType" | "node" | "generate" | "import" | "priceBook";

@@ -15,6 +15,7 @@ import {
 } from "@/lib/inventory";
 import { requireOperationsContext } from "@/lib/operationsAccess";
 import {
+  pricingComponentsValue,
   syncUnitTypeBasePrice,
   type PricingSyncResult,
 } from "@/lib/inventoryPricing";
@@ -63,6 +64,7 @@ export async function PATCH(request: NextRequest, context: Context) {
       "built_up_area_sqft",
       "saleable_area_sqft",
       "base_price",
+      "pricing_components",
       "currency",
       "specifications",
       "layout",
@@ -103,6 +105,10 @@ export async function PATCH(request: NextRequest, context: Context) {
     nullable: true,
     minimum: 0,
   });
+  const pricingComponents = pricingComponentsValue(
+    body.pricing_components,
+    errors,
+  );
   if (body.currency !== undefined) {
     const currency = textValue(body.currency, "currency", errors, {
       maximum: 3,
@@ -180,8 +186,16 @@ export async function PATCH(request: NextRequest, context: Context) {
     if (layoutResult?.ok)
       await replaceUnitTypeLayout(client, id, layoutResult.data);
     let pricingSync: PricingSyncResult | undefined;
-    if (body.base_price !== undefined || body.currency !== undefined) {
-      pricingSync = await syncUnitTypeBasePrice(client, updated);
+    if (
+      body.base_price !== undefined ||
+      body.currency !== undefined ||
+      body.pricing_components !== undefined
+    ) {
+      pricingSync = await syncUnitTypeBasePrice(
+        client,
+        updated,
+        pricingComponents,
+      );
     }
     await client.query("COMMIT");
     return NextResponse.json({

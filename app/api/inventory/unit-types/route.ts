@@ -13,16 +13,38 @@ import {
   validateInventoryAttributeValues,
 } from "@/lib/inventory";
 import { requireOperationsContext } from "@/lib/operationsAccess";
-import { syncUnitTypeBasePrice } from "@/lib/inventoryPricing";
+import {
+  pricingComponentsValue,
+  syncUnitTypeBasePrice,
+} from "@/lib/inventoryPricing";
 import {
   replaceUnitTypeLayout,
   validateInventoryLayout,
 } from "@/lib/inventoryLayouts";
 
 const TYPE_SELECT = `SELECT ut.*, at.type_key AS asset_type_key, at.display_name AS asset_type_name,
+  COALESCE(pricing.base_amount,ut.base_price) AS pricing_base_amount,
+  COALESCE(pricing.components,'{}'::jsonb) AS pricing_components,
   COALESCE(rooms.items,'[]'::jsonb) AS layout_rooms,
   COALESCE(assets.items,'[]'::jsonb) AS layout_assets
   FROM inventory_unit_types ut JOIN inventory_asset_types at ON at.asset_type_id=ut.asset_type_id
+  LEFT JOIN LATERAL (
+    SELECT entry.base_amount,entry.components
+    FROM inventory_price_books book
+    JOIN inventory_price_book_entries entry
+      ON entry.price_book_id=book.price_book_id
+     AND entry.unit_type_id=ut.unit_type_id
+     AND entry.unit_id IS NULL
+     AND (entry.valid_from IS NULL OR entry.valid_from<=CURRENT_DATE)
+     AND (entry.valid_until IS NULL OR entry.valid_until>=CURRENT_DATE)
+    WHERE book.project_id=ut.project_id
+      AND book.is_default=TRUE
+      AND book.is_active=TRUE
+      AND (book.valid_from IS NULL OR book.valid_from<=CURRENT_DATE)
+      AND (book.valid_until IS NULL OR book.valid_until>=CURRENT_DATE)
+    ORDER BY entry.valid_from DESC NULLS LAST,entry.updated_at DESC
+    LIMIT 1
+  ) pricing ON TRUE
   LEFT JOIN LATERAL (
     SELECT jsonb_agg(to_jsonb(room) ORDER BY room.display_order,room.room_id) AS items
     FROM inventory_unit_type_rooms room WHERE room.unit_type_id=ut.unit_type_id
@@ -94,6 +116,7 @@ export async function POST(request: NextRequest) {
       "built_up_area_sqft",
       "saleable_area_sqft",
       "base_price",
+      "pricing_components",
       "currency",
       "specifications",
       "layout",
@@ -137,6 +160,10 @@ export async function POST(request: NextRequest) {
     nullable: true,
     minimum: 0,
   });
+  const pricingComponents = pricingComponentsValue(
+    body.pricing_components,
+    errors,
+  );
   const currency = (
     textValue(body.currency, "currency", errors, { maximum: 3 }) ?? "INR"
   ).toUpperCase();
@@ -206,7 +233,11 @@ export async function POST(request: NextRequest) {
         result.rows[0].unit_type_id,
         layoutResult.data,
       );
-    const pricingSync = await syncUnitTypeBasePrice(client, result.rows[0]);
+    const pricingSync = await syncUnitTypeBasePrice(
+      client,
+      result.rows[0],
+      pricingComponents,
+    );
     await client.query("COMMIT");
     return NextResponse.json(
       {

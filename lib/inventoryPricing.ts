@@ -2,6 +2,59 @@ import type { Pool, PoolClient } from "pg";
 
 type Queryable = Pick<Pool | PoolClient, "query">;
 
+export type InventoryPricingComponents = Record<string, number>;
+
+export function pricingComponentsValue(
+  value: unknown,
+  errors: string[],
+  field = "pricing_components",
+): InventoryPricingComponents | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    errors.push(`${field} must be an object`);
+    return undefined;
+  }
+
+  const normalized: InventoryPricingComponents = {};
+  for (const [rawLabel, rawAmount] of Object.entries(value)) {
+    const label = rawLabel.trim();
+    if (!label || label.length > 200) {
+      errors.push(`${field} labels must contain 1 to 200 characters`);
+      continue;
+    }
+    if (
+      typeof rawAmount !== "number" ||
+      !Number.isFinite(rawAmount) ||
+      rawAmount < 0
+    ) {
+      errors.push(`${field}.${label} must be a non-negative number`);
+      continue;
+    }
+    normalized[label] = rawAmount;
+  }
+  return normalized;
+}
+
+export function pricingComponentsTotal(
+  components: Record<string, unknown> | null | undefined,
+) {
+  return Object.values(components ?? {}).reduce<number>(
+    (total, value) =>
+      typeof value === "number" && Number.isFinite(value)
+        ? total + value
+        : total,
+    0,
+  );
+}
+
+export function hasPricingComponents(
+  components: Record<string, unknown> | null | undefined,
+) {
+  return Object.values(components ?? {}).some(
+    (value) => typeof value === "number" && Number.isFinite(value),
+  );
+}
+
 type UnitTypePrice = {
   unit_type_id: string;
   company_id: number | string;
@@ -89,6 +142,7 @@ export async function ensureDefaultPriceBook(
 export async function syncUnitTypeBasePrice(
   db: Queryable,
   unitType: UnitTypePrice,
+  components?: InventoryPricingComponents,
 ): Promise<PricingSyncResult> {
   if (unitType.base_price === null) {
     const removed = await db.query(
@@ -132,20 +186,38 @@ export async function syncUnitTypeBasePrice(
         price_book_id: book.price_book_id,
       };
     }
-    await db.query(
-      `UPDATE inventory_price_book_entries
-       SET base_amount=$1,updated_at=CURRENT_TIMESTAMP
-       WHERE price_entry_id=$2`,
-      [unitType.base_price, existing.rows[0].price_entry_id],
-    );
+    if (components === undefined) {
+      await db.query(
+        `UPDATE inventory_price_book_entries
+         SET base_amount=$1,updated_at=CURRENT_TIMESTAMP
+         WHERE price_entry_id=$2`,
+        [unitType.base_price, existing.rows[0].price_entry_id],
+      );
+    } else {
+      await db.query(
+        `UPDATE inventory_price_book_entries
+         SET base_amount=$1,components=$2::jsonb,updated_at=CURRENT_TIMESTAMP
+         WHERE price_entry_id=$3`,
+        [
+          unitType.base_price,
+          JSON.stringify(components),
+          existing.rows[0].price_entry_id,
+        ],
+      );
+    }
     return { status: "updated", price_book_id: book.price_book_id };
   }
 
   await db.query(
     `INSERT INTO inventory_price_book_entries
-       (price_book_id,unit_type_id,base_amount,source)
-     VALUES ($1,$2,$3,'unit_type_base')`,
-    [book.price_book_id, unitType.unit_type_id, unitType.base_price],
+       (price_book_id,unit_type_id,base_amount,components,source)
+     VALUES ($1,$2,$3,$4::jsonb,'unit_type_base')`,
+    [
+      book.price_book_id,
+      unitType.unit_type_id,
+      unitType.base_price,
+      JSON.stringify(components ?? {}),
+    ],
   );
   return { status: "created", price_book_id: book.price_book_id };
 }
@@ -183,11 +255,5 @@ export function totalPrice(
   baseAmount: number | string,
   components: Record<string, unknown>,
 ) {
-  return Object.values(components).reduce<number>(
-    (total, value) =>
-      typeof value === "number" && Number.isFinite(value)
-        ? total + value
-        : total,
-    Number(baseAmount),
-  );
+  return Number(baseAmount) + pricingComponentsTotal(components);
 }
