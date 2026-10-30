@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import {
   type CallOutcome,
+  canMoveLeadToDeadFromCall,
   followUpSummaryForCallOutcome,
   nextActionTypeForCallOutcome,
 } from "@/lib/callOutcomes";
@@ -65,6 +66,10 @@ export function getCallFollowUpPlan(input: {
       dueAt: new Date(input.requestedAt).toISOString(),
       summary: followUpSummaryForCallOutcome(outcome),
     };
+  }
+
+  if (outcome && canMoveLeadToDeadFromCall(outcome)) {
+    return { action: "clear" };
   }
 
   return { action: "unchanged" };

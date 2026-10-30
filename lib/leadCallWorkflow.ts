@@ -91,7 +91,7 @@ export async function applyLeadCallWorkflow(
     callId: string;
     outcome: CallOutcome;
     occurredAt: string | Date;
-    nextFollowUpAt: string;
+    nextFollowUpAt?: string | null;
     markLeadDead: boolean;
     summary?: string | null;
     actorUserId: string | null;

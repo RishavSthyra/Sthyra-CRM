@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   CALL_OUTCOMES,
+  callOutcomeRequiresFollowUp,
   canMoveLeadToDeadFromCall,
   leadStageForCallOutcome,
   validateManualFollowUpAt,
@@ -90,6 +91,49 @@ test("manual follow-up validation requires a future date", () => {
     ok: true,
     value: futureFollowUp,
   });
+});
+
+test("terminal call outcomes make the next follow-up optional", () => {
+  for (const outcome of [
+    "not_interested",
+    "wrong_number",
+    "do_not_call",
+  ] as const) {
+    assert.equal(callOutcomeRequiresFollowUp(outcome), false);
+    const result = validateCallPayload({
+      project_id: 1,
+      lead_id: leadId,
+      direction: "outbound",
+      status: "completed",
+      outcome,
+      phone_number: "+919999999999",
+      subject: "Pre-sales call",
+      started_at: callTime,
+      ended_at: callTime,
+    });
+    assert.equal(result.ok, true);
+  }
+  for (const outcome of [
+    "connected",
+    "interested",
+    "no_answer",
+    "voicemail",
+  ] as const) {
+    assert.equal(callOutcomeRequiresFollowUp(outcome), true);
+  }
+});
+
+test("terminal outcomes without a date clear stale follow-ups", () => {
+  for (const outcome of [
+    "not_interested",
+    "wrong_number",
+    "do_not_call",
+  ] as const) {
+    assert.deepEqual(
+      getCallFollowUpPlan({ outcome, occurredAt: callTime }),
+      { action: "clear" },
+    );
+  }
 });
 
 test("lead call payload requires the manual follow-up", () => {
@@ -213,7 +257,10 @@ test("the lead call form exposes only real outcomes and requires follow-up", () 
   assert.doesNotMatch(leadsPage, /value:\s*"follow_up"/);
   assert.doesNotMatch(leadsPage, /value:\s*"callback_requested"/);
   assert.match(leadsPage, /Next follow-up/);
-  assert.match(leadsPage, /required\s*\n\s*type="datetime-local"/);
+  assert.match(leadsPage, /required=\{callOutcomeRequiresFollowUp/);
+  assert.match(leadsPage, /\(optional\)/);
+  assert.doesNotMatch(leadsPage, /This outcome advances an eligible lead/);
+  assert.doesNotMatch(leadsPage, /Choose the exact date and time/);
   assert.match(leadsPage, /Move this lead to Dead\?/);
 });
 

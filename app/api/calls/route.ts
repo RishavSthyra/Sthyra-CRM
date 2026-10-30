@@ -204,7 +204,7 @@ export async function POST(request: NextRequest) {
           callId: String(call.call_id),
           outcome: validation.data.outcome,
           occurredAt: call.ended_at ?? call.started_at,
-          nextFollowUpAt: validation.data.next_follow_up_at as string,
+          nextFollowUpAt: validation.data.next_follow_up_at,
           markLeadDead: validation.data.mark_lead_dead,
           summary: call.summary,
           actorUserId: scope.context.userId,

@@ -5,7 +5,7 @@ import {
   type CallOutcome,
   canMoveLeadToDeadFromCall,
   isCallOutcome,
-  validateManualFollowUpAt,
+  validateCallOutcomeFollowUp,
 } from "@/lib/callOutcomes";
 import { isUuid } from "@/lib/permissions";
 import { isObject } from "@/utils/isObject";
@@ -77,7 +77,7 @@ export function validateInitiateCall(body: unknown): ValidationResult<InitiateCa
 export function validateDisposition(body: unknown): ValidationResult<{
   outcome: CallOutcome;
   summary?: string | null;
-  next_follow_up_at: string;
+  next_follow_up_at: string | null;
   mark_lead_dead: boolean;
 }> {
   if (!isObject(body) || Array.isArray(body)) return { ok: false, errors: ["Request body must be a JSON object"] };
@@ -88,8 +88,10 @@ export function validateDisposition(body: unknown): ValidationResult<{
   const outcome = isCallOutcome(body.outcome) ? body.outcome : null;
   if (!outcome) errors.push(`outcome must be one of: ${CALL_OUTCOMES.join(", ")}`);
   const summary = validateText(body.summary, "summary", 10000, true, errors);
-  const followUp = validateManualFollowUpAt(body.next_follow_up_at);
-  if (!followUp.ok) errors.push(followUp.error);
+  const followUp = outcome
+    ? validateCallOutcomeFollowUp(outcome, body.next_follow_up_at)
+    : null;
+  if (followUp && !followUp.ok) errors.push(followUp.error);
   const markLeadDead = body.mark_lead_dead ?? false;
   if (typeof markLeadDead !== "boolean") {
     errors.push("mark_lead_dead must be a boolean");
@@ -102,7 +104,7 @@ export function validateDisposition(body: unknown): ValidationResult<{
       "mark_lead_dead is only available for not_interested, wrong_number, or do_not_call",
     );
   }
-  return errors.length || !outcome || !followUp.ok
+  return errors.length || !outcome || !followUp?.ok
     ? { ok: false, errors }
     : {
         ok: true,

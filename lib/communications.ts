@@ -4,7 +4,7 @@ import {
   type CallOutcome,
   canMoveLeadToDeadFromCall,
   isCallOutcome,
-  validateManualFollowUpAt,
+  validateCallOutcomeFollowUp,
 } from "@/lib/callOutcomes";
 import { isUuid } from "@/lib/permissions";
 import { isObject } from "@/utils/isObject";
@@ -194,7 +194,10 @@ export function validateCallPayload(body: unknown): ValidationResult<CallInput> 
     errors.push("mark_lead_dead must be a boolean");
   }
   if (leadId && outcome) {
-    const followUp = validateManualFollowUpAt(body.next_follow_up_at);
+    const followUp = validateCallOutcomeFollowUp(
+      outcome,
+      body.next_follow_up_at,
+    );
     if (!followUp.ok) errors.push(followUp.error);
     else nextFollowUpAt = followUp.value;
   } else {

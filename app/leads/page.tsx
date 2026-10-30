@@ -31,8 +31,8 @@ import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 import { getWorkspaceContext } from "@/lib/clientWorkspaceContext";
 import {
   type CallOutcome,
+  callOutcomeRequiresFollowUp,
   canMoveLeadToDeadFromCall,
-  leadStageForCallOutcome,
 } from "@/lib/callOutcomes";
 import { leadRequiresReopen } from "@/lib/leadMutationPolicy";
 import { DEFAULT_PROJECT_LEAD_STAGES } from "@/lib/defaultLeadStages";
@@ -1151,12 +1151,17 @@ export default function LeadsPage() {
       toast.error("This lead needs a project and phone number before logging a call.");
       return null;
     }
-    const followUpDate = new Date(nextFollowUpAt);
-    if (
-      !nextFollowUpAt ||
-      Number.isNaN(followUpDate.getTime()) ||
-      followUpDate.getTime() <= Date.now()
-    ) {
+    let followUpDate: Date | null = null;
+    if (nextFollowUpAt) {
+      followUpDate = new Date(nextFollowUpAt);
+      if (
+        Number.isNaN(followUpDate.getTime()) ||
+        followUpDate.getTime() <= Date.now()
+      ) {
+        toast.error("Choose a future next follow-up date and time.");
+        return null;
+      }
+    } else if (callOutcomeRequiresFollowUp(callOutcome)) {
       toast.error("Choose a future next follow-up date and time.");
       return null;
     }
@@ -1184,7 +1189,7 @@ export default function LeadsPage() {
           summary: callSummary.trim() || null,
           started_at: now,
           ended_at: now,
-          next_follow_up_at: form.followUpDate.toISOString(),
+          next_follow_up_at: form.followUpDate?.toISOString() ?? null,
           mark_lead_dead: markLeadDead,
         }),
       });
@@ -2270,33 +2275,28 @@ export default function LeadsPage() {
                                     </select>
                                     <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-3.5 -translate-y-1/2 text-[#8f9692]" aria-hidden />
                                   </span>
-                                  <span className="mt-1 block text-[9px] leading-4 text-[#686e6b]">
-                                    This outcome advances an eligible lead to {" "}
-                                    <span className="text-[#9da5a1]">
-                                      {leadStageForCallOutcome(callOutcome) ===
-                                      "contact_attempted"
-                                        ? "Contact Attempted"
-                                        : "Contacted"}
-                                    </span>
-                                    . Later stages will not move backward.
-                                  </span>
                                 </label>
                                 <label className="block text-[10px] text-[#a9aeab]">
                                   Next follow-up
-                                  <span className="ml-1 text-[#e58f80]">*</span>
+                                  {callOutcomeRequiresFollowUp(callOutcome) ? (
+                                    <span className="ml-1 text-[#e58f80]">*</span>
+                                  ) : (
+                                    <span className="ml-1 text-[#747a77]">
+                                      (optional)
+                                    </span>
+                                  )}
                                   <input
                                     className="mt-1 h-10 w-full rounded-lg border border-[#343936] bg-[#0c0e0d] px-3 text-xs text-[#f2f3f2] outline-none focus:border-[#4aa987]"
                                     min={nextFollowUpMin}
                                     onChange={(event) =>
                                       setNextFollowUpAt(event.target.value)
                                     }
-                                    required
+                                    required={callOutcomeRequiresFollowUp(
+                                      callOutcome,
+                                    )}
                                     type="datetime-local"
                                     value={nextFollowUpAt}
                                   />
-                                  <span className="mt-1 block text-[9px] leading-4 text-[#686e6b]">
-                                    Choose the exact date and time for the next action.
-                                  </span>
                                 </label>
                                 <label className="block text-[10px] text-[#a9aeab]">
                                   Notes
