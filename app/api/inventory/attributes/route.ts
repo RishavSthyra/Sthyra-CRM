@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
     );
   try {
     const result = await pool.query(
-      `INSERT INTO inventory_attribute_definitions (company_id,project_id,applies_to,attribute_key,label,data_type,is_required,options,display_order) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      `INSERT INTO inventory_attribute_definitions (company_id,project_id,applies_to,attribute_key,label,data_type,is_required,options,display_order) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9) RETURNING *`,
       [
         scope.context.access.company.company_id,
         projectId,
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
         label,
         dataType,
         required,
-        options,
+        JSON.stringify(options),
         order,
       ],
     );

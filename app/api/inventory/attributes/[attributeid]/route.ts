@@ -103,11 +103,13 @@ export async function PATCH(request: NextRequest, context: Context) {
       { error: "Validation failed", details: errors },
       { status: 422 },
     );
-  const values: unknown[] = fields.map(([, value]) => value);
+  const values: unknown[] = fields.map(([key, value]) =>
+    key === "options" ? JSON.stringify(value) : value,
+  );
   values.push(id);
   try {
     const result = await pool.query(
-      `UPDATE inventory_attribute_definitions SET ${fields.map(([key], index) => `${key}=$${index + 1}`).join(",")},updated_at=CURRENT_TIMESTAMP WHERE definition_id=$${values.length} RETURNING *`,
+      `UPDATE inventory_attribute_definitions SET ${fields.map(([key], index) => `${key}=$${index + 1}${key === "options" ? "::jsonb" : ""}`).join(",")},updated_at=CURRENT_TIMESTAMP WHERE definition_id=$${values.length} RETURNING *`,
       values,
     );
     return NextResponse.json({

@@ -16,6 +16,7 @@ import {
 import { useState, type FormEvent } from "react";
 import toast from "react-hot-toast";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
+import { normalizeInventoryAttributeKey } from "@/lib/inventoryAttributeKeys";
 import type { InventoryAttributeDefinition } from "./types";
 
 const inputClass =
@@ -68,6 +69,7 @@ function AttributeDialog({
   projectId: number;
 }) {
   const [busy, setBusy] = useState(false);
+  const [keyManuallyEdited, setKeyManuallyEdited] = useState(Boolean(editing));
   const [form, setForm] = useState({
     applies_to: editing?.applies_to ?? ("unit_type" as "unit_type" | "unit"),
     label: editing?.label ?? "",
@@ -205,6 +207,13 @@ function AttributeDialog({
                   setForm((current) => ({
                     ...current,
                     label: event.target.value,
+                    ...(!keyManuallyEdited
+                      ? {
+                          attribute_key: normalizeInventoryAttributeKey(
+                            event.target.value,
+                          ),
+                        }
+                      : {}),
                   }))
                 }
                 placeholder="Garden area"
@@ -218,12 +227,17 @@ function AttributeDialog({
               </span>
               <input
                 className={inputClass}
-                onChange={(event) =>
+                onChange={(event) => {
+                  const typedKey = event.target.value;
+                  const normalizedKey = normalizeInventoryAttributeKey(typedKey);
+                  setKeyManuallyEdited(Boolean(typedKey.trim()));
                   setForm((current) => ({
                     ...current,
-                    attribute_key: event.target.value,
-                  }))
-                }
+                    attribute_key:
+                      normalizedKey ||
+                      normalizeInventoryAttributeKey(current.label),
+                  }));
+                }}
                 placeholder="Generated from label"
                 value={form.attribute_key}
               />

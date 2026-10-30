@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   CALL_OUTCOMES,
-  callOutcomeRequiresFollowUp,
   canMoveLeadToDeadFromCall,
   leadStageForCallOutcome,
   validateManualFollowUpAt,
@@ -41,7 +40,7 @@ test("every supported call outcome uses the exact manual follow-up", () => {
 test("follow-up planning never guesses a date", () => {
   assert.deepEqual(
     getCallFollowUpPlan({ outcome: "no_answer", occurredAt: callTime }),
-    { action: "unchanged" },
+    { action: "clear" },
   );
   assert.deepEqual(
     getCallFollowUpPlan({ callStatus: "busy", occurredAt: callTime }),
@@ -93,13 +92,8 @@ test("manual follow-up validation requires a future date", () => {
   });
 });
 
-test("terminal call outcomes make the next follow-up optional", () => {
-  for (const outcome of [
-    "not_interested",
-    "wrong_number",
-    "do_not_call",
-  ] as const) {
-    assert.equal(callOutcomeRequiresFollowUp(outcome), false);
+test("every call outcome makes the next follow-up optional", () => {
+  for (const outcome of CALL_OUTCOMES) {
     const result = validateCallPayload({
       project_id: 1,
       lead_id: leadId,
@@ -113,22 +107,10 @@ test("terminal call outcomes make the next follow-up optional", () => {
     });
     assert.equal(result.ok, true);
   }
-  for (const outcome of [
-    "connected",
-    "interested",
-    "no_answer",
-    "voicemail",
-  ] as const) {
-    assert.equal(callOutcomeRequiresFollowUp(outcome), true);
-  }
 });
 
-test("terminal outcomes without a date clear stale follow-ups", () => {
-  for (const outcome of [
-    "not_interested",
-    "wrong_number",
-    "do_not_call",
-  ] as const) {
+test("every call outcome without a date clears stale follow-ups", () => {
+  for (const outcome of CALL_OUTCOMES) {
     assert.deepEqual(
       getCallFollowUpPlan({ outcome, occurredAt: callTime }),
       { action: "clear" },
@@ -136,7 +118,7 @@ test("terminal outcomes without a date clear stale follow-ups", () => {
   }
 });
 
-test("lead call payload requires the manual follow-up", () => {
+test("lead call payload accepts an omitted or valid manual follow-up", () => {
   const base = {
     project_id: 1,
     lead_id: leadId,
@@ -149,14 +131,7 @@ test("lead call payload requires the manual follow-up", () => {
     ended_at: callTime,
   };
   const missing = validateCallPayload(base);
-  assert.equal(missing.ok, false);
-  if (!missing.ok) {
-    assert.ok(
-      missing.errors.includes(
-        "next_follow_up_at is required when recording a lead call",
-      ),
-    );
-  }
+  assert.equal(missing.ok, true);
 
   const valid = validateCallPayload({
     ...base,
@@ -252,13 +227,13 @@ test("call workflow is wired atomically through both call endpoints", () => {
   }
 });
 
-test("the lead call form exposes only real outcomes and requires follow-up", () => {
+test("the lead call form exposes only real outcomes and an optional follow-up", () => {
   const leadsPage = readFileSync("app/leads/page.tsx", "utf8");
   assert.doesNotMatch(leadsPage, /value:\s*"follow_up"/);
   assert.doesNotMatch(leadsPage, /value:\s*"callback_requested"/);
   assert.match(leadsPage, /Next follow-up/);
-  assert.match(leadsPage, /required=\{callOutcomeRequiresFollowUp/);
   assert.match(leadsPage, /\(optional\)/);
+  assert.doesNotMatch(leadsPage, /required=.*datetime-local/);
   assert.doesNotMatch(leadsPage, /This outcome advances an eligible lead/);
   assert.doesNotMatch(leadsPage, /Choose the exact date and time/);
   assert.match(leadsPage, /Move this lead to Dead\?/);

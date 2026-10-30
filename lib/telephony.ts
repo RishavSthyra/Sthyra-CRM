@@ -5,7 +5,7 @@ import {
   type CallOutcome,
   canMoveLeadToDeadFromCall,
   isCallOutcome,
-  validateCallOutcomeFollowUp,
+  validateOptionalFollowUpAt,
 } from "@/lib/callOutcomes";
 import { isUuid } from "@/lib/permissions";
 import { isObject } from "@/utils/isObject";
@@ -89,7 +89,7 @@ export function validateDisposition(body: unknown): ValidationResult<{
   if (!outcome) errors.push(`outcome must be one of: ${CALL_OUTCOMES.join(", ")}`);
   const summary = validateText(body.summary, "summary", 10000, true, errors);
   const followUp = outcome
-    ? validateCallOutcomeFollowUp(outcome, body.next_follow_up_at)
+    ? validateOptionalFollowUpAt(body.next_follow_up_at)
     : null;
   if (followUp && !followUp.ok) errors.push(followUp.error);
   const markLeadDead = body.mark_lead_dead ?? false;

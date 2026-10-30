@@ -31,7 +31,6 @@ import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 import { getWorkspaceContext } from "@/lib/clientWorkspaceContext";
 import {
   type CallOutcome,
-  callOutcomeRequiresFollowUp,
   canMoveLeadToDeadFromCall,
 } from "@/lib/callOutcomes";
 import { leadRequiresReopen } from "@/lib/leadMutationPolicy";
@@ -1161,9 +1160,6 @@ export default function LeadsPage() {
         toast.error("Choose a future next follow-up date and time.");
         return null;
       }
-    } else if (callOutcomeRequiresFollowUp(callOutcome)) {
-      toast.error("Choose a future next follow-up date and time.");
-      return null;
     }
     return { lead, projectId, phone, followUpDate };
   }
@@ -2278,22 +2274,15 @@ export default function LeadsPage() {
                                 </label>
                                 <label className="block text-[10px] text-[#a9aeab]">
                                   Next follow-up
-                                  {callOutcomeRequiresFollowUp(callOutcome) ? (
-                                    <span className="ml-1 text-[#e58f80]">*</span>
-                                  ) : (
-                                    <span className="ml-1 text-[#747a77]">
-                                      (optional)
-                                    </span>
-                                  )}
+                                  <span className="ml-1 text-[#747a77]">
+                                    (optional)
+                                  </span>
                                   <input
                                     className="mt-1 h-10 w-full rounded-lg border border-[#343936] bg-[#0c0e0d] px-3 text-xs text-[#f2f3f2] outline-none focus:border-[#4aa987]"
                                     min={nextFollowUpMin}
                                     onChange={(event) =>
                                       setNextFollowUpAt(event.target.value)
                                     }
-                                    required={callOutcomeRequiresFollowUp(
-                                      callOutcome,
-                                    )}
                                     type="datetime-local"
                                     value={nextFollowUpAt}
                                   />

@@ -1,4 +1,5 @@
 import type { Pool, PoolClient } from "pg";
+import { normalizeInventoryAttributeKey } from "@/lib/inventoryAttributeKeys";
 import { isUuid } from "@/lib/permissions";
 import type { UserProjectAccess } from "@/lib/projectAccess";
 import { canAccessProject } from "@/lib/projectAccess";
@@ -40,13 +41,7 @@ export function parseInventoryUuid(value: string): string | null {
   return isUuid(value) ? value.toLowerCase() : null;
 }
 
-export function normalizeKey(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-}
+export const normalizeKey = normalizeInventoryAttributeKey;
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return isObject(value) && !Array.isArray(value);

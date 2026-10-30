@@ -208,15 +208,22 @@ function FormGrid({ children }: { children: React.ReactNode }) {
 function Field({
   children,
   label,
+  optional = false,
   wide = false,
 }: {
   children: React.ReactNode;
   label: string;
+  optional?: boolean;
   wide?: boolean;
 }) {
   return (
     <label className={wide ? "sm:col-span-2" : undefined}>
-      <span className={labelClass}>{label}</span>
+      <span className={labelClass}>
+        {label}
+        {optional && (
+          <span className="ml-1 font-normal text-[#6d7470]">(optional)</span>
+        )}
+      </span>
       {children}
     </label>
   );
@@ -1084,16 +1091,18 @@ function AddUnitTypeForm({
             value={form.configuration}
           />
         </Field>
-        {[
-          ["bedrooms", "Bedrooms"],
-          ["bathrooms", "Bathrooms"],
-          ["balconies", "Balconies"],
-          ["carpet_area_sqft", "Carpet area (sq ft)"],
-          ["built_up_area_sqft", "Built-up area (sq ft)"],
-          ["saleable_area_sqft", "Saleable area (sq ft)"],
-          ["base_price", "Base price"],
-        ].map(([key, label]) => (
-          <Field key={key} label={label}>
+        {(
+          [
+            ["bedrooms", "Bedrooms", false],
+            ["bathrooms", "Bathrooms", false],
+            ["balconies", "Balconies", false],
+            ["carpet_area_sqft", "UDS (sq ft)", true],
+            ["built_up_area_sqft", "Built-up area (sq ft)", true],
+            ["saleable_area_sqft", "Saleable area (sq ft)", true],
+            ["base_price", "Base price", false],
+          ] as const
+        ).map(([key, label, optional]) => (
+          <Field key={key} label={label} optional={optional}>
             <input
               className={inputClass}
               min="0"

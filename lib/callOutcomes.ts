@@ -30,10 +30,6 @@ export function canMoveLeadToDeadFromCall(outcome: CallOutcome): boolean {
   return OPTIONAL_DEAD_OUTCOMES.has(outcome);
 }
 
-export function callOutcomeRequiresFollowUp(outcome: CallOutcome): boolean {
-  return !OPTIONAL_DEAD_OUTCOMES.has(outcome);
-}
-
 export function leadStageForCallOutcome(
   outcome: CallOutcome,
 ): "contact_attempted" | "contacted" {
@@ -93,13 +89,11 @@ export function validateManualFollowUpAt(
   return { ok: true, value: parsed.toISOString() };
 }
 
-export function validateCallOutcomeFollowUp(
-  outcome: CallOutcome,
+export function validateOptionalFollowUpAt(
   value: unknown,
   now: string | Date | number = Date.now(),
 ): { ok: true; value: string | null } | { ok: false; error: string } {
   if (
-    !callOutcomeRequiresFollowUp(outcome) &&
     (value === undefined || value === null || String(value).trim() === "")
   ) {
     return { ok: true, value: null };
