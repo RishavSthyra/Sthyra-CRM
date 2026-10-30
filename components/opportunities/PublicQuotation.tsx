@@ -247,8 +247,12 @@ export function PublicQuotation({ token }: { token: string }) {
                     <p className="text-sm font-medium">{String(item.description)}</p>
                     <p className="mt-1 text-xs capitalize text-[#7b8580]">{String(item.category || "other").replaceAll("_", " ")}</p>
                   </div>
-                  <span className="text-sm text-[#59635e]">{String(item.quantity)}</span>
-                  <span className="text-sm text-[#59635e]">{money(item.unit_price, quotation.currency)}</span>
+                  <span className="text-sm text-[#59635e]">
+                    {String(item.quantity)}{item.unit_of_measure ? ` ${String(item.unit_of_measure)}` : ""}
+                  </span>
+                  <span className="text-sm text-[#59635e]">
+                    {money(item.unit_price, quotation.currency)}{item.unit_of_measure ? ` / ${String(item.unit_of_measure)}` : ""}
+                  </span>
                   <strong className="text-sm sm:text-right">{money(item.amount, quotation.currency)}</strong>
                 </div>
               ))}

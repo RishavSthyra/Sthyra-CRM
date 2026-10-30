@@ -9,6 +9,10 @@ import {
 } from "@/lib/notifications";
 import { isObject } from "@/utils/isObject";
 import { parsePagination } from "@/utils/parsePagination";
+import {
+  quotationItemsFromShortlist,
+  type ShortlistPricingItem,
+} from "@/lib/quotationLineItems";
 
 type Context = { params: Promise<{ opportunityid: string }> };
 
@@ -118,17 +122,9 @@ export async function POST(request: NextRequest, context: Context) {
     const sourceItems = Array.isArray(body.line_items)
       ? body.line_items
       : Array.isArray(shortlist?.items)
-        ? (shortlist.items as Array<Record<string, unknown>>).map((item) => ({
-            ...item,
-            category: "base_price",
-            description:
-              item.unit_name ||
-              item.unit_code ||
-              item.type_name ||
-              "Inventory unit",
-            quantity: 1,
-            unit_price: item.amount,
-          }))
+        ? quotationItemsFromShortlist(
+            shortlist.items as ShortlistPricingItem[],
+          )
         : null;
     if (!sourceItems) {
       await client.query("ROLLBACK");
@@ -149,8 +145,8 @@ export async function POST(request: NextRequest, context: Context) {
         sum +
         Number(
           (item as Record<string, unknown>).amount ??
-            (item as Record<string, unknown>).unit_price ??
-            0,
+            Number((item as Record<string, unknown>).quantity ?? 1) *
+              Number((item as Record<string, unknown>).unit_price ?? 0),
         ),
       0,
     );

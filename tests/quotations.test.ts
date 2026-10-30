@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { PDFDocument } from "pdf-lib";
 import { generateQuotationPdf } from "../lib/quotationPdf";
+import { quotationItemsFromShortlist } from "../lib/quotationLineItems";
 import {
   calculateQuotation,
   validateQuotationInput,
@@ -80,6 +81,62 @@ test("quotation calculation itemizes charges, discounts, taxes and installments"
     result.paymentPlan.installments.map((item) => item.amount),
     [2_003_400, 8_013_600],
   );
+});
+
+test("inventory quotations show saleable area and the per-square-foot rate", () => {
+  const items = quotationItemsFromShortlist([
+    {
+      unit_id: "11111111-1111-4111-8111-111111111111",
+      unit_code: "V-01",
+      amount: 30_729_045,
+      currency: "INR",
+      saleable_area_sqft: 2955,
+      price_per_sqft: 9500,
+      pricing_components: {
+        "Infrastructure charges": 1_917_795,
+        PLC: 738_750,
+      },
+    },
+  ]);
+
+  assert.deepEqual(
+    items.map((item) => ({
+      description: item.description,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      unit_of_measure: item.unit_of_measure,
+    })),
+    [
+      {
+        description: "V-01 base price",
+        quantity: 2955,
+        unit_price: 9500,
+        unit_of_measure: "sq ft",
+      },
+      {
+        description: "Infrastructure charges",
+        quantity: 1,
+        unit_price: 1_917_795,
+        unit_of_measure: null,
+      },
+      {
+        description: "PLC",
+        quantity: 1,
+        unit_price: 738_750,
+        unit_of_measure: null,
+      },
+    ],
+  );
+
+  const validation = validateQuotationInput({
+    ...baseInput,
+    line_items: items,
+  });
+  assert.equal(validation.ok, true);
+  if (validation.ok) {
+    assert.equal(validation.data.line_items[0].unit_of_measure, "sq ft");
+    assert.equal(validation.amounts.subtotal, 30_729_045);
+  }
 });
 
 test("quotation validation rejects plans that do not total one hundred percent", () => {

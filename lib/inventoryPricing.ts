@@ -4,6 +4,20 @@ type Queryable = Pick<Pool | PoolClient, "query">;
 
 export type InventoryPricingComponents = Record<string, number>;
 
+export function calculatedBasePrice(
+  saleableAreaSqft: number | string | null | undefined,
+  pricePerSqft: number | string | null | undefined,
+) {
+  if (saleableAreaSqft === null || saleableAreaSqft === undefined)
+    return null;
+  if (pricePerSqft === null || pricePerSqft === undefined) return null;
+  const area = Number(saleableAreaSqft);
+  const rate = Number(pricePerSqft);
+  if (!Number.isFinite(area) || area <= 0 || !Number.isFinite(rate) || rate < 0)
+    return null;
+  return Math.round((area * rate + Number.EPSILON) * 100) / 100;
+}
+
 export function pricingComponentsValue(
   value: unknown,
   errors: string[],

@@ -115,7 +115,10 @@ export async function POST(request: NextRequest, context: Context) {
     );
     const units = await client.query(
       `SELECT iu.unit_id, iu.unit_code, iu.unit_name, iu.status,
-         iu.area_sqft, iu.orientation, ut.type_code, ut.type_name,
+         iu.area_sqft, iu.orientation, iu.price_override,
+         ut.type_code, ut.type_name, ut.saleable_area_sqft,
+         ut.price_per_sqft, ut.base_price AS calculated_base_price,
+         effective_price.base_amount, effective_price.components AS pricing_components,
          COALESCE(iu.price_override,effective_price.total_amount,ut.base_price) AS amount,
          CASE
            WHEN iu.price_override IS NOT NULL THEN iu.currency
@@ -131,7 +134,7 @@ export async function POST(request: NextRequest, context: Context) {
        FROM inventory_units iu
        JOIN inventory_unit_types ut ON ut.unit_type_id=iu.unit_type_id
        LEFT JOIN LATERAL (
-         SELECT book.currency,
+         SELECT book.currency, entry.base_amount, entry.components,
            CASE WHEN entry.unit_id IS NOT NULL THEN 'unit_price_book' ELSE entry.source END AS source,
            entry.base_amount + COALESCE((
              SELECT SUM(component.value::numeric)
@@ -169,11 +172,29 @@ export async function POST(request: NextRequest, context: Context) {
       );
     }
 
-    const items = units.rows.map((unit) => ({
-      ...unit,
-      amount: unit.amount === null ? null : Number(unit.amount),
-      captured_at: new Date().toISOString(),
-    }));
+    const items = units.rows.map((unit) => {
+      const usesTemplateRate =
+        unit.price_override === null &&
+        (unit.price_source === "unit_type_base" ||
+          unit.price_source === "unit_type_fallback");
+      return {
+        ...unit,
+        amount: unit.amount === null ? null : Number(unit.amount),
+        saleable_area_sqft: usesTemplateRate
+          ? Number(unit.saleable_area_sqft)
+          : null,
+        price_per_sqft: usesTemplateRate
+          ? Number(unit.price_per_sqft)
+          : null,
+        base_amount: usesTemplateRate
+          ? Number(unit.base_amount ?? unit.calculated_base_price)
+          : null,
+        pricing_components: usesTemplateRate
+          ? (unit.pricing_components ?? {})
+          : {},
+        captured_at: new Date().toISOString(),
+      };
+    });
     const result = await client.query(
       `INSERT INTO opportunity_shortlists
          (opportunity_id,title,notes,items,created_by)

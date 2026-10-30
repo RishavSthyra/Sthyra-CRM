@@ -1629,10 +1629,15 @@ export function InventoryWorkspace() {
                             </div>
                             <div className="max-[760px]:hidden">
                               <p className="text-[10px] tracking-[0.08em] text-[#606864] uppercase">
-                                Base price
+                                Calculated base price
                               </p>
                               <p className="mt-1 text-sm text-[#aab1ad]">
                                 {formatMoney(type.base_price, type.currency)}
+                              </p>
+                              <p className="mt-0.5 text-[11px] text-[#666e6a]">
+                                {type.price_per_sqft === null
+                                  ? "No rate"
+                                  : `${formatMoney(type.price_per_sqft, type.currency)} / sq ft`}
                               </p>
                             </div>
                             {showTemplateTotals && (

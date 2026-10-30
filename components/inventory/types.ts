@@ -63,6 +63,7 @@ export type UnitType = {
   carpet_area_sqft: number | string | null;
   built_up_area_sqft: number | string | null;
   saleable_area_sqft: number | string | null;
+  price_per_sqft: number | string | null;
   base_price: number | string | null;
   pricing_base_amount: number | string | null;
   pricing_components: Record<string, number>;
@@ -127,6 +128,7 @@ export type InventoryUnit = {
   carpet_area_sqft: number | string | null;
   built_up_area_sqft: number | string | null;
   saleable_area_sqft: number | string | null;
+  price_per_sqft: number | string | null;
   base_price: number | string | null;
   asset_type_key: string;
   asset_type_name: string;

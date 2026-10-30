@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  calculatedBasePrice,
   hasPricingComponents,
   pricingComponentsTotal,
   pricingComponentsValue,
@@ -15,6 +16,8 @@ const components = {
 };
 
 test("inventory template pricing totals additive charges without GST", () => {
+  assert.equal(calculatedBasePrice(2955, 9500), 28_072_500);
+  assert.equal(calculatedBasePrice(null, 9500), null);
   assert.equal(pricingComponentsTotal(components), 2_656_545);
   assert.equal(totalPrice(26_595_000, components), 29_251_545);
   assert.equal(hasPricingComponents(components), true);
@@ -47,6 +50,7 @@ test("unit template API and UI expose data-driven pricing components", () => {
     "utf8",
   );
   for (const source of [createRoute, updateRoute]) {
+    assert.match(source, /price_per_sqft/);
     assert.match(source, /pricing_components/);
     assert.match(source, /pricingComponentsValue/);
     assert.match(source, /syncUnitTypeBasePrice/);
@@ -67,4 +71,13 @@ test("unit template API and UI expose data-driven pricing components", () => {
   assert.match(dialogs, /Preferential Location Charges \(PLC\) Extra/);
   assert.match(dialogs, /Extar plot area \(PLA\) Extra/);
   assert.match(dialogs, /GST is added separately/);
+  assert.match(dialogs, /Price per sq ft/);
+  assert.match(dialogs, /Calculated base price/);
+
+  const migration = readFileSync(
+    "database/migrations/20261030_inventory_price_per_sqft.sql",
+    "utf8",
+  );
+  assert.match(migration, /price_per_sqft/);
+  assert.match(migration, /NEW\.price_per_sqft \* NEW\.saleable_area_sqft/);
 });

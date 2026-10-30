@@ -25,6 +25,7 @@ export type QuotationLineItem = {
   quantity: number;
   unit_price: number;
   amount: number;
+  unit_of_measure?: string | null;
   unit_code?: string | null;
   unit_name?: string | null;
   type_name?: string | null;
@@ -172,6 +173,10 @@ function normalizeLineItems(value: unknown, errors: string[]) {
       quantity: rounded(quantity),
       unit_price: rounded(unitPrice),
       amount: rounded(quantity * unitPrice),
+      unit_of_measure:
+        typeof item.unit_of_measure === "string"
+          ? item.unit_of_measure.trim().slice(0, 30) || null
+          : null,
       unit_code:
         typeof item.unit_code === "string"
           ? item.unit_code.slice(0, 200)

@@ -453,14 +453,14 @@ export async function generateQuotationPdf(quote: Quote): Promise<Buffer> {
       color: colors.muted,
     });
     rightText(
-      Number(item.quantity || 0).toLocaleString("en-IN"),
+      `${Number(item.quantity || 0).toLocaleString("en-IN")}${item.unit_of_measure ? ` ${clean(item.unit_of_measure)}` : ""}`,
       columns.quantity.x + columns.quantity.width - 7,
       baseline,
       8.5,
       regular,
     );
     rightText(
-      money(item.unit_price, currency),
+      `${money(item.unit_price, currency)}${item.unit_of_measure ? ` / ${clean(item.unit_of_measure)}` : ""}`,
       columns.unit.x + columns.unit.width - 7,
       baseline,
       8,

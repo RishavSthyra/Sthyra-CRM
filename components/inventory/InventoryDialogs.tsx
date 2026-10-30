@@ -26,7 +26,10 @@ import {
   getInventoryTemplateAreaSqft,
   inferInventoryRoomType,
 } from "@/lib/inventoryLayouts";
-import { pricingComponentsTotal } from "@/lib/inventoryPricing";
+import {
+  calculatedBasePrice,
+  pricingComponentsTotal,
+} from "@/lib/inventoryPricing";
 import type {
   AssetType,
   InventoryAttributeDefinition,
@@ -1056,8 +1059,10 @@ function AddUnitTypeForm({
       unitType?.saleable_area_sqft === null
         ? ""
         : String(unitType?.saleable_area_sqft ?? ""),
-    base_price:
-      unitType?.base_price === null ? "" : String(unitType?.base_price ?? ""),
+    price_per_sqft:
+      unitType?.price_per_sqft === null
+        ? ""
+        : String(unitType?.price_per_sqft ?? ""),
     currency: unitType?.currency ?? "INR",
     is_active: unitType?.is_active ?? true,
   });
@@ -1082,7 +1087,11 @@ function AddUnitTypeForm({
       ]),
     ),
   );
-  const totalWithoutGst = Number(form.base_price || 0) + pricingComponentTotal;
+  const basePrice = calculatedBasePrice(
+    form.saleable_area_sqft,
+    form.price_per_sqft,
+  );
+  const totalWithoutGst = Number(basePrice ?? 0) + pricingComponentTotal;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -1100,7 +1109,7 @@ function AddUnitTypeForm({
         carpet_area_sqft: numeric(form.carpet_area_sqft),
         built_up_area_sqft: numeric(form.built_up_area_sqft),
         saleable_area_sqft: numeric(form.saleable_area_sqft),
-        base_price: numeric(form.base_price),
+        price_per_sqft: numeric(form.price_per_sqft),
         ...(pricingComponentEntries.length
           ? {
               pricing_components: Object.fromEntries(
@@ -1207,7 +1216,7 @@ function AddUnitTypeForm({
             ["carpet_area_sqft", "UDS (sq ft)", true],
             ["built_up_area_sqft", "Built-up area (sq ft)", true],
             ["saleable_area_sqft", "Saleable area (sq ft)", true],
-            ["base_price", "Base price", false],
+            ["price_per_sqft", "Price per sq ft", true],
           ] as const
         ).map(([key, label, optional]) => (
           <Field key={key} label={label} optional={optional}>
@@ -1220,12 +1229,21 @@ function AddUnitTypeForm({
                   [key]: event.target.value,
                 }))
               }
-              step={key.includes("area") || key === "base_price" ? "0.01" : "1"}
+              step={
+                key.includes("area") || key === "price_per_sqft" ? "0.01" : "1"
+              }
               type="number"
               value={String(form[key as keyof typeof form] ?? "")}
             />
           </Field>
         ))}
+        <Field label="Calculated base price">
+          <div className={`${inputClass} flex items-center text-[#cfd5d1]`}>
+            {basePrice === null
+              ? "Enter saleable area and price per sq ft"
+              : formatCurrency(basePrice, form.currency)}
+          </div>
+        </Field>
         <Field label="Currency">
           <input
             className={inputClass}

@@ -28,7 +28,7 @@ export const INVENTORY_UNIT_COLUMNS = `
   node.node_kind, node.node_code, node.node_name,
   unit_type.type_code, unit_type.type_name, unit_type.configuration,
   unit_type.carpet_area_sqft, unit_type.built_up_area_sqft,
-  unit_type.saleable_area_sqft, unit_type.base_price,
+  unit_type.saleable_area_sqft, unit_type.price_per_sqft, unit_type.base_price,
   unit_type.currency AS type_currency,
   unit_type.specifications AS type_specifications,
   unit_type.layout_notes AS type_layout_notes,

@@ -63,7 +63,7 @@ export async function PATCH(request: NextRequest, context: Context) {
       "carpet_area_sqft",
       "built_up_area_sqft",
       "saleable_area_sqft",
-      "base_price",
+      "price_per_sqft",
       "pricing_components",
       "currency",
       "specifications",
@@ -101,10 +101,15 @@ export async function PATCH(request: NextRequest, context: Context) {
       nullable: true,
       minimum: 0.01,
     });
-  data.base_price = numberValue(body.base_price, "base_price", errors, {
-    nullable: true,
-    minimum: 0,
-  });
+  data.price_per_sqft = numberValue(
+    body.price_per_sqft,
+    "price_per_sqft",
+    errors,
+    {
+      nullable: true,
+      minimum: 0,
+    },
+  );
   const pricingComponents = pricingComponentsValue(
     body.pricing_components,
     errors,
@@ -138,6 +143,30 @@ export async function PATCH(request: NextRequest, context: Context) {
       return NextResponse.json(
         { error: "Inventory unit type not found" },
         { status: 404 },
+      );
+    }
+    const effectiveSaleableArea =
+      data.saleable_area_sqft !== undefined
+        ? data.saleable_area_sqft
+        : existing.rows[0].saleable_area_sqft;
+    const effectivePricePerSqft =
+      data.price_per_sqft !== undefined
+        ? data.price_per_sqft
+        : existing.rows[0].price_per_sqft;
+    if (
+      effectivePricePerSqft !== null &&
+      effectivePricePerSqft !== undefined &&
+      (effectiveSaleableArea === null || effectiveSaleableArea === undefined)
+    ) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        {
+          error: "Validation failed",
+          details: [
+            "saleable_area_sqft is required when price_per_sqft is set",
+          ],
+        },
+        { status: 422 },
       );
     }
     const referenceErrors = await validateCatalogReferences(
@@ -187,7 +216,8 @@ export async function PATCH(request: NextRequest, context: Context) {
       await replaceUnitTypeLayout(client, id, layoutResult.data);
     let pricingSync: PricingSyncResult | undefined;
     if (
-      body.base_price !== undefined ||
+      body.price_per_sqft !== undefined ||
+      body.saleable_area_sqft !== undefined ||
       body.currency !== undefined ||
       body.pricing_components !== undefined
     ) {

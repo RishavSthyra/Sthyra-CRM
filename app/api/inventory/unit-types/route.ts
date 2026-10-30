@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
       "carpet_area_sqft",
       "built_up_area_sqft",
       "saleable_area_sqft",
-      "base_price",
+      "price_per_sqft",
       "pricing_components",
       "currency",
       "specifications",
@@ -156,10 +156,22 @@ export async function POST(request: NextRequest) {
       nullable: true,
       minimum: 0.01,
     });
-  numbers.base_price = numberValue(body.base_price, "base_price", errors, {
-    nullable: true,
-    minimum: 0,
-  });
+  numbers.price_per_sqft = numberValue(
+    body.price_per_sqft,
+    "price_per_sqft",
+    errors,
+    {
+      nullable: true,
+      minimum: 0,
+    },
+  );
+  if (
+    numbers.price_per_sqft !== null &&
+    numbers.price_per_sqft !== undefined &&
+    (numbers.saleable_area_sqft === null ||
+      numbers.saleable_area_sqft === undefined)
+  )
+    errors.push("saleable_area_sqft is required when price_per_sqft is set");
   const pricingComponents = pricingComponentsValue(
     body.pricing_components,
     errors,
@@ -208,7 +220,7 @@ export async function POST(request: NextRequest) {
       );
     }
     const result = await client.query(
-      `INSERT INTO inventory_unit_types (company_id,project_id,asset_type_id,type_code,type_name,configuration,bedrooms,bathrooms,balconies,carpet_area_sqft,built_up_area_sqft,saleable_area_sqft,base_price,currency,specifications) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+      `INSERT INTO inventory_unit_types (company_id,project_id,asset_type_id,type_code,type_name,configuration,bedrooms,bathrooms,balconies,carpet_area_sqft,built_up_area_sqft,saleable_area_sqft,price_per_sqft,currency,specifications) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
       [
         scope.context.access.company.company_id,
         projectId,
@@ -222,7 +234,7 @@ export async function POST(request: NextRequest) {
         numbers.carpet_area_sqft ?? null,
         numbers.built_up_area_sqft ?? null,
         numbers.saleable_area_sqft ?? null,
-        numbers.base_price ?? null,
+        numbers.price_per_sqft ?? null,
         currency,
         specifications,
       ],

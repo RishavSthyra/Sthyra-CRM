@@ -22,6 +22,7 @@ import {
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import toast from "react-hot-toast";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
+import { quotationItemsFromShortlist } from "@/lib/quotationLineItems";
 
 type LineItem = {
   line_item_id: string;
@@ -31,6 +32,7 @@ type LineItem = {
   quantity: number;
   unit_price: number;
   amount?: number;
+  unit_of_measure?: string | null;
   unit_code?: string | null;
   unit_name?: string | null;
   type_name?: string | null;
@@ -97,6 +99,9 @@ type Shortlist = {
     type_name?: string | null;
     amount?: number | null;
     currency?: string | null;
+    saleable_area_sqft?: number | string | null;
+    price_per_sqft?: number | string | null;
+    pricing_components?: Record<string, unknown> | null;
   }>;
 };
 
@@ -212,20 +217,9 @@ function initialEditor(shortlist?: Shortlist | null): EditorState {
   const valid = new Date();
   valid.setDate(valid.getDate() + 14);
   const items = shortlist?.items.length
-    ? shortlist.items.map((item) => ({
+    ? quotationItemsFromShortlist(shortlist.items).map((item) => ({
+        ...item,
         line_item_id: id(),
-        unit_id: item.unit_id,
-        category: "base_price" as const,
-        description:
-          item.unit_name ||
-          item.unit_code ||
-          item.type_name ||
-          "Inventory unit",
-        quantity: 1,
-        unit_price: Number(item.amount ?? 0),
-        unit_code: item.unit_code,
-        unit_name: item.unit_name,
-        type_name: item.type_name,
       }))
     : [emptyItem("base_price")];
   return {
@@ -546,8 +540,8 @@ function QuotationEditor({
                     <tr>
                       <th className="px-3 py-2.5">Type</th>
                       <th className="px-3 py-2.5">Description</th>
-                      <th className="w-20 px-3 py-2.5">Qty</th>
-                      <th className="w-36 px-3 py-2.5">Unit price</th>
+                      <th className="w-24 px-3 py-2.5">Qty / area</th>
+                      <th className="w-40 px-3 py-2.5">Unit price / rate</th>
                       <th className="w-32 px-3 py-2.5 text-right">Amount</th>
                       <th className="w-10" />
                     </tr>
@@ -585,32 +579,46 @@ function QuotationEditor({
                           />
                         </td>
                         <td className="p-2">
-                          <input
-                            className={inputClass}
-                            min="0.01"
-                            onChange={(e) =>
-                              patchItem(index, {
-                                quantity: Number(e.target.value),
-                              })
-                            }
-                            step="0.01"
-                            type="number"
-                            value={item.quantity}
-                          />
+                          <div>
+                            <input
+                              className={inputClass}
+                              min="0.01"
+                              onChange={(e) =>
+                                patchItem(index, {
+                                  quantity: Number(e.target.value),
+                                })
+                              }
+                              step="0.01"
+                              type="number"
+                              value={item.quantity}
+                            />
+                            {item.unit_of_measure && (
+                              <p className="mt-1 text-[10px] text-[#69716d]">
+                                {item.unit_of_measure}
+                              </p>
+                            )}
+                          </div>
                         </td>
                         <td className="p-2">
-                          <input
-                            className={inputClass}
-                            min="0"
-                            onChange={(e) =>
-                              patchItem(index, {
-                                unit_price: Number(e.target.value),
-                              })
-                            }
-                            step="0.01"
-                            type="number"
-                            value={item.unit_price}
-                          />
+                          <div>
+                            <input
+                              className={inputClass}
+                              min="0"
+                              onChange={(e) =>
+                                patchItem(index, {
+                                  unit_price: Number(e.target.value),
+                                })
+                              }
+                              step="0.01"
+                              type="number"
+                              value={item.unit_price}
+                            />
+                            {item.unit_of_measure && (
+                              <p className="mt-1 text-[10px] text-[#69716d]">
+                                per {item.unit_of_measure}
+                              </p>
+                            )}
+                          </div>
                         </td>
                         <td className="px-3 py-2 text-right text-xs font-medium text-[#d8ddda]">
                           {money(
@@ -1611,6 +1619,11 @@ function DetailDialog({
                             <span className="ml-2 text-[10px] text-[#747c78]">
                               {item.unit_code}
                             </span>
+                          )}
+                          {item.unit_of_measure && (
+                            <p className="mt-1 text-[11px] text-[#737c77]">
+                              {Number(item.quantity).toLocaleString("en-IN")} {item.unit_of_measure} × {money(item.unit_price, quotation.currency)} per {item.unit_of_measure}
+                            </p>
                           )}
                         </td>
                         <td className="px-4 py-3 text-xs capitalize text-[#858e89]">
