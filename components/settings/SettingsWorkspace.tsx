@@ -625,6 +625,10 @@ export function SettingsWorkspace() {
           setInvitations(
             (invitationPayload.invitations as Row[] | undefined) ?? [],
           );
+        } else if (adminResults[7]?.status === "rejected") {
+          toast.error(
+            "Pending invitations could not be loaded. Refresh and try again.",
+          );
         }
         const failedRequests = adminResults.filter(
           (result) => result.status === "rejected",
