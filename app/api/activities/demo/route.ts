@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
         const endedAt = new Date(startedAt.getTime() + duration * 1000);
         const direction = variant % 3 === 0 ? "inbound" : "outbound";
         const statuses = ["completed", "answered", "missed"];
-        const outcomes = ["interested", "follow_up", "no_answer", "voicemail"];
+        const outcomes = ["interested", "connected", "no_answer", "voicemail"];
         const result = await client.query(
           `INSERT INTO calls (
              company_id, project_id, lead_id, contact_id, direction, status,

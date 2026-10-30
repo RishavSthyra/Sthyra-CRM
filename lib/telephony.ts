@@ -1,5 +1,12 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
+import {
+  CALL_OUTCOMES,
+  type CallOutcome,
+  canMoveLeadToDeadFromCall,
+  isCallOutcome,
+  validateManualFollowUpAt,
+} from "@/lib/callOutcomes";
 import { isUuid } from "@/lib/permissions";
 import { isObject } from "@/utils/isObject";
 import { validateText } from "@/utils/validateText";
@@ -10,7 +17,7 @@ type ValidationResult<T> = { ok: true; data: T } | { ok: false; errors: string[]
 export const CALL_STATUSES = ["scheduled", "initiating", "queued", "ringing", "answered", "in_progress", "on_hold", "missed", "completed", "failed", "busy", "no_answer", "cancelled"] as const;
 export const TERMINAL_CALL_STATUSES = new Set(["missed", "completed", "failed", "busy", "no_answer", "cancelled"]);
 export const ACTIVE_CALL_STATUSES = new Set(["ringing", "answered", "in_progress", "on_hold"]);
-export const CALL_OUTCOMES = ["interested", "follow_up", "no_answer", "not_interested", "wrong_number", "voicemail", "connected", "callback_requested", "qualified", "do_not_call"] as const;
+export { CALL_OUTCOMES } from "@/lib/callOutcomes";
 
 export function verifyTelephonyWebhook(rawBody: string, signature: string | null, authorization: string | null): boolean {
   const secret = process.env.TELEPHONY_WEBHOOK_SECRET;
@@ -67,24 +74,45 @@ export function validateInitiateCall(body: unknown): ValidationResult<InitiateCa
   return errors.length ? { ok: false, errors } : { ok: true, data: { project_id: project, lead_id: lead, contact_id: contact, phone_number: phone ?? undefined, subject: subject as string } };
 }
 
-export function validateDisposition(body: unknown): ValidationResult<{ outcome: typeof CALL_OUTCOMES[number]; summary?: string | null; next_follow_up_at?: string | null }> {
+export function validateDisposition(body: unknown): ValidationResult<{
+  outcome: CallOutcome;
+  summary?: string | null;
+  next_follow_up_at: string;
+  mark_lead_dead: boolean;
+}> {
   if (!isObject(body) || Array.isArray(body)) return { ok: false, errors: ["Request body must be a JSON object"] };
-  const allowed = new Set(["outcome", "summary", "next_follow_up_at"]);
+  const allowed = new Set(["outcome", "summary", "next_follow_up_at", "mark_lead_dead"]);
   const errors = Object.keys(body)
     .filter((key) => !allowed.has(key))
     .map((key) => `Unknown field: ${key}`);
-  if (!CALL_OUTCOMES.includes(body.outcome as typeof CALL_OUTCOMES[number])) errors.push(`outcome must be one of: ${CALL_OUTCOMES.join(", ")}`);
+  const outcome = isCallOutcome(body.outcome) ? body.outcome : null;
+  if (!outcome) errors.push(`outcome must be one of: ${CALL_OUTCOMES.join(", ")}`);
   const summary = validateText(body.summary, "summary", 10000, true, errors);
-  let nextFollowUpAt: string | null | undefined;
-  if (body.next_follow_up_at === null) nextFollowUpAt = null;
-  else if (body.next_follow_up_at !== undefined) {
-    if (typeof body.next_follow_up_at !== "string" || Number.isNaN(Date.parse(body.next_follow_up_at))) {
-      errors.push("next_follow_up_at must be a valid ISO date-time or null");
-    } else {
-      nextFollowUpAt = new Date(body.next_follow_up_at).toISOString();
-    }
+  const followUp = validateManualFollowUpAt(body.next_follow_up_at);
+  if (!followUp.ok) errors.push(followUp.error);
+  const markLeadDead = body.mark_lead_dead ?? false;
+  if (typeof markLeadDead !== "boolean") {
+    errors.push("mark_lead_dead must be a boolean");
   }
-  return errors.length ? { ok: false, errors } : { ok: true, data: { outcome: body.outcome as typeof CALL_OUTCOMES[number], summary, next_follow_up_at: nextFollowUpAt } };
+  if (
+    markLeadDead === true &&
+    (!outcome || !canMoveLeadToDeadFromCall(outcome))
+  ) {
+    errors.push(
+      "mark_lead_dead is only available for not_interested, wrong_number, or do_not_call",
+    );
+  }
+  return errors.length || !outcome || !followUp.ok
+    ? { ok: false, errors }
+    : {
+        ok: true,
+        data: {
+          outcome,
+          summary,
+          next_follow_up_at: followUp.value,
+          mark_lead_dead: markLeadDead === true,
+        },
+      };
 }
 
 export function validateTransfer(body: unknown): ValidationResult<{ to_user_id?: string; to_team_id?: string; to_phone_number?: string }> {

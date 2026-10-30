@@ -6,8 +6,8 @@ import {
   resolveCommunicationContact,
   validateCallPayload,
 } from "@/lib/communications";
+import { applyLeadCallWorkflow } from "@/lib/leadCallWorkflow";
 import { requireOperationsContext } from "@/lib/operationsAccess";
-import { applyCallFollowUp } from "@/lib/leadFollowUps";
 import { canAccessProject, getAccessibleProjectIds } from "@/lib/projectAccess";
 import { parsePagination } from "@/utils/parsePagination";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
@@ -183,21 +183,43 @@ export async function POST(request: NextRequest) {
           outcome: call.outcome,
           duration_seconds: call.duration_seconds,
           phone_number: call.phone_number,
+          next_follow_up_at: validation.data.next_follow_up_at ?? null,
+          mark_lead_dead: validation.data.mark_lead_dead,
         },
         occurredAt: call.started_at,
       },
     );
-    const followUp = await applyCallFollowUp(client, {
-      leadId: call.lead_id,
-      outcome: call.outcome,
-      callStatus: call.status,
-      occurredAt: call.ended_at ?? call.started_at,
-      requestedAt: validation.data.next_follow_up_at,
-      actorUserId: scope.context.userId,
-    });
+    const workflow = call.lead_id && validation.data.outcome
+      ? await applyLeadCallWorkflow(client, {
+          leadId: String(call.lead_id),
+          callId: String(call.call_id),
+          outcome: validation.data.outcome,
+          occurredAt: call.ended_at ?? call.started_at,
+          nextFollowUpAt: validation.data.next_follow_up_at as string,
+          markLeadDead: validation.data.mark_lead_dead,
+          summary: call.summary,
+          actorUserId: scope.context.userId,
+        })
+      : {
+          followUp: { action: "unchanged" as const },
+          lead: null,
+          markedDead: false,
+          stageKey: null,
+        };
     await client.query("COMMIT");
     return NextResponse.json(
-      { message: "Call logged", call, follow_up: followUp },
+      {
+        message: workflow.markedDead
+          ? "Call logged and lead moved to Dead"
+          : "Call logged",
+        call,
+        follow_up: workflow.followUp,
+        lead_workflow: {
+          lead: workflow.lead,
+          marked_dead: workflow.markedDead,
+          stage_key: workflow.stageKey,
+        },
+      },
       { status: 201 },
     );
   } catch (error) {

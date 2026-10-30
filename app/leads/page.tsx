@@ -6,6 +6,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import {
+  AlertTriangle,
   ChevronDown,
   Funnel,
   ListFilter,
@@ -28,6 +29,11 @@ import {
 } from "@/components/leads/ContactProfilePopover";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 import { getWorkspaceContext } from "@/lib/clientWorkspaceContext";
+import {
+  type CallOutcome,
+  canMoveLeadToDeadFromCall,
+  leadStageForCallOutcome,
+} from "@/lib/callOutcomes";
 import { DEFAULT_PROJECT_LEAD_STAGES } from "@/lib/defaultLeadStages";
 import {
   DEAD_LEADS_TAB_KEY,
@@ -55,6 +61,7 @@ type Lead = {
   source_id?: string | null;
   campaign_id?: string | null;
   sub_source?: string | null;
+  stage_id?: string | null;
   stage_key?: string | null;
   stage_name?: string | null;
   opportunity_id?: string | null;
@@ -141,28 +148,20 @@ type LeadCall = {
   duration_seconds?: number | null;
 };
 
-type CallOutcome =
-  | "connected"
-  | "interested"
-  | "follow_up"
-  | "no_answer"
-  | "voicemail"
-  | "callback_requested"
-  | "not_interested"
-  | "wrong_number"
-  | "do_not_call";
-
 const callOutcomes: { value: CallOutcome; label: string }[] = [
   { value: "connected", label: "Answered" },
   { value: "interested", label: "Interested" },
-  { value: "follow_up", label: "Follow up" },
   { value: "no_answer", label: "No answer" },
   { value: "voicemail", label: "Voicemail left" },
-  { value: "callback_requested", label: "Callback requested" },
   { value: "not_interested", label: "Not interested" },
   { value: "wrong_number", label: "Wrong number" },
   { value: "do_not_call", label: "Do not call" },
 ];
+
+function dateTimeLocalValue(value: Date) {
+  const localTime = value.getTime() - value.getTimezoneOffset() * 60_000;
+  return new Date(localTime).toISOString().slice(0, 16);
+}
 
 type LeadEmail = {
   email_id: string;
@@ -486,7 +485,10 @@ export default function LeadsPage() {
   const [callComposerOpen, setCallComposerOpen] = useState(false);
   const [callOutcome, setCallOutcome] = useState<CallOutcome>("no_answer");
   const [callSummary, setCallSummary] = useState("");
-  const [callbackAt, setCallbackAt] = useState("");
+  const [nextFollowUpAt, setNextFollowUpAt] = useState("");
+  const [nextFollowUpMin, setNextFollowUpMin] = useState("");
+  const [deadCallConfirmationOpen, setDeadCallConfirmationOpen] =
+    useState(false);
   const [callSaving, setCallSaving] = useState(false);
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [drawerError, setDrawerError] = useState<string | null>(null);
@@ -822,7 +824,12 @@ export default function LeadsPage() {
     if (!selectedLeadId) return;
 
     function closeDrawerOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setSelectedLead(null);
+      if (event.key !== "Escape") return;
+      if (deadCallConfirmationOpen) {
+        setDeadCallConfirmationOpen(false);
+        return;
+      }
+      setSelectedLead(null);
     }
 
     document.addEventListener("keydown", closeDrawerOnEscape);
@@ -832,7 +839,7 @@ export default function LeadsPage() {
       document.removeEventListener("keydown", closeDrawerOnEscape);
       document.body.style.overflow = previousOverflow;
     };
-  }, [selectedLeadId]);
+  }, [deadCallConfirmationOpen, selectedLeadId]);
 
   useEffect(() => {
     if (!selectedLeadId) return;
@@ -856,7 +863,8 @@ export default function LeadsPage() {
       setCallComposerOpen(false);
       setCallOutcome("no_answer");
       setCallSummary("");
-      setCallbackAt("");
+      setNextFollowUpAt("");
+      setDeadCallConfirmationOpen(false);
       setDrawerTab("activity");
 
       try {
@@ -1053,19 +1061,29 @@ export default function LeadsPage() {
     }
   }
 
-  async function createLeadCall(event: FormEvent) {
-    event.preventDefault();
+  function validateLeadCallForm() {
     const lead = leadDetail ?? selectedLead;
     const projectId = lead?.project_id;
     const phone = leadDetail?.contact?.phone_number ?? lead?.phone_number;
     if (!lead || !projectId || !phone) {
       toast.error("This lead needs a project and phone number before logging a call.");
-      return;
+      return null;
     }
-    if (callOutcome === "callback_requested" && !callbackAt) {
-      toast.error("Choose the callback time promised to the customer.");
-      return;
+    const followUpDate = new Date(nextFollowUpAt);
+    if (
+      !nextFollowUpAt ||
+      Number.isNaN(followUpDate.getTime()) ||
+      followUpDate.getTime() <= Date.now()
+    ) {
+      toast.error("Choose a future next follow-up date and time.");
+      return null;
     }
+    return { lead, projectId, phone, followUpDate };
+  }
+
+  async function saveLeadCall(markLeadDead: boolean) {
+    const form = validateLeadCallForm();
+    if (!form) return;
 
     setCallSaving(true);
     try {
@@ -1074,20 +1092,18 @@ export default function LeadsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          project_id: projectId,
-          lead_id: lead.lead_id,
+          project_id: form.projectId,
+          lead_id: form.lead.lead_id,
           direction: "outbound",
           status: callOutcome === "no_answer" ? "no_answer" : "completed",
           outcome: callOutcome,
-          phone_number: phone,
+          phone_number: form.phone,
           subject: "Pre-sales follow-up call",
           summary: callSummary.trim() || null,
           started_at: now,
           ended_at: now,
-          next_follow_up_at:
-            callOutcome === "callback_requested" && callbackAt
-              ? new Date(callbackAt).toISOString()
-              : null,
+          next_follow_up_at: form.followUpDate.toISOString(),
+          mark_lead_dead: markLeadDead,
         }),
       });
       if (response.status === 401) {
@@ -1098,13 +1114,23 @@ export default function LeadsPage() {
       const body = (await response.json()) as {
         call?: LeadCall;
         follow_up?:
-          | { action: "schedule"; dueAt: string; summary: string }
+          | {
+              action: "schedule";
+              actionType: "call" | "review";
+              dueAt: string;
+              summary: string;
+            }
           | { action: "clear" | "unchanged" };
+        lead_workflow?: {
+          lead?: Lead | null;
+          marked_dead?: boolean;
+          stage_key?: string | null;
+        };
       };
       if (body.call) setLeadCalls((current) => [body.call!, ...current]);
       if (body.follow_up?.action === "schedule") {
         const nextAction = {
-          next_action_type: "call",
+          next_action_type: body.follow_up.actionType,
           next_action_summary: body.follow_up.summary,
           next_follow_up_at: body.follow_up.dueAt,
           next_action_status: "pending",
@@ -1123,13 +1149,46 @@ export default function LeadsPage() {
           current ? { ...current, next_action_status: "cancelled" } : current,
         );
       }
+      if (body.lead_workflow?.lead) {
+        const workflowLead = body.lead_workflow.lead;
+        const stageKey =
+          body.lead_workflow.stage_key ??
+          (leadDetail ?? selectedLead)?.stage_key ??
+          null;
+        const stageName =
+          pipelineStages.find((stage) => stage.stage_key === stageKey)
+            ?.stage_name ??
+          (leadDetail ?? selectedLead)?.stage_name ??
+          null;
+        const leadUpdate = {
+          status: workflowLead.status,
+          stage_id: workflowLead.stage_id,
+          stage_key: stageKey,
+          stage_name: stageName,
+        };
+        setSelectedLead((current) =>
+          current ? { ...current, ...leadUpdate } : current,
+        );
+        setLeadDetail((current) =>
+          current
+            ? {
+                ...current,
+                ...leadUpdate,
+                stage: stageName ? { stage_name: stageName } : current.stage,
+              }
+            : current,
+        );
+      }
 
       setCallComposerOpen(false);
+      setDeadCallConfirmationOpen(false);
       setCallSummary("");
-      setCallbackAt("");
+      setNextFollowUpAt("");
       toast.success(
-        body.follow_up?.action === "schedule"
-          ? "Call logged and next call scheduled"
+        body.lead_workflow?.marked_dead
+          ? "Call logged and lead moved to Dead"
+          : body.follow_up?.action === "schedule"
+          ? "Call logged and next follow-up scheduled"
           : "Call outcome logged",
       );
       await loadLeads({ forceNetwork: true, forceSummary: true });
@@ -1138,6 +1197,25 @@ export default function LeadsPage() {
     } finally {
       setCallSaving(false);
     }
+  }
+
+  function createLeadCall(event: FormEvent) {
+    event.preventDefault();
+    if (!validateLeadCallForm()) return;
+    if (canMoveLeadToDeadFromCall(callOutcome)) {
+      setDeadCallConfirmationOpen(true);
+      return;
+    }
+    void saveLeadCall(false);
+  }
+
+  function toggleCallComposer() {
+    if (!callComposerOpen) {
+      setNextFollowUpMin(
+        dateTimeLocalValue(new Date(Date.now() + 60_000)),
+      );
+    }
+    setCallComposerOpen((current) => !current);
   }
 
   async function runLeadAction(leadId: string, action: string) {
@@ -1811,7 +1889,10 @@ export default function LeadsPage() {
       {selectedLead && (
         <div
           className="fixed inset-0 z-[80] bg-black/70"
-          onMouseDown={() => setSelectedLead(null)}
+          onMouseDown={() => {
+            setDeadCallConfirmationOpen(false);
+            setSelectedLead(null);
+          }}
         >
           <aside
             aria-label="Lead overview"
@@ -1825,7 +1906,10 @@ export default function LeadsPage() {
               <button
                 className="border-0 bg-transparent p-1 text-[25px] leading-none text-[#c8c8c8]"
                 aria-label="Close lead overview"
-                onClick={() => setSelectedLead(null)}
+                onClick={() => {
+                  setDeadCallConfirmationOpen(false);
+                  setSelectedLead(null);
+                }}
                 type="button"
               >
                 ×
@@ -2062,7 +2146,7 @@ export default function LeadsPage() {
                               </span>
                               <button
                                 className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#315f50] bg-[#18382e] px-3 text-[10px] font-medium text-[#bdebdc] transition hover:bg-[#214a3d]"
-                                onClick={() => setCallComposerOpen((current) => !current)}
+                                onClick={toggleCallComposer}
                                 type="button"
                               >
                                 <Plus className="size-3" aria-hidden />
@@ -2090,19 +2174,34 @@ export default function LeadsPage() {
                                     </select>
                                     <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-3.5 -translate-y-1/2 text-[#8f9692]" aria-hidden />
                                   </span>
+                                  <span className="mt-1 block text-[9px] leading-4 text-[#686e6b]">
+                                    This outcome advances an eligible lead to {" "}
+                                    <span className="text-[#9da5a1]">
+                                      {leadStageForCallOutcome(callOutcome) ===
+                                      "contact_attempted"
+                                        ? "Contact Attempted"
+                                        : "Contacted"}
+                                    </span>
+                                    . Later stages will not move backward.
+                                  </span>
                                 </label>
-                                {callOutcome === "callback_requested" && (
-                                  <label className="block text-[10px] text-[#a9aeab]">
-                                    Callback time
-                                    <input
-                                      className="mt-1 h-10 w-full rounded-lg border border-[#343936] bg-[#0c0e0d] px-3 text-xs text-[#f2f3f2] outline-none focus:border-[#4aa987]"
-                                      onChange={(event) => setCallbackAt(event.target.value)}
-                                      required
-                                      type="datetime-local"
-                                      value={callbackAt}
-                                    />
-                                  </label>
-                                )}
+                                <label className="block text-[10px] text-[#a9aeab]">
+                                  Next follow-up
+                                  <span className="ml-1 text-[#e58f80]">*</span>
+                                  <input
+                                    className="mt-1 h-10 w-full rounded-lg border border-[#343936] bg-[#0c0e0d] px-3 text-xs text-[#f2f3f2] outline-none focus:border-[#4aa987]"
+                                    min={nextFollowUpMin}
+                                    onChange={(event) =>
+                                      setNextFollowUpAt(event.target.value)
+                                    }
+                                    required
+                                    type="datetime-local"
+                                    value={nextFollowUpAt}
+                                  />
+                                  <span className="mt-1 block text-[9px] leading-4 text-[#686e6b]">
+                                    Choose the exact date and time for the next action.
+                                  </span>
+                                </label>
                                 <label className="block text-[10px] text-[#a9aeab]">
                                   Notes
                                   <textarea
@@ -2359,6 +2458,65 @@ export default function LeadsPage() {
           </aside>
         </div>
       )}
+      {deadCallConfirmationOpen && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              aria-labelledby="dead-call-confirmation-title"
+              aria-modal="true"
+              className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4"
+              role="dialog"
+            >
+              <div className="w-full max-w-md rounded-2xl border border-[#343936] bg-[#121513] p-5 shadow-2xl">
+                <span className="flex size-10 items-center justify-center rounded-full border border-[#73483d] bg-[#2b1c18] text-[#e89a87]">
+                  <AlertTriangle className="size-5" aria-hidden />
+                </span>
+                <h2
+                  className="mt-4 text-base font-semibold text-[#f2f4f3]"
+                  id="dead-call-confirmation-title"
+                >
+                  Move this lead to Dead?
+                </h2>
+                <p className="mt-2 text-xs leading-5 text-[#999f9c]">
+                  The call outcome is {" "}
+                  <strong className="font-medium text-[#d9dddb]">
+                    {callOutcomes.find(
+                      (option) => option.value === callOutcome,
+                    )?.label ?? callOutcome}
+                  </strong>
+                  . Moving the lead to Dead will remove it from active follow-up
+                  queues. Keeping it active will use the follow-up date you chose.
+                </p>
+                <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <button
+                    className="h-10 rounded-lg px-4 text-xs font-medium text-[#999f9c] hover:bg-white/[0.04] disabled:opacity-50"
+                    disabled={callSaving}
+                    onClick={() => setDeadCallConfirmationOpen(false)}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="h-10 rounded-lg border border-[#343936] px-4 text-xs font-medium text-[#d3d7d5] hover:bg-white/[0.04] disabled:opacity-50"
+                    disabled={callSaving}
+                    onClick={() => void saveLeadCall(false)}
+                    type="button"
+                  >
+                    Keep active
+                  </button>
+                  <button
+                    className="h-10 rounded-lg border border-[#8b4a3e] bg-[#4a241e] px-4 text-xs font-semibold text-[#ffd5cb] hover:bg-[#5a2c24] disabled:opacity-50"
+                    disabled={callSaving}
+                    onClick={() => void saveLeadCall(true)}
+                    type="button"
+                  >
+                    {callSaving ? "Saving…" : "Move to Dead"}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </main>
   );
 }

@@ -1,38 +1,147 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { parseActivityUuid } from "@/lib/activities";
-import { canAccessOperationsEntity, requireOperationsContext } from "@/lib/operationsAccess";
-import { applyCallFollowUp } from "@/lib/leadFollowUps";
-import { TERMINAL_CALL_STATUSES, addCallHistory, validateDisposition } from "@/lib/telephony";
+import {
+  canAccessOperationsEntity,
+  requireOperationsContext,
+} from "@/lib/operationsAccess";
+import { applyLeadCallWorkflow } from "@/lib/leadCallWorkflow";
+import {
+  TERMINAL_CALL_STATUSES,
+  addCallHistory,
+  validateDisposition,
+} from "@/lib/telephony";
 
 type Context = { params: Promise<{ callid: string }> };
 export async function POST(request: NextRequest, context: Context) {
-  const scope = await requireOperationsContext(request); if (!scope.ok) return scope.response;
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
   const callId = parseActivityUuid((await context.params).callid);
-  if (!callId) return NextResponse.json({ error: "callId must be a valid UUID" }, { status: 400 });
-  let body: unknown; try { body = await request.json(); } catch { return NextResponse.json({ error: "Request body must contain valid JSON" }, { status: 400 }); }
+  if (!callId) {
+    return NextResponse.json(
+      { error: "callId must be a valid UUID" },
+      { status: 400 },
+    );
+  }
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: "Request body must contain valid JSON" },
+      { status: 400 },
+    );
+  }
   const validation = validateDisposition(body);
-  if (!validation.ok) return NextResponse.json({ error: "Validation failed", details: validation.errors }, { status: 422 });
+  if (!validation.ok) {
+    return NextResponse.json(
+      { error: "Validation failed", details: validation.errors },
+      { status: 422 },
+    );
+  }
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const found = await client.query("SELECT * FROM calls WHERE call_id=$1 FOR UPDATE", [callId]);
-    if (!found.rowCount) { await client.query("ROLLBACK"); return NextResponse.json({ error: "Call not found" }, { status: 404 }); }
+    const found = await client.query(
+      "SELECT * FROM calls WHERE call_id=$1 FOR UPDATE",
+      [callId],
+    );
+    if (!found.rowCount) {
+      await client.query("ROLLBACK");
+      return NextResponse.json({ error: "Call not found" }, { status: 404 });
+    }
     const call = found.rows[0];
-    if (!canAccessOperationsEntity(scope.context.access, Number(call.company_id), Number(call.project_id))) { await client.query("ROLLBACK"); return NextResponse.json({ error: "You do not have access to this call" }, { status: 403 }); }
-    if (!TERMINAL_CALL_STATUSES.has(String(call.status))) { await client.query("ROLLBACK"); return NextResponse.json({ error: "End the call before applying a disposition" }, { status: 409 }); }
-    const result = await client.query(`UPDATE calls SET outcome=$1, summary=COALESCE($2,summary), updated_by=$3, updated_at=CURRENT_TIMESTAMP WHERE call_id=$4 RETURNING *`, [validation.data.outcome, validation.data.summary ?? null, scope.context.userId, callId]);
-    await addCallHistory(client, callId, "disposition", String(call.status), String(call.status), scope.context.userId, { outcome: validation.data.outcome });
-    const followUp = await applyCallFollowUp(client, {
-      leadId: call.lead_id,
-      outcome: validation.data.outcome,
-      callStatus: String(call.status),
-      occurredAt: call.ended_at ?? call.started_at ?? new Date(),
-      requestedAt: validation.data.next_follow_up_at,
-      actorUserId: scope.context.userId,
-    });
+    if (
+      !canAccessOperationsEntity(
+        scope.context.access,
+        Number(call.company_id),
+        Number(call.project_id),
+      )
+    ) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { error: "You do not have access to this call" },
+        { status: 403 },
+      );
+    }
+    if (!TERMINAL_CALL_STATUSES.has(String(call.status))) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { error: "End the call before applying a disposition" },
+        { status: 409 },
+      );
+    }
+    if (validation.data.mark_lead_dead && !call.lead_id) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { error: "Only a call linked to a lead can move that lead to Dead" },
+        { status: 422 },
+      );
+    }
+    const result = await client.query(
+      `UPDATE calls
+       SET outcome=$1, summary=COALESCE($2,summary),
+           updated_by=$3, updated_at=CURRENT_TIMESTAMP
+       WHERE call_id=$4
+       RETURNING *`,
+      [
+        validation.data.outcome,
+        validation.data.summary ?? null,
+        scope.context.userId,
+        callId,
+      ],
+    );
+    await addCallHistory(
+      client,
+      callId,
+      "disposition",
+      String(call.status),
+      String(call.status),
+      scope.context.userId,
+      {
+        outcome: validation.data.outcome,
+        next_follow_up_at: validation.data.next_follow_up_at,
+        mark_lead_dead: validation.data.mark_lead_dead,
+      },
+    );
+    const workflow = call.lead_id
+      ? await applyLeadCallWorkflow(client, {
+          leadId: String(call.lead_id),
+          callId,
+          outcome: validation.data.outcome,
+          occurredAt: call.ended_at ?? call.started_at ?? new Date(),
+          nextFollowUpAt: validation.data.next_follow_up_at,
+          markLeadDead: validation.data.mark_lead_dead,
+          summary: validation.data.summary ?? call.summary,
+          actorUserId: scope.context.userId,
+        })
+      : {
+          followUp: { action: "unchanged" as const },
+          lead: null,
+          markedDead: false,
+          stageKey: null,
+        };
     await client.query("COMMIT");
-    return NextResponse.json({ message: "Call disposition saved", call: result.rows[0], follow_up: followUp });
-  } catch (error) { await client.query("ROLLBACK").catch(() => undefined); console.error("Failed to disposition call", error); return NextResponse.json({ error: "Unable to save call disposition" }, { status: 500 }); }
-  finally { client.release(); }
+    return NextResponse.json({
+      message: workflow.markedDead
+        ? "Call disposition saved and lead moved to Dead"
+        : "Call disposition saved",
+      call: result.rows[0],
+      follow_up: workflow.followUp,
+      lead_workflow: {
+        lead: workflow.lead,
+        marked_dead: workflow.markedDead,
+        stage_key: workflow.stageKey,
+      },
+    });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    console.error("Failed to disposition call", error);
+    return NextResponse.json(
+      { error: "Unable to save call disposition" },
+      { status: 500 },
+    );
+  } finally {
+    client.release();
+  }
 }

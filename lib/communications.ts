@@ -1,4 +1,11 @@
 import type { PoolClient } from "pg";
+import {
+  CALL_OUTCOMES,
+  type CallOutcome,
+  canMoveLeadToDeadFromCall,
+  isCallOutcome,
+  validateManualFollowUpAt,
+} from "@/lib/callOutcomes";
 import { isUuid } from "@/lib/permissions";
 import { isObject } from "@/utils/isObject";
 import { validateText } from "@/utils/validateText";
@@ -46,18 +53,7 @@ type CallInput = {
     | "busy"
     | "no_answer"
     | "cancelled";
-  outcome?:
-    | "interested"
-    | "follow_up"
-    | "no_answer"
-    | "not_interested"
-    | "wrong_number"
-    | "voicemail"
-    | "connected"
-    | "callback_requested"
-    | "qualified"
-    | "do_not_call"
-    | null;
+  outcome?: CallOutcome | null;
   phone_number: string;
   subject: string;
   summary?: string | null;
@@ -65,6 +61,7 @@ type CallInput = {
   ended_at?: string | null;
   duration_seconds?: number | null;
   next_follow_up_at?: string | null;
+  mark_lead_dead: boolean;
 };
 
 type EmailInput = {
@@ -177,26 +174,45 @@ export function validateCallPayload(body: unknown): ValidationResult<CallInput> 
     ["scheduled", "initiating", "queued", "ringing", "answered", "in_progress", "on_hold", "missed", "completed", "failed", "busy", "no_answer", "cancelled"] as const,
     errors,
   );
-  const outcome =
-    body.outcome === null
-      ? null
-      : oneOf(
-          body.outcome,
-          "outcome",
-          ["interested", "follow_up", "no_answer", "not_interested", "wrong_number", "voicemail", "connected", "callback_requested", "qualified", "do_not_call"] as const,
-          errors,
-        );
+  let outcome: CallOutcome | null | undefined;
+  if (body.outcome === null) outcome = null;
+  else if (body.outcome !== undefined) {
+    if (!isCallOutcome(body.outcome)) {
+      errors.push(`outcome must be one of: ${CALL_OUTCOMES.join(", ")}`);
+    } else {
+      outcome = body.outcome;
+    }
+  }
   const phoneNumber = validateText(body.phone_number, "phone_number", 30, false, errors);
   const subject = validateText(body.subject, "subject", 250, false, errors);
   const summary = validateText(body.summary, "summary", 10000, true, errors);
   const startedAt = timestamp(body.started_at, "started_at", false, errors);
   const endedAt = timestamp(body.ended_at, "ended_at", true, errors);
-  const nextFollowUpAt = timestamp(
-    body.next_follow_up_at,
-    "next_follow_up_at",
-    true,
-    errors,
-  );
+  let nextFollowUpAt: string | null | undefined;
+  const markLeadDead = body.mark_lead_dead ?? false;
+  if (typeof markLeadDead !== "boolean") {
+    errors.push("mark_lead_dead must be a boolean");
+  }
+  if (leadId && outcome) {
+    const followUp = validateManualFollowUpAt(body.next_follow_up_at);
+    if (!followUp.ok) errors.push(followUp.error);
+    else nextFollowUpAt = followUp.value;
+  } else {
+    nextFollowUpAt = timestamp(
+      body.next_follow_up_at,
+      "next_follow_up_at",
+      true,
+      errors,
+    );
+  }
+  if (
+    markLeadDead === true &&
+    (!leadId || !outcome || !canMoveLeadToDeadFromCall(outcome))
+  ) {
+    errors.push(
+      "mark_lead_dead is only available for a lead call marked not_interested, wrong_number, or do_not_call",
+    );
+  }
   let duration: number | null | undefined;
   if (body.duration_seconds !== undefined) {
     if (body.duration_seconds === null) duration = null;
@@ -225,6 +241,7 @@ export function validateCallPayload(body: unknown): ValidationResult<CallInput> 
           ended_at: endedAt,
           duration_seconds: duration,
           next_follow_up_at: nextFollowUpAt,
+          mark_lead_dead: markLeadDead === true,
         },
       };
 }
