@@ -172,6 +172,24 @@ export async function POST(request: NextRequest, context: Context) {
       );
     }
 
+    const unavailableUnits = units.rows.filter(
+      (unit) => String(unit.status) !== "available",
+    );
+    if (unavailableUnits.length) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        {
+          error: "Only available inventory can be added to a shortlist",
+          details: unavailableUnits.map((unit) => ({
+            unit_id: unit.unit_id,
+            unit_code: unit.unit_code,
+            status: unit.status,
+          })),
+        },
+        { status: 409 },
+      );
+    }
+
     const items = units.rows.map((unit) => {
       const usesTemplateRate =
         unit.price_override === null &&
