@@ -51,6 +51,7 @@ import {
 
 type CalendarView = "day" | "week" | "month" | "year";
 type AppointmentType = "call" | "meeting" | "site_visit" | "video" | "other";
+type CalendarItemType = AppointmentType | "follow_up";
 type AppointmentStatus =
   | "scheduled"
   | "confirmed"
@@ -117,6 +118,26 @@ type Appointment = {
   feedback?: string | null;
   customer_rating?: string | number | null;
   next_action?: string | null;
+  source_type?: "appointment" | "follow_up";
+  next_action_type?: string | null;
+  next_action_notes?: string | null;
+};
+
+type CalendarFollowUp = {
+  lead_id: string;
+  action_type: string;
+  summary: string;
+  notes?: string | null;
+  due_at: string;
+  project_id: number;
+  project_name?: string | null;
+  contact_id?: string | null;
+  current_owner_user_id?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  assignee_first_name?: string | null;
+  assignee_last_name?: string | null;
+  timezone?: string | null;
 };
 
 type Lead = {
@@ -202,6 +223,51 @@ const STATUS_LABEL: Record<AppointmentStatus, string> = {
   completed: "Completed",
   no_show: "No-show",
 };
+
+const FOLLOW_UP_META = {
+  label: "Lead follow-up",
+  Icon: CalendarClock,
+  chip: "border-[#b88a48]/45 bg-[#332817] text-[#e6c68e]",
+  dot: "bg-[#d3a65f]",
+};
+
+function calendarItemType(appointment: Appointment): CalendarItemType {
+  return appointment.source_type === "follow_up"
+    ? "follow_up"
+    : appointment.appointment_type;
+}
+
+function calendarItemMeta(appointment: Appointment) {
+  return appointment.source_type === "follow_up"
+    ? FOLLOW_UP_META
+    : TYPE_META[appointment.appointment_type];
+}
+
+function followUpToAppointment(followUp: CalendarFollowUp): Appointment {
+  const startsAt = new Date(followUp.due_at);
+  return {
+    appointment_id: `follow-up:${followUp.lead_id}`,
+    project_id: Number(followUp.project_id),
+    project_name: followUp.project_name,
+    lead_id: followUp.lead_id,
+    contact_id: followUp.contact_id,
+    appointment_type: "call",
+    title: followUp.summary || "Lead follow-up",
+    description: followUp.notes,
+    starts_at: startsAt.toISOString(),
+    ends_at: new Date(startsAt.getTime() + 30 * 60 * 1000).toISOString(),
+    timezone: followUp.timezone || "Asia/Kolkata",
+    status: "scheduled",
+    assigned_to_user_id: followUp.current_owner_user_id,
+    first_name: followUp.first_name,
+    last_name: followUp.last_name,
+    assignee_first_name: followUp.assignee_first_name,
+    assignee_last_name: followUp.assignee_last_name,
+    source_type: "follow_up",
+    next_action_type: followUp.action_type,
+    next_action_notes: followUp.notes,
+  };
+}
 
 function startOfDay(value: Date) {
   return new Date(value.getFullYear(), value.getMonth(), value.getDate());
@@ -398,7 +464,7 @@ function CalendarEvent({
   compact?: boolean;
   onOpen: (appointment: Appointment) => void;
 }) {
-  const meta = TYPE_META[appointment.appointment_type];
+  const meta = calendarItemMeta(appointment);
   const Icon = meta.Icon;
   const completed = appointment.status === "completed";
   const terminal =
@@ -611,19 +677,39 @@ export function CalendarWorkspace() {
     const queryKey = params.toString();
     setLoading(lastLoadedAppointmentsQueryRef.current !== queryKey);
     try {
-      const response = await fetchWithSession(
-        `/api/appointments?${params.toString()}`,
-        {
+      const followUpParams = new URLSearchParams({
+        from: range.from.toISOString(),
+        to: range.to.toISOString(),
+      });
+      if (selectedProjectId !== "all")
+        followUpParams.set("project_id", selectedProjectId);
+      const [response, followUpResponse] = await Promise.all([
+        fetchWithSession(`/api/appointments?${params.toString()}`, {
           cache: "no-store",
-        },
-      );
-      if (response.status === 401) {
+        }),
+        fetchWithSession(
+          `/api/calendar/follow-ups?${followUpParams.toString()}`,
+          { cache: "no-store" },
+        ),
+      ]);
+      if (response.status === 401 || followUpResponse.status === 401) {
         router.replace("/login");
         return;
       }
       if (!response.ok) throw new Error(await getApiError(response));
+      if (!followUpResponse.ok)
+        throw new Error(await getApiError(followUpResponse));
       const body = (await response.json()) as { appointments?: Appointment[] };
-      setAppointments(body.appointments ?? []);
+      const followUpBody = (await followUpResponse.json()) as {
+        follow_ups?: CalendarFollowUp[];
+      };
+      setAppointments([
+        ...(body.appointments ?? []).map((appointment) => ({
+          ...appointment,
+          source_type: "appointment" as const,
+        })),
+        ...(followUpBody.follow_ups ?? []).map(followUpToAppointment),
+      ]);
       lastLoadedAppointmentsQueryRef.current = queryKey;
       setError(null);
     } catch (cause) {
@@ -708,7 +794,7 @@ export function CalendarWorkspace() {
         appointment.assigned_to_user_id ?? appointment.organizer_user_id ?? "";
       return (
         (ownerFilter === "all" || ownerId === ownerFilter) &&
-        (typeFilter === "all" || appointment.appointment_type === typeFilter) &&
+        (typeFilter === "all" || calendarItemType(appointment) === typeFilter) &&
         (statusFilter === "all" || appointment.status === statusFilter) &&
         (!normalized ||
           appointment.title.toLowerCase().includes(normalized) ||
@@ -741,6 +827,7 @@ export function CalendarWorkspace() {
   }
 
   function openEdit(appointment: Appointment, mode: "edit" | "reschedule") {
+    if (appointment.source_type === "follow_up") return;
     setDraft(draftFromAppointment(appointment));
     setSelected(appointment);
     setComposerMode(mode);
@@ -1017,6 +1104,27 @@ export function CalendarWorkspace() {
     );
     setDraggingId(null);
     try {
+      if (appointment.source_type === "follow_up") {
+        const response = await fetchWithSession(
+          `/api/leads/${appointment.lead_id}/next-action`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action_type: appointment.next_action_type || "call",
+              summary: appointment.title,
+              due_at: nextStart.toISOString(),
+              status: "pending",
+              notes: appointment.next_action_notes ?? null,
+            }),
+          },
+        );
+        if (!response.ok) throw new Error(await getApiError(response));
+        toast.success("Follow-up rescheduled");
+        setSelected(null);
+        await loadAppointments();
+        return;
+      }
       const response = await fetchWithSession(
         appointment.appointment_type === "site_visit"
           ? `/api/site-visits/${appointmentId}/reschedule`
@@ -1274,6 +1382,7 @@ export function CalendarWorkspace() {
                           value={typeFilter}
                         >
                           <option value="all">All types</option>
+                          <option value="follow_up">Lead follow-up</option>
                           {Object.entries(TYPE_META).map(([value, meta]) => (
                             <option key={value} value={value}>
                               {meta.label}
@@ -1435,17 +1544,31 @@ export function CalendarWorkspace() {
         </div>
       </section>
 
-      {selected && !composerMode && (
-        <AppointmentDrawer
-          appointment={selected}
-          now={now}
-          saving={saving}
-          users={users}
-          onAction={requestAction}
-          onClose={() => setSelected(null)}
-          onEdit={(mode) => openEdit(selected, mode)}
-        />
-      )}
+      {selected && !composerMode &&
+        (selected.source_type === "follow_up" ? (
+          <FollowUpDrawer
+            followUp={selected}
+            now={now}
+            saving={saving}
+            onClose={() => setSelected(null)}
+            onOpenLead={() =>
+              router.push(`/leads?lead_id=${selected.lead_id}`)
+            }
+            onReschedule={(date) =>
+              rescheduleByDrop(selected.appointment_id, date)
+            }
+          />
+        ) : (
+          <AppointmentDrawer
+            appointment={selected}
+            now={now}
+            saving={saving}
+            users={users}
+            onAction={requestAction}
+            onClose={() => setSelected(null)}
+            onEdit={(mode) => openEdit(selected, mode)}
+          />
+        ))}
 
       {pendingAction && (
         <AppointmentActionDialog
@@ -1739,7 +1862,7 @@ function YearView({
                           className={`absolute bottom-0.5 size-0.5 rounded-full ${
                             records[0].status === "completed"
                               ? "bg-[#737a76]"
-                              : TYPE_META[records[0].appointment_type].dot
+                              : calendarItemMeta(records[0]).dot
                           }`}
                         />
                       )}
@@ -1910,6 +2033,147 @@ function TimeGrid({
   );
 }
 
+function FollowUpDrawer({
+  followUp,
+  now,
+  saving,
+  onClose,
+  onOpenLead,
+  onReschedule,
+}: {
+  followUp: Appointment;
+  now: number;
+  saving: boolean;
+  onClose: () => void;
+  onOpenLead: () => void;
+  onReschedule: (date: Date) => Promise<void>;
+}) {
+  const [rescheduleAt, setRescheduleAt] = useState(() =>
+    toLocalInput(followUp.starts_at),
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const overdue = new Date(followUp.starts_at).getTime() < now;
+
+  async function submitReschedule() {
+    const date = new Date(rescheduleAt);
+    if (Number.isNaN(date.getTime()) || date.getTime() <= now) {
+      toast.error("Choose a future date and time for the follow-up.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await onReschedule(date);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] bg-black/55 backdrop-blur-[2px]"
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <aside className="absolute inset-y-0 right-0 flex w-full max-w-[430px] flex-col border-l border-white/[0.11] bg-[#101311] shadow-[-18px_0_50px_rgba(0,0,0,0.38)]">
+        <div className="flex items-center justify-between border-b border-white/[0.09] px-6 py-5">
+          <div>
+            <span className="text-[10px] uppercase tracking-[0.13em] text-[#6f7471]">
+              Lead follow-up
+            </span>
+            <h2 className="mt-1.5 text-xl font-semibold tracking-[-0.02em] text-white">
+              {followUp.title}
+            </h2>
+          </div>
+          <button
+            aria-label="Close follow-up"
+            className="flex size-8 items-center justify-center rounded-md text-[#999e9b] hover:bg-white/[0.06] hover:text-white"
+            onClick={onClose}
+            type="button"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6">
+          <div className="mt-5 flex gap-2">
+            <span className={`inline-flex h-7 items-center rounded-md border px-2.5 text-[10px] font-semibold ${FOLLOW_UP_META.chip}`}>
+              Follow-up
+            </span>
+            {overdue && (
+              <span className="inline-flex h-7 items-center rounded-md bg-[#3b211d] px-2.5 text-[10px] text-[#ed8b79]">
+                Overdue
+              </span>
+            )}
+          </div>
+          <div className="mt-5 border-t border-white/[0.09] py-5">
+            <DetailRow
+              icon={Clock3}
+              label="When"
+              value={`${formatDate(followUp.starts_at)} · ${formatTime(new Date(followUp.starts_at))}`}
+            />
+            <DetailRow
+              icon={UserRound}
+              label="Lead / contact"
+              value={fullName(
+                followUp.first_name,
+                followUp.last_name,
+                "Lead",
+              )}
+            />
+            <DetailRow
+              icon={UsersRound}
+              label="Owner"
+              value={appointmentOwner(followUp)}
+            />
+            <DetailRow
+              icon={CalendarClock}
+              label="Project"
+              value={followUp.project_name || `Project ${followUp.project_id}`}
+            />
+          </div>
+          {followUp.description && (
+            <div className="border-t border-white/[0.09] py-5">
+              <span className="text-[9px] uppercase tracking-[0.12em] text-[#6f7471]">
+                Notes
+              </span>
+              <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-[#c5c9c6]">
+                {followUp.description}
+              </p>
+            </div>
+          )}
+          <label className="block border-t border-white/[0.09] py-5">
+            <span className="mb-2 block text-[9px] uppercase tracking-[0.12em] text-[#6f7471]">
+              Reschedule follow-up
+            </span>
+            <input
+              className="h-10 w-full rounded-md border border-white/[0.11] bg-[#0b0e0c] px-3 text-xs text-white outline-none focus:border-[#b88a48]"
+              min={toLocalInput(new Date(now))}
+              onChange={(event) => setRescheduleAt(event.target.value)}
+              type="datetime-local"
+              value={rescheduleAt}
+            />
+          </label>
+        </div>
+        <div className="grid grid-cols-2 gap-2 border-t border-white/[0.09] bg-[#0d100e] p-4">
+          <button
+            className="h-9 rounded-md border border-white/[0.11] bg-[#181b19] text-xs text-[#d9dcda] hover:bg-[#222623]"
+            onClick={onOpenLead}
+            type="button"
+          >
+            Open lead
+          </button>
+          <button
+            className="h-9 rounded-md bg-[#806335] text-xs font-semibold text-white hover:bg-[#96743d] disabled:opacity-45"
+            disabled={saving || submitting}
+            onClick={() => void submitReschedule()}
+            type="button"
+          >
+            {submitting ? "Saving…" : "Save new time"}
+          </button>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 function AppointmentDrawer({
   appointment,
   now,
@@ -1927,7 +2191,7 @@ function AppointmentDrawer({
   onClose: () => void;
   onEdit: (mode: "edit" | "reschedule") => void;
 }) {
-  const meta = TYPE_META[appointment.appointment_type];
+  const meta = calendarItemMeta(appointment);
   const Icon = meta.Icon;
   const terminal = ["cancelled", "completed", "no_show"].includes(
     appointment.status,

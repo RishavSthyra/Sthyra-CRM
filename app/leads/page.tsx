@@ -192,8 +192,8 @@ type LeadResponse = {
     total: number;
     qualified: number;
     hot: number;
-    needsFollowUp: number;
-    unassigned: number;
+    attentionToday: number;
+    upcomingFollowUps: number;
   };
   pagination?: {
     page: number;
@@ -458,6 +458,9 @@ export default function LeadsPage() {
   const [pipelineStages, setPipelineStages] = useState<LeadStage[]>([]);
   const [temperature, setTemperature] = useState("all");
   const [assignment, setAssignment] = useState("all");
+  const [attention, setAttention] = useState<"all" | "today" | "upcoming">(
+    "all",
+  );
   const [sort, setSort] = useState("newest");
   const [openTool, setOpenTool] = useState<"filter" | "sort" | null>(null);
   const leadToolsRef = useRef<HTMLDivElement>(null);
@@ -552,6 +555,23 @@ export default function LeadsPage() {
       cancelled = true;
     };
   }, [router]);
+
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get(
+      "attention",
+    );
+    if (requested === "today" || requested === "upcoming") {
+      const task = window.setTimeout(() => setAttention(requested), 0);
+      return () => window.clearTimeout(task);
+    }
+  }, []);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (attention === "all") url.searchParams.delete("attention");
+    else url.searchParams.set("attention", attention);
+    window.history.replaceState(null, "", url);
+  }, [attention]);
 
   useEffect(() => {
     if (requestedLeadOpenedRef.current || projectContextLoading) return;
@@ -649,6 +669,7 @@ export default function LeadsPage() {
     if (temperature !== "all")
       filterParams.set("temperature", temperature);
     if (assignment !== "all") filterParams.set("assignment", assignment);
+    if (attention !== "all") filterParams.set("attention", attention);
 
     const cacheScope = projectContext?.user_id || "unknown-user";
     const summaryKey = `${cacheScope}|${filterParams.toString()}`;
@@ -740,6 +761,7 @@ export default function LeadsPage() {
       }
     }
   }, [
+    attention,
     assignment,
     page,
     projectContext?.user_id,
@@ -1373,7 +1395,8 @@ export default function LeadsPage() {
   const activeFilterCount =
     Number(status !== "all") +
     Number(temperature !== "all") +
-    Number(assignment !== "all");
+    Number(assignment !== "all") +
+    Number(attention !== "all");
   const projects = projectContext?.projects ?? [];
   const selectedProject = projects.find(
     (project) => String(project.project_id) === selectedProjectId,
@@ -1441,32 +1464,46 @@ export default function LeadsPage() {
           <header className="border-b border-[#2c2c2c] bg-[#191919] p-3 font-[var(--font-bricolage)] text-sm">
             Overview
           </header>
-          <div className="grid grid-cols-5 px-4 pt-[18px] pb-[22px] max-[900px]:grid-cols-2 max-[900px]:gap-y-[18px] [&>div]:flex [&>div]:flex-col [&>div]:gap-2 [&>div]:border-r [&>div]:border-[#2c2c2c] [&>div]:px-5 [&>div:first-child]:pl-0 [&>div:last-child]:border-r-0 [&>div:nth-child(2)]:max-[900px]:border-r-0 [&>div:nth-child(4)]:max-[900px]:border-r-0 [&_small]:text-[11px] [&_small]:text-[#b4b4b4] [&_span]:text-[11px] [&_span]:text-[#b4b4b4] [&_strong]:text-[30px] [&_strong]:leading-none">
-            <div>
+          <div className="grid grid-cols-5 px-4 pt-[18px] pb-[22px] max-[900px]:grid-cols-2 max-[900px]:gap-y-[18px] [&>button]:flex [&>button]:flex-col [&>button]:gap-2 [&>button]:border-r [&>button]:border-[#2c2c2c] [&>button]:px-5 [&>button]:text-left [&>button:first-child]:pl-0 [&>button:last-child]:border-r-0 [&>button:nth-child(2)]:max-[900px]:border-r-0 [&>button:nth-child(4)]:max-[900px]:border-r-0 [&_small]:text-[11px] [&_small]:text-[#b4b4b4] [&_span]:text-[11px] [&_span]:text-[#b4b4b4] [&_strong]:text-[30px] [&_strong]:leading-none">
+            <button onClick={() => setAttention("all")} type="button">
               <span>Total leads</span>
               <strong>{total}</strong>
               <small>All active relationships</small>
-            </div>
-            <div>
+            </button>
+            <button onClick={() => setAttention("all")} type="button">
               <span>Converted</span>
               <strong>{qualified}</strong>
               <small>Managed as opportunities</small>
-            </div>
-            <div>
+            </button>
+            <button onClick={() => setAttention("all")} type="button">
               <span>Hot leads</span>
               <strong>{hot}</strong>
               <small>High intent prospects</small>
-            </div>
-            <div>
-              <span>Needs follow-up</span>
-              <strong>{data.summary?.needsFollowUp ?? "—"}</strong>
-              <small>Due now or within 2 days</small>
-            </div>
-            <div>
-              <span>Unassigned</span>
-              <strong>{data.summary?.unassigned ?? "—"}</strong>
-              <small>Available in queue</small>
-            </div>
+            </button>
+            <button
+              className={attention === "today" ? "bg-white/[0.025]" : ""}
+              onClick={() => {
+                setAttention("today");
+                setPage(1);
+              }}
+              type="button"
+            >
+              <span>Needs attention today</span>
+              <strong>{data.summary?.attentionToday ?? "—"}</strong>
+              <small>Overdue and due today</small>
+            </button>
+            <button
+              className={attention === "upcoming" ? "bg-white/[0.025]" : ""}
+              onClick={() => {
+                setAttention("upcoming");
+                setPage(1);
+              }}
+              type="button"
+            >
+              <span>Upcoming follow-ups</span>
+              <strong>{data.summary?.upcomingFollowUps ?? "—"}</strong>
+              <small>Tomorrow and the following day</small>
+            </button>
           </div>
         </section>
         <div className="relative my-4 grid min-w-0 grid-cols-[minmax(240px,1fr)_minmax(0,auto)_auto] items-center gap-2 max-[1280px]:grid-cols-[minmax(0,1fr)_auto]">

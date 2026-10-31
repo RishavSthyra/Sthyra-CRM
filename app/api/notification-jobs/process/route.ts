@@ -3,6 +3,10 @@ import { adminPool } from "@/lib/db";
 import { deliverCrmEmail } from "@/lib/emailDelivery";
 import { hasValidBearerSecret } from "@/lib/integrationAuth";
 import {
+  ATTENTION_ELIGIBLE_LEAD_STATUSES,
+  followUpDigestEventKey,
+} from "@/lib/leadAttention";
+import {
   createNotificationsForUsers,
   resolveNotificationRecipients,
 } from "@/lib/notifications";
@@ -140,6 +144,72 @@ export async function POST(request: NextRequest) {
   try {
     await client.query("BEGIN");
 
+    const digestRows = await client.query(
+      `SELECT
+         lead.current_owner_user_id AS user_id,
+         project.company_id,
+         COALESCE(preference.timezone, 'Asia/Kolkata') AS timezone,
+         TO_CHAR(
+           CURRENT_TIMESTAMP AT TIME ZONE COALESCE(preference.timezone, 'Asia/Kolkata'),
+           'YYYY-MM-DD'
+         ) AS local_date,
+         COUNT(*)::integer AS attention_count,
+         COUNT(*) FILTER (
+           WHERE next_action.due_at < CURRENT_TIMESTAMP
+         )::integer AS overdue_count
+       FROM lead_next_actions next_action
+       JOIN leads lead ON lead.lead_id=next_action.lead_id
+       JOIN projects project ON project.project_id=lead.project_id
+       JOIN users owner ON owner.user_id=lead.current_owner_user_id
+       LEFT JOIN notification_preferences preference
+         ON preference.user_id=owner.user_id
+       WHERE next_action.status='pending'
+         AND lead.status=ANY($1::varchar[])
+         AND owner.is_active=TRUE
+         AND owner.deleted_at IS NULL
+         AND COALESCE(preference.follow_up_enabled, TRUE)=TRUE
+         AND COALESCE(preference.digest_frequency, 'instant')<>'never'
+         AND (CURRENT_TIMESTAMP AT TIME ZONE COALESCE(preference.timezone, 'Asia/Kolkata'))::time >= TIME '09:00'
+         AND next_action.due_at < (
+           ((CURRENT_TIMESTAMP AT TIME ZONE COALESCE(preference.timezone, 'Asia/Kolkata'))::date + 1)::timestamp
+           AT TIME ZONE COALESCE(preference.timezone, 'Asia/Kolkata')
+         )
+       GROUP BY lead.current_owner_user_id, project.company_id,
+         COALESCE(preference.timezone, 'Asia/Kolkata')
+       ORDER BY lead.current_owner_user_id, project.company_id
+       LIMIT 1000`,
+      [[...ATTENTION_ELIGIBLE_LEAD_STATUSES]],
+    );
+
+    let digestsCreated = 0;
+    for (const row of digestRows.rows) {
+      const attentionCount = Number(row.attention_count ?? 0);
+      const overdueCount = Number(row.overdue_count ?? 0);
+      const dueTodayCount = Math.max(0, attentionCount - overdueCount);
+      const created = await createNotificationsForUsers(
+        client,
+        [String(row.user_id)],
+        {
+          companyId: Number(row.company_id),
+          type: "follow_up.daily_digest",
+          category: "follow_up",
+          title: `${attentionCount} lead${attentionCount === 1 ? "" : "s"} need attention today`,
+          body: `${overdueCount} overdue · ${dueTodayCount} due today`,
+          severity: overdueCount > 0 ? "warning" : "info",
+          actionUrl: "/leads?attention=today",
+          eventKey: followUpDigestEventKey(String(row.local_date)),
+          metadata: {
+            local_date: row.local_date,
+            timezone: row.timezone,
+            overdue_count: overdueCount,
+            due_today_count: dueTodayCount,
+          },
+          channels: ["in_app", "email"],
+        },
+      );
+      digestsCreated += created.length;
+    }
+
     const followUps = await client.query(
       `SELECT
          next_action.lead_id,
@@ -155,10 +225,12 @@ export async function POST(request: NextRequest) {
        JOIN projects project ON project.project_id = lead.project_id
        JOIN contacts contact ON contact.contact_id = lead.contact_id
        WHERE next_action.status = 'pending'
+         AND lead.status=ANY($1::varchar[])
          AND next_action.due_at < CURRENT_TIMESTAMP
        ORDER BY next_action.due_at ASC
        LIMIT 500
        FOR UPDATE OF next_action SKIP LOCKED`,
+      [[...ATTENTION_ELIGIBLE_LEAD_STATUSES]],
     );
 
     let overdueCreated = 0;
@@ -258,10 +330,12 @@ export async function POST(request: NextRequest) {
     const emailDeliveries = await processQueuedEmails();
     return NextResponse.json({
       processed: {
+        daily_follow_up_digests: digestRows.rowCount ?? 0,
         overdue_follow_ups: followUps.rowCount ?? 0,
         upcoming_appointments: appointments.rowCount ?? 0,
       },
-      notifications_created: overdueCreated + remindersCreated,
+      notifications_created:
+        digestsCreated + overdueCreated + remindersCreated,
       email_deliveries: emailDeliveries,
     });
   } catch (error) {

@@ -16,6 +16,7 @@ import {
 } from "@/lib/leadVisibility";
 import { buildLeadListOrderBy } from "@/lib/leadListOrdering";
 import { DEAD_LEAD_STATUSES } from "@/lib/leadListViews";
+import { ATTENTION_ELIGIBLE_LEAD_STATUSES } from "@/lib/leadAttention";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 import { parsePagination } from "@/utils/parsePagination";
 
@@ -141,6 +142,29 @@ export async function GET(request: NextRequest) {
         : "(l.current_owner_user_id IS NULL AND l.current_team_id IS NULL)",
     );
   }
+  const attention = request.nextUrl.searchParams.get("attention");
+  if (attention && !["today", "upcoming"].includes(attention)) {
+    return NextResponse.json(
+      { error: "attention must be today or upcoming" },
+      { status: 400 },
+    );
+  }
+  if (attention) {
+    values.push(scope.context.userId);
+    const timezoneExpression = `COALESCE((SELECT preference.timezone FROM notification_preferences preference WHERE preference.user_id=$${values.length}), 'Asia/Kolkata')`;
+    const nextMidnight = `(((CURRENT_TIMESTAMP AT TIME ZONE ${timezoneExpression})::date + 1)::timestamp AT TIME ZONE ${timezoneExpression})`;
+    values.push([...ATTENTION_ELIGIBLE_LEAD_STATUSES]);
+    filters.push(`l.status=ANY($${values.length}::varchar[])`);
+    if (!scope.context.leadVisibility.canViewProjectWide) {
+      values.push(scope.context.userId);
+      filters.push(`l.current_owner_user_id=$${values.length}`);
+    }
+    filters.push(
+      attention === "today"
+        ? `EXISTS (SELECT 1 FROM lead_next_actions attention_action WHERE attention_action.lead_id=l.lead_id AND attention_action.status='pending' AND attention_action.due_at < ${nextMidnight})`
+        : `EXISTS (SELECT 1 FROM lead_next_actions attention_action WHERE attention_action.lead_id=l.lead_id AND attention_action.status='pending' AND attention_action.due_at >= ${nextMidnight} AND attention_action.due_at < ${nextMidnight} + INTERVAL '2 days')`,
+    );
+  }
   for (const field of [
     "current_owner_user_id",
     "current_team_id",
@@ -196,6 +220,13 @@ export async function GET(request: NextRequest) {
   const listOrderBy = buildLeadListOrderBy(stageKey, orderBy);
   const where = `WHERE ${filters.join(" AND ")}`;
   try {
+    const summaryValues = [...values, scope.context.userId];
+    const summaryUserParameter = `$${summaryValues.length}`;
+    const summaryTimezone = `COALESCE((SELECT preference.timezone FROM notification_preferences preference WHERE preference.user_id=${summaryUserParameter}), 'Asia/Kolkata')`;
+    const summaryNextMidnight = `(((CURRENT_TIMESTAMP AT TIME ZONE ${summaryTimezone})::date + 1)::timestamp AT TIME ZONE ${summaryTimezone})`;
+    const attentionOwnerCondition = scope.context.leadVisibility.canViewProjectWide
+      ? "TRUE"
+      : `l.current_owner_user_id=${summaryUserParameter}`;
     const summaryPromise = includeSummary
       ? pool.query(
           `SELECT
@@ -203,21 +234,32 @@ export async function GET(request: NextRequest) {
          COUNT(*) FILTER (WHERE l.status = 'qualified')::integer AS qualified,
          COUNT(*) FILTER (WHERE l.temperature = 'hot')::integer AS hot,
          COUNT(*) FILTER (
-           WHERE EXISTS (
+           WHERE l.status=ANY(ARRAY['active','nurture','qualified']::varchar[])
+             AND ${attentionOwnerCondition}
+             AND EXISTS (
              SELECT 1
              FROM lead_next_actions na
              WHERE na.lead_id = l.lead_id
                AND na.status = 'pending'
-               AND na.due_at <= CURRENT_TIMESTAMP + INTERVAL '2 days'
+               AND na.due_at < ${summaryNextMidnight}
            )
-         )::integer AS needs_follow_up,
+         )::integer AS attention_today,
          COUNT(*) FILTER (
-           WHERE l.current_owner_user_id IS NULL AND l.current_team_id IS NULL
-         )::integer AS unassigned
+           WHERE l.status=ANY(ARRAY['active','nurture','qualified']::varchar[])
+             AND ${attentionOwnerCondition}
+             AND EXISTS (
+             SELECT 1
+             FROM lead_next_actions na
+             WHERE na.lead_id = l.lead_id
+               AND na.status = 'pending'
+               AND na.due_at >= ${summaryNextMidnight}
+               AND na.due_at < ${summaryNextMidnight} + INTERVAL '2 days'
+           )
+         )::integer AS upcoming_follow_ups
        FROM leads l
        JOIN contacts c ON c.contact_id=l.contact_id
        ${where}`,
-          values,
+          summaryValues,
         )
       : Promise.resolve(null);
     const listValues = [...values, pagination.limit, pagination.offset];
@@ -269,8 +311,8 @@ export async function GET(request: NextRequest) {
         total: Number(summaryRow.total ?? 0),
         qualified: Number(summaryRow.qualified ?? 0),
         hot: Number(summaryRow.hot ?? 0),
-        needsFollowUp: Number(summaryRow.needs_follow_up ?? 0),
-        unassigned: Number(summaryRow.unassigned ?? 0),
+        attentionToday: Number(summaryRow.attention_today ?? 0),
+        upcomingFollowUps: Number(summaryRow.upcoming_follow_ups ?? 0),
       };
     }
     return NextResponse.json(response);
