@@ -1,17 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { requirePermission } from "@/lib/authorization";
+import {
+  canAccessProject,
+} from "@/lib/projectAccess";
+import { requireOperationsContext } from "@/lib/operationsAccess";
 import { validateStages } from "@/lib/projectLeadConfiguration";
 import { parsePositiveInteger } from "@/utils/parsePositiveInteger";
 
 type Context = { params: Promise<{ projectid: string }> };
 const COLUMNS = `stage_id, project_id, stage_key, stage_name, position, is_initial, is_terminal, is_active, created_at, updated_at`;
 
-export async function GET(_request: NextRequest, context: Context) {
+export async function GET(request: NextRequest, context: Context) {
+  const scope = await requireOperationsContext(request);
+  if (!scope.ok) return scope.response;
   const projectId = parsePositiveInteger((await context.params).projectid);
   if (!projectId) {
     return NextResponse.json(
       { error: "projectId must be a positive integer" },
       { status: 400 },
+    );
+  }
+  if (!canAccessProject(scope.context.access, projectId)) {
+    return NextResponse.json(
+      { error: "You do not have access to this project" },
+      { status: 403 },
     );
   }
   try {
@@ -37,11 +50,19 @@ export async function GET(_request: NextRequest, context: Context) {
 }
 
 export async function PUT(request: NextRequest, context: Context) {
+  const scope = await requirePermission(request, "PROJECTS_MANAGE");
+  if (!scope.ok) return scope.response;
   const projectId = parsePositiveInteger((await context.params).projectid);
   if (!projectId) {
     return NextResponse.json(
       { error: "projectId must be a positive integer" },
       { status: 400 },
+    );
+  }
+  if (!canAccessProject(scope.context.access, projectId)) {
+    return NextResponse.json(
+      { error: "You do not have access to this project" },
+      { status: 403 },
     );
   }
   let body: unknown;

@@ -20,10 +20,10 @@ export async function getProjectStage(
   stageKey: string,
 ): Promise<Record<string, unknown> | null> {
   const result = await client.query(
-    `SELECT stage_id, stage_key, stage_name, is_initial, is_terminal
+    `SELECT stage_id, stage_key, stage_name, position, is_initial, is_terminal
      FROM project_lead_stages
      WHERE project_id=$1 AND stage_key=$2 AND is_active=TRUE`,
-    [projectId, stageKey.toLowerCase()],
+    [projectId, stageKey.trim().toLowerCase()],
   );
   return result.rows[0] ?? null;
 }

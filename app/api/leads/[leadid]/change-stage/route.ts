@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { requirePermission, roleHasPermission } from "@/lib/authorization";
 import { getProjectStage, lockLead, transitionLead } from "@/lib/leadCommands";
+import { evaluateManualLeadStageTransition } from "@/lib/manualLeadStageTransition";
 import { parseLeadId } from "@/lib/leads";
-import { requireOperationsContext } from "@/lib/operationsAccess";
+import { canAccessOperationsEntity } from "@/lib/operationsAccess";
 import { isObject } from "@/utils/isObject";
 import { validateText } from "@/utils/validateText";
 
 type Context = { params: Promise<{ leadid: string }> };
 export async function POST(request: NextRequest, context: Context) {
-  const scope = await requireOperationsContext(request);
+  const scope = await requirePermission(request, "LEADS_UPDATE");
   if (!scope.ok) return scope.response;
   const leadId = parseLeadId((await context.params).leadid);
   if (!leadId) {
@@ -56,6 +58,24 @@ export async function POST(request: NextRequest, context: Context) {
       await client.query("ROLLBACK");
       return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
+    const project = await client.query(
+      "SELECT company_id FROM projects WHERE project_id=$1",
+      [lead.project_id],
+    );
+    if (
+      !project.rowCount ||
+      !canAccessOperationsEntity(
+        scope.context.access,
+        Number(project.rows[0].company_id),
+        Number(lead.project_id),
+      )
+    ) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { error: "You do not have access to this lead" },
+        { status: 403 },
+      );
+    }
     if (
       ["qualified", "closed", "duplicate", "invalid"].includes(
         lead.status as string,
@@ -84,11 +104,33 @@ export async function POST(request: NextRequest, context: Context) {
         { status: 422 },
       );
     }
-    if (stage.is_terminal) {
+    const currentStageResult = lead.stage_id
+      ? await client.query(
+          `SELECT stage_key, stage_name, position, is_terminal
+           FROM project_lead_stages
+           WHERE stage_id=$1 AND project_id=$2`,
+          [lead.stage_id, lead.project_id],
+        )
+      : null;
+    const transition = evaluateManualLeadStageTransition({
+      currentStage: currentStageResult?.rows[0] ?? null,
+      targetStage: {
+        stage_key: String(stage.stage_key),
+        stage_name: String(stage.stage_name),
+        position: Number(stage.position),
+        is_terminal: Boolean(stage.is_terminal),
+      },
+      canMoveBackward: roleHasPermission(
+        scope.context.access.roleKey,
+        scope.context.permissions,
+        "PROJECTS_MANAGE",
+      ),
+    });
+    if (!transition.ok) {
       await client.query("ROLLBACK");
       return NextResponse.json(
-        { error: "Use the close command for terminal stages" },
-        { status: 422 },
+        { error: transition.error },
+        { status: transition.status },
       );
     }
     const updated = await transitionLead(
@@ -98,7 +140,7 @@ export async function POST(request: NextRequest, context: Context) {
       lead.status as string,
       stage.stage_id as string,
       {},
-      { stage_key: stage.stage_key, reason },
+      { stage_key: stage.stage_key, reason, direction: transition.direction },
       scope.context.userId,
     );
     await client.query("COMMIT");

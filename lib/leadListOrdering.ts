@@ -7,6 +7,8 @@ const FOLLOW_UP_PRIORITY = `
   END,
   CASE WHEN next_action.status='pending' THEN next_action.due_at END ASC NULLS LAST`;
 
+export const NEWEST_LEAD_ORDER = "l.created_at DESC, l.lead_id DESC";
+
 export function shouldPrioritizeLeadFollowUps(stageKey: string | null) {
   return Boolean(stageKey && stageKey !== "new");
 }
@@ -15,6 +17,7 @@ export function buildLeadListOrderBy(
   stageKey: string | null,
   selectedOrderBy: string,
 ) {
+  if (stageKey === "new") return NEWEST_LEAD_ORDER;
   return shouldPrioritizeLeadFollowUps(stageKey)
     ? `${FOLLOW_UP_PRIORITY}, ${selectedOrderBy}`
     : selectedOrderBy;

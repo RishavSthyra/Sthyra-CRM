@@ -27,6 +27,10 @@ import {
   ContactProfilePopover,
   ContactProfileWrite,
 } from "@/components/leads/ContactProfilePopover";
+import {
+  ChangeLeadStageDialog,
+  type ChangeLeadStageOption,
+} from "@/components/leads/ChangeLeadStageDialog";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 import { getWorkspaceContext } from "@/lib/clientWorkspaceContext";
 import {
@@ -89,6 +93,7 @@ type ProjectContextResponse = {
   };
   role_key?: string;
   can_view_all_projects?: boolean;
+  permissions?: string[];
   projects?: ProjectSummary[];
   error?: string;
 };
@@ -214,6 +219,7 @@ type CachedLeadSummary = {
 
 const leadPageCache = new Map<string, LeadResponse>();
 const leadSummaryCache = new Map<string, CachedLeadSummary>();
+const leadStageOptionsCache = new Map<number, LeadStage[]>();
 const MAX_CACHED_LEAD_QUERIES = 60;
 
 function setBoundedCache<Key, Value>(
@@ -266,7 +272,7 @@ const leadActions = [
   { value: "move-to-nurture", label: "Move to nurture" },
 ];
 
-function availableLeadActions(lead: Lead) {
+function availableLeadActions(lead: Lead, canChangeStage = true) {
   const status = lead.status;
   const allowed =
     status === "nurture"
@@ -291,6 +297,7 @@ function availableLeadActions(lead: Lead) {
   if (currentStage.includes("nurtur")) {
     allowed.delete("move-to-nurture");
   }
+  if (!canChangeStage) allowed.delete("change-stage");
 
   return leadActions.filter((action) => allowed.has(action.value));
 }
@@ -466,6 +473,7 @@ export default function LeadsPage() {
   const leadToolsRef = useRef<HTMLDivElement>(null);
   const requestedLeadOpenedRef = useRef(false);
   const leadRequestRef = useRef<AbortController | null>(null);
+  const stageChangeRequestRef = useRef<AbortController | null>(null);
   const [page, setPage] = useState(1);
   const [data, setData] = useState<LeadResponse>({ leads: [] });
   const [loading, setLoading] = useState(true);
@@ -477,6 +485,10 @@ export default function LeadsPage() {
     left: number;
     top: number;
   } | null>(null);
+  const [stageChangeLead, setStageChangeLead] = useState<Lead | null>(null);
+  const [stageChangeStages, setStageChangeStages] = useState<LeadStage[]>([]);
+  const [stageChangeLoading, setStageChangeLoading] = useState(false);
+  const [stageChangeError, setStageChangeError] = useState<string | null>(null);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [leadDetail, setLeadDetail] = useState<LeadDetail | null>(null);
   const [timeline, setTimeline] = useState<LeadActivity[]>([]);
@@ -1323,25 +1335,11 @@ export default function LeadsPage() {
     setCallComposerOpen((current) => !current);
   }
 
-  async function runLeadAction(leadId: string, action: string) {
-    let body: Record<string, unknown> = {};
-    if (action === "change-stage") {
-      const stageKey = window.prompt("Enter the project stage key");
-      if (!stageKey) return;
-      const reason = window.prompt("Why are you changing this lead's stage?");
-      if (!reason?.trim()) return;
-      body = { stage_key: stageKey, reason: reason.trim() };
-    } else if (action === "mark-duplicate") {
-      const duplicateId = window.prompt("Enter the duplicate lead UUID");
-      if (!duplicateId) return;
-      body = { duplicate_of_lead_id: duplicateId };
-    } else if (action === "mark-invalid" || action === "move-to-nurture") {
-      const reason = window.prompt("Add a reason for this action");
-      if (!reason) return;
-      body = { reason };
-    } else if (action === "qualify") {
-      body = { qualification_data: {} };
-    }
+  async function executeLeadAction(
+    leadId: string,
+    action: string,
+    body: Record<string, unknown>,
+  ) {
     setActionLead(leadId);
     try {
       const response = await fetchWithSession(
@@ -1354,7 +1352,7 @@ export default function LeadsPage() {
       );
       if (response.status === 401) {
         router.replace("/login");
-        return;
+        return false;
       }
       const responseBody = (await response.json()) as {
         error?: string;
@@ -1366,15 +1364,113 @@ export default function LeadsPage() {
         );
       toast.success(responseBody.message || "Lead updated");
       await loadLeads({ forceNetwork: true, forceSummary: true });
+      return true;
     } catch (cause) {
       toast.error(
         cause instanceof Error ? cause.message : "Lead action failed",
       );
+      return false;
     } finally {
       setActionLead(null);
       setActionMenuLead(null);
       setActionMenuPosition(null);
     }
+  }
+
+  async function loadStageChangeOptions(lead: Lead) {
+    const projectId = Number(lead.project_id);
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      setStageChangeError("This lead is not linked to a valid project.");
+      setStageChangeLoading(false);
+      return;
+    }
+
+    stageChangeRequestRef.current?.abort();
+    const controller = new AbortController();
+    stageChangeRequestRef.current = controller;
+    const cachedStages = leadStageOptionsCache.get(projectId);
+    if (cachedStages) setStageChangeStages(cachedStages);
+    setStageChangeLoading(!cachedStages);
+    setStageChangeError(null);
+
+    try {
+      const response = await fetchWithSession(
+        `/api/projects/${projectId}/lead-stages`,
+        { cache: "no-store", signal: controller.signal },
+      );
+      if (response.status === 401) {
+        router.replace("/login");
+        return;
+      }
+      const payload = (await response.json()) as {
+        stages?: LeadStage[];
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to retrieve lead stages");
+      }
+      const stages = payload.stages ?? [];
+      leadStageOptionsCache.set(projectId, stages);
+      setStageChangeStages(stages);
+    } catch (cause) {
+      if (controller.signal.aborted) return;
+      setStageChangeError(
+        cause instanceof Error
+          ? cause.message
+          : "Unable to retrieve lead stages",
+      );
+    } finally {
+      if (!controller.signal.aborted) setStageChangeLoading(false);
+    }
+  }
+
+  function openStageChangeDialog(lead: Lead) {
+    setActionMenuLead(null);
+    setActionMenuPosition(null);
+    setStageChangeLead(lead);
+    setStageChangeStages([]);
+    setStageChangeError(null);
+    void loadStageChangeOptions(lead);
+  }
+
+  function closeStageChangeDialog() {
+    if (stageChangeLead && actionLead === stageChangeLead.lead_id) return;
+    stageChangeRequestRef.current?.abort();
+    setStageChangeLead(null);
+    setStageChangeStages([]);
+    setStageChangeError(null);
+    setStageChangeLoading(false);
+  }
+
+  async function submitStageChange(stageKey: string, reason: string) {
+    if (!stageChangeLead) return;
+    const changed = await executeLeadAction(
+      stageChangeLead.lead_id,
+      "change-stage",
+      { stage_key: stageKey, reason },
+    );
+    if (changed) closeStageChangeDialog();
+  }
+
+  async function runLeadAction(lead: Lead, action: string) {
+    if (action === "change-stage") {
+      openStageChangeDialog(lead);
+      return;
+    }
+
+    let body: Record<string, unknown> = {};
+    if (action === "mark-duplicate") {
+      const duplicateId = window.prompt("Enter the duplicate lead UUID");
+      if (!duplicateId) return;
+      body = { duplicate_of_lead_id: duplicateId };
+    } else if (action === "mark-invalid" || action === "move-to-nurture") {
+      const reason = window.prompt("Add a reason for this action");
+      if (!reason) return;
+      body = { reason };
+    } else if (action === "qualify") {
+      body = { qualification_data: {} };
+    }
+    await executeLeadAction(lead.lead_id, action, body);
   }
 
   function openLeadOverview(lead: Lead) {
@@ -1405,6 +1501,14 @@ export default function LeadsPage() {
   const tableColumnCount = showProjectColumn ? 9 : 8;
   const visiblePipelineStages =
     selectedProjectId === "all" ? defaultPipelineStages : pipelineStages;
+  const canChangeLeadStages = Boolean(
+    projectContext?.can_view_all_projects ||
+      projectContext?.permissions?.includes("LEADS_UPDATE"),
+  );
+  const canMoveLeadStagesBackward = Boolean(
+    projectContext?.can_view_all_projects ||
+      projectContext?.permissions?.includes("PROJECTS_MANAGE"),
+  );
 
   return (
     <main className="min-h-dvh bg-black text-[#f5f5f5]">
@@ -1540,6 +1644,7 @@ export default function LeadsPage() {
                 key={item.stage_key}
                 onClick={() => {
                   setStage(item.stage_key);
+                  if (item.stage_key === "new") setSort("newest");
                   setPage(1);
                 }}
                 role="tab"
@@ -1866,7 +1971,8 @@ export default function LeadsPage() {
                           >
                             Open opportunity
                           </Link>
-                        ) : availableLeadActions(lead).length ? (
+                        ) : availableLeadActions(lead, canChangeLeadStages)
+                            .length ? (
                           <span
                             className={`relative inline-block ${actionMenuLead === lead.lead_id ? "z-[31]" : "z-[1]"}`}
                             data-lead-row-actions
@@ -1887,7 +1993,10 @@ export default function LeadsPage() {
                                 const bounds =
                                   event.currentTarget.getBoundingClientRect();
                                 const actionCount =
-                                  availableLeadActions(lead).length;
+                                  availableLeadActions(
+                                    lead,
+                                    canChangeLeadStages,
+                                  ).length;
                                 const menuWidth = 176;
                                 const menuHeight = actionCount * 33 + 12;
                                 const gap = 7;
@@ -1929,15 +2038,15 @@ export default function LeadsPage() {
                                     role="menu"
                                     style={actionMenuPosition}
                                   >
-                                    {availableLeadActions(lead).map(
+                                    {availableLeadActions(
+                                      lead,
+                                      canChangeLeadStages,
+                                    ).map(
                                       (option) => (
                                         <button
                                           key={option.value}
                                           onClick={() =>
-                                            void runLeadAction(
-                                              lead.lead_id,
-                                              option.value,
-                                            )
+                                            void runLeadAction(lead, option.value)
                                           }
                                           role="menuitem"
                                           type="button"
@@ -2006,6 +2115,30 @@ export default function LeadsPage() {
           </footer>
         </section>
       </section>
+      {stageChangeLead && typeof document !== "undefined"
+        ? createPortal(
+            <ChangeLeadStageDialog
+              canMoveBackward={canMoveLeadStagesBackward}
+              currentStageKey={stageChangeLead.stage_key}
+              currentStageName={stageChangeLead.stage_name}
+              error={stageChangeError}
+              leadName={
+                [stageChangeLead.first_name, stageChangeLead.last_name]
+                  .filter(Boolean)
+                  .join(" ") || "Unnamed lead"
+              }
+              loading={stageChangeLoading}
+              onClose={closeStageChangeDialog}
+              onRetry={() => void loadStageChangeOptions(stageChangeLead)}
+              onSubmit={(stageKey, reason) =>
+                void submitStageChange(stageKey, reason)
+              }
+              saving={actionLead === stageChangeLead.lead_id}
+              stages={stageChangeStages as ChangeLeadStageOption[]}
+            />,
+            document.body,
+          )
+        : null}
       {selectedLead && (
         <div
           className="fixed inset-0 z-[80] bg-black/70"
