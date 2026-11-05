@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import { startSlaInstancesForLead } from "@/lib/assignmentService";
 import { addOwnershipHistory } from "@/lib/leadHistory";
+import { isCommandManagedLeadStage } from "@/lib/manualLeadStageTransition";
 import { isUuid } from "@/lib/permissions";
 import { applyRoutingForLead } from "@/lib/routingService";
 import { queueWhatsAppAutomationEvent } from "@/lib/whatsappAutomation";
@@ -265,6 +266,7 @@ async function ensureReferences(
   client: PoolClient,
   lead: LeadWrite,
   companyId: number,
+  requestedStageKey: string | null = null,
 ): Promise<string> {
   const project = await client.query(
     `SELECT project_id FROM projects
@@ -348,13 +350,33 @@ async function ensureReferences(
       throw new LeadReferenceError("One or more active tags were not found");
     }
   }
-  const stage = await client.query(
-    `SELECT stage_id FROM project_lead_stages
-     WHERE project_id=$1 AND is_active=TRUE AND is_initial=TRUE`,
-    [lead.project_id],
-  );
+  const stage = requestedStageKey
+    ? await client.query(
+        `SELECT stage_id, stage_key, is_terminal
+         FROM project_lead_stages
+         WHERE project_id=$1 AND is_active=TRUE AND stage_key=$2`,
+        [lead.project_id, requestedStageKey],
+      )
+    : await client.query(
+        `SELECT stage_id, stage_key, is_terminal
+         FROM project_lead_stages
+         WHERE project_id=$1 AND is_active=TRUE AND is_initial=TRUE`,
+        [lead.project_id],
+      );
   if (!stage.rowCount) {
-    throw new LeadReferenceError("Project has no active initial lead stage");
+    throw new LeadReferenceError(
+      requestedStageKey
+        ? "Selected lead stage is not active for this project"
+        : "Project has no active initial lead stage",
+    );
+  }
+  if (stage.rows[0].is_terminal) {
+    throw new LeadReferenceError("A new lead cannot start in a terminal stage");
+  }
+  if (isCommandManagedLeadStage(stage.rows[0].stage_key)) {
+    throw new LeadReferenceError(
+      "Qualification and nurturing must use their dedicated workflow actions",
+    );
   }
   return stage.rows[0].stage_id as string;
 }
@@ -398,8 +420,17 @@ export async function createLead(
   lead: LeadWrite,
   companyId: number,
   intakeEventId: string | null = null,
+  options: {
+    initialStageKey?: string | null;
+    performedBy?: string | null;
+  } = {},
 ): Promise<Record<string, unknown>> {
-  const stageId = await ensureReferences(client, lead, companyId);
+  const stageId = await ensureReferences(
+    client,
+    lead,
+    companyId,
+    options.initialStageKey ?? null,
+  );
   const result = await client.query(
     `INSERT INTO leads (
        company_id, contact_id, project_id, source_id, campaign_id, intake_event_id, stage_id,
@@ -435,7 +466,12 @@ export async function createLead(
   );
   const created = result.rows[0];
   if (lead.tag_ids) {
-    await replaceLeadTags(client, created.lead_id, lead.tag_ids);
+    await replaceLeadTags(
+      client,
+      created.lead_id,
+      lead.tag_ids,
+      options.performedBy ?? null,
+    );
   }
   await addOwnershipHistory(
     client,
@@ -454,7 +490,9 @@ export async function createLead(
     stageId,
     {
       intake_event_id: intakeEventId,
+      initial_stage_key: options.initialStageKey ?? null,
     },
+    options.performedBy ?? null,
   );
   await startSlaInstancesForLead(client, created);
   await applyRoutingForLead(client, created);

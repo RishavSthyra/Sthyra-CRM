@@ -31,6 +31,7 @@ import {
   ChangeLeadStageDialog,
   type ChangeLeadStageOption,
 } from "@/components/leads/ChangeLeadStageDialog";
+import { CreateLeadDialog } from "@/components/leads/CreateLeadDialog";
 import { fetchWithSession, getApiError } from "@/lib/clientAuth";
 import { getWorkspaceContext } from "@/lib/clientWorkspaceContext";
 import {
@@ -489,6 +490,7 @@ export default function LeadsPage() {
   const [stageChangeStages, setStageChangeStages] = useState<LeadStage[]>([]);
   const [stageChangeLoading, setStageChangeLoading] = useState(false);
   const [stageChangeError, setStageChangeError] = useState<string | null>(null);
+  const [createLeadOpen, setCreateLeadOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [leadDetail, setLeadDetail] = useState<LeadDetail | null>(null);
   const [timeline, setTimeline] = useState<LeadActivity[]>([]);
@@ -1509,6 +1511,21 @@ export default function LeadsPage() {
     projectContext?.can_view_all_projects ||
       projectContext?.permissions?.includes("PROJECTS_MANAGE"),
   );
+  const canCreateLeads = Boolean(
+    projectContext?.can_view_all_projects ||
+      projectContext?.permissions?.includes("LEADS_CREATE"),
+  );
+
+  async function handleLeadCreated() {
+    setCreateLeadOpen(false);
+    leadPageCache.clear();
+    leadSummaryCache.clear();
+    setPage(1);
+    toast.success("Lead added and routed successfully");
+    if (page === 1) {
+      await loadLeads({ forceNetwork: true, forceSummary: true });
+    }
+  }
 
   return (
     <main className="min-h-dvh bg-black text-[#f5f5f5]">
@@ -2139,6 +2156,31 @@ export default function LeadsPage() {
             document.body,
           )
         : null}
+      {createLeadOpen && typeof document !== "undefined"
+        ? createPortal(
+            <CreateLeadDialog
+              initialProjectId={
+                selectedProjectId && selectedProjectId !== "all"
+                  ? Number(selectedProjectId)
+                  : null
+              }
+              onClose={() => setCreateLeadOpen(false)}
+              onCreated={handleLeadCreated}
+              projects={projects}
+            />,
+            document.body,
+          )
+        : null}
+      {canCreateLeads && projects.length > 0 && !createLeadOpen && (
+        <button
+          className="fixed right-8 bottom-6 z-40 flex h-10 items-center gap-2 rounded-full bg-[#1f704d] px-5 text-[11px] font-medium text-white shadow-[0_12px_36px_rgba(0,0,0,.58)] transition hover:-translate-y-0.5 hover:bg-[#27845c] max-[700px]:right-4 max-[700px]:bottom-4"
+          onClick={() => setCreateLeadOpen(true)}
+          type="button"
+        >
+          Add lead
+          <Plus className="size-3.5" aria-hidden />
+        </button>
+      )}
       {selectedLead && (
         <div
           className="fixed inset-0 z-[80] bg-black/70"
